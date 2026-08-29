@@ -148,6 +148,34 @@ export interface BackendCatalogCategory {
   status: number;
 }
 
+export interface BackendTradeOrder {
+  id: number;
+  orderNo: string;
+  memberId?: number;
+  memberName?: string;
+  orderStatus: number;
+  paymentStatus: number;
+  paymentMethod?: string;
+  subtotalAmount: number;
+  discountAmount: number;
+  freightAmount: number;
+  payableAmount: number;
+  paidAmount: number;
+  receiverName: string;
+  receiverPhone: string;
+  receiverProvince?: string;
+  receiverCity?: string;
+  receiverDistrict?: string;
+  receiverAddress: string;
+  sellerRemark?: string;
+  logisticsCompany?: string;
+  trackingNo?: string;
+  createdAt?: string;
+  paidAt?: string;
+  shippedAt?: string;
+  completedAt?: string;
+}
+
 interface ApiEnvelope<T> {
   code: string;
   message: string;
@@ -281,6 +309,32 @@ export function saveCatalogProduct(product: {
 
 export function deleteCatalogProduct(id: number): Promise<void> {
   return request<void>(`/api/admin/catalog/products/${id}`, { method: 'DELETE' });
+}
+
+export function listTradeOrders(params: { current?: number; size?: number; keyword?: string; orderStatus?: number } = {}): Promise<BackendPage<BackendTradeOrder>> {
+  const query = new URLSearchParams({ current: String(params.current || 1), size: String(params.size || 200) });
+  if (params.keyword) query.set('keyword', params.keyword);
+  if (params.orderStatus !== undefined) query.set('orderStatus', String(params.orderStatus));
+  return request<BackendPage<BackendTradeOrder>>(`/api/admin/trade/orders?${query.toString()}`);
+}
+
+export function shipTradeOrder(orderId: number, payload: { logisticsCompany: string; trackingNo: string }): Promise<void> {
+  return request<void>(`/api/admin/trade/orders/${orderId}/ship`, { method: 'PUT', body: JSON.stringify(payload) });
+}
+
+export function cancelTradeOrder(orderId: number, reason?: string): Promise<void> {
+  return request<void>(`/api/admin/trade/orders/${orderId}/cancel`, { method: 'PUT', body: JSON.stringify({ reason }) });
+}
+
+export function updateTradeOrderRemark(orderId: number, sellerRemark: string): Promise<void> {
+  return request<void>(`/api/admin/trade/orders/${orderId}/remark`, { method: 'PUT', body: JSON.stringify({ sellerRemark }) });
+}
+
+export function refundTradeOrder(orderId: number, refundAmount: number, reason: string): Promise<void> {
+  return request<void>(`/api/admin/trade/orders/${orderId}/refund`, {
+    method: 'PUT',
+    body: JSON.stringify({ refundAmount, reason })
+  });
 }
 
 export function replaceRoleDataRules(roleId: number, ruleIds: number[]): Promise<void> {

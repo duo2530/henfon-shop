@@ -25,6 +25,7 @@ import {
 import {
   AdminUser,
   BackendMenu,
+  BackendTradeOrder,
   clearAdminToken,
   getAdminMenus,
   getAdminToken,
@@ -53,7 +54,12 @@ import {
   deleteCatalogProduct as deleteCatalogProductApi,
   listCatalogCategories,
   listCatalogProducts,
-  saveCatalogProduct as saveCatalogProductApi
+  saveCatalogProduct as saveCatalogProductApi,
+  listTradeOrders,
+  shipTradeOrder,
+  cancelTradeOrder,
+  updateTradeOrderRemark,
+  refundTradeOrder
 } from '../api/adminApi';
 import { backendMenusToTree, containsMenuTab, firstMenuTab } from '../navigation/menuAdapter';
 import { backendDataRulesToFrontend, backendDepartmentsToFrontend, backendMenusToFrontend, backendRolesToFrontend, backendUsersToFrontend } from '../navigation/identityAdapter';
@@ -195,6 +201,46 @@ function productToCatalogRequest(product: Product) {
   };
 }
 
+function backendOrderStatusToFrontend(status: number): Order['status'] {
+  if (status === 10) return 'pending_payment';
+  if (status === 20) return 'pending_shipment';
+  if (status === 30) return 'shipped';
+  if (status === 40) return 'completed';
+  if (status === 50) return 'cancelled';
+  if (status === 60) return 'refunded';
+  return 'pending_payment';
+}
+
+function backendPaymentMethodToFrontend(method?: string): Order['paymentMethod'] {
+  const normalized = (method || '').toLowerCase();
+  if (normalized.includes('alipay') || normalized.includes('支付宝')) return 'alipay';
+  if (normalized.includes('card') || normalized.includes('银行卡')) return 'card';
+  return 'wechat';
+}
+
+function backendOrdersToFrontend(records: BackendTradeOrder[]): Order[] {
+  return records.map((record) => ({
+    id: String(record.id),
+    orderNumber: record.orderNo,
+    createdAt: record.createdAt || '',
+    customerName: record.memberName || record.receiverName,
+    customerPhone: record.receiverPhone,
+    amount: Number(record.paidAmount ?? record.payableAmount ?? 0),
+    paymentMethod: backendPaymentMethodToFrontend(record.paymentMethod),
+    status: backendOrderStatusToFrontend(record.orderStatus),
+    items: [],
+    shippingAddress: [record.receiverProvince, record.receiverCity, record.receiverDistrict, record.receiverAddress]
+      .filter(Boolean)
+      .join(' '),
+    trackingNumber: record.trackingNo || undefined,
+    shippingCarrier: record.logisticsCompany || undefined,
+    sellerNote: record.sellerRemark || undefined,
+    discountAmount: Number(record.discountAmount || 0),
+    freightAmount: Number(record.freightAmount || 0),
+    refundStatus: record.orderStatus === 60 ? 'approved' : 'none'
+  }));
+}
+
 export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [authLoading, setAuthLoading] = useState(true);
   const [currentUser, setCurrentUser] = useState<AdminUser | null>(null);
@@ -297,6 +343,16 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     }
   };
 
+  const hydrateTradeMetadata = async () => {
+    try {
+      // 订单接口成功时以后端数据为准，只有请求失败才保留当前演示数据。
+      const ordersResult = await listTradeOrders({ size: 200 });
+      setOrders(backendOrdersToFrontend(ordersResult.records || []));
+    } catch (error) {
+      console.warn('订单接口暂不可用，继续使用当前订单数据', error);
+    }
+  };
+
   const loadAdminSession = async () => {
     const token = getAdminToken();
     if (!token) {
@@ -311,6 +367,7 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       setCurrentTab((previousTab) => containsMenuTab(menuTree, previousTab) ? previousTab : (firstMenuTab(menuTree) || 'dashboard'));
       await hydrateIdentityMetadata(menus);
       await hydrateCatalogMetadata();
+      await hydrateTradeMetadata();
     } catch {
       clearAdminToken();
       setCurrentUser(null);
@@ -332,6 +389,7 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     setCurrentTab(firstMenuTab(menuTree) || 'dashboard');
     await hydrateIdentityMetadata(menus);
     await hydrateCatalogMetadata();
+    await hydrateTradeMetadata();
   };
 
   const logout = () => {
@@ -498,6 +556,13 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       })
     );
     showToast('订单状态已更新', 'success');
+    const numericId = Number(id);
+    if (status === 'shipped' && Number.isFinite(numericId) && trackingNumber && carrier) {
+      void shipTradeOrder(numericId, { logisticsCompany: carrier, trackingNo: trackingNumber }).catch(() => {
+        showToast('订单状态已更新本地状态，但服务端发货失败', 'warning');
+        void hydrateTradeMetadata();
+      });
+    }
   };
 
   const cancelOrder = (id: string) => {
@@ -505,6 +570,13 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       prev.map((o) => (o.id === id ? { ...o, status: 'cancelled' } : o))
     );
     showToast('订单已取消', 'warning');
+    const numericId = Number(id);
+    if (Number.isFinite(numericId)) {
+      void cancelTradeOrder(numericId).catch(() => {
+        showToast('订单已取消本地状态，但服务端取消失败', 'warning');
+        void hydrateTradeMetadata();
+      });
+    }
   };
 
   const batchShipOrders = (shipments: { orderId: string; carrier: string; trackingNumber: string }[]) => {
@@ -524,6 +596,21 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       })
     );
     showToast(`成功批量发货 ${shipments.length} 笔订单`, 'success');
+    const requests = shipments
+      .map((shipment) => ({ ...shipment, numericId: Number(shipment.orderId) }))
+      .filter((shipment) => Number.isFinite(shipment.numericId))
+      .map((shipment) => shipTradeOrder(shipment.numericId, {
+        logisticsCompany: shipment.carrier,
+        trackingNo: shipment.trackingNumber
+      }));
+    if (requests.length > 0) {
+      void Promise.allSettled(requests).then((results) => {
+        if (results.some((result) => result.status === 'rejected')) {
+          showToast('部分订单服务端发货失败，已重新同步订单', 'warning');
+        }
+        void hydrateTradeMetadata();
+      });
+    }
   };
 
   const batchCancelOrders = (ids: string[], reason?: string) => {
@@ -531,6 +618,18 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       prev.map((o) => (ids.includes(o.id) ? { ...o, status: 'cancelled', notes: reason || '批量取消' } : o))
     );
     showToast(`已批量取消 ${ids.length} 笔订单`, 'warning');
+    const requests = ids
+      .map((id) => Number(id))
+      .filter((id) => Number.isFinite(id))
+      .map((id) => cancelTradeOrder(id, reason));
+    if (requests.length > 0) {
+      void Promise.allSettled(requests).then((results) => {
+        if (results.some((result) => result.status === 'rejected')) {
+          showToast('部分订单服务端取消失败，已重新同步订单', 'warning');
+        }
+        void hydrateTradeMetadata();
+      });
+    }
   };
 
   const updateOrderRemark = (id: string, sellerNote: string, flagColor?: Order['flagColor']) => {
@@ -538,6 +637,13 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       prev.map((o) => (o.id === id ? { ...o, sellerNote, flagColor: flagColor || o.flagColor } : o))
     );
     showToast('卖家备注及标旗已更新', 'success');
+    const numericId = Number(id);
+    if (Number.isFinite(numericId)) {
+      void updateTradeOrderRemark(numericId, sellerNote).catch(() => {
+        showToast('备注已更新本地状态，但服务端保存失败', 'warning');
+        void hydrateTradeMetadata();
+      });
+    }
   };
 
   const processOrderRefund = (id: string, refundAmount: number, refundReason: string) => {
@@ -556,6 +662,13 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       })
     );
     showToast(`退款审核通过，已原路退款 ¥${refundAmount.toFixed(2)}`, 'success');
+    const numericId = Number(id);
+    if (Number.isFinite(numericId)) {
+      void refundTradeOrder(numericId, refundAmount, refundReason).catch(() => {
+        showToast('退款已更新本地状态，但服务端处理失败', 'warning');
+        void hydrateTradeMetadata();
+      });
+    }
   };
 
   // User Methods

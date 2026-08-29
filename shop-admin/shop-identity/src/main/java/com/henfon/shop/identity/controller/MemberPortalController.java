@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -79,6 +80,54 @@ public class MemberPortalController {
     @PostMapping("/addresses")
     public ApiResponse<Long> saveAddress(@Valid @RequestBody MemberAddressRequest request) {
         return ApiResponse.success(service.saveAddress(request), MDC.get("requestId"));
+    }
+
+    /**
+     * 更新会员地址。
+     *
+     * @param addressId 地址ID
+     * @param request 地址内容
+     * @return 空响应
+     * @author Henfon
+     * @date 2026-08-29
+     */
+    @PutMapping("/addresses/{addressId}")
+    public ApiResponse<Void> updateAddress(@PathVariable Long addressId,
+                                            @Valid @RequestBody MemberAddressRequest request) {
+        service.updateAddress(addressId, request);
+        return ApiResponse.success(MDC.get("requestId"));
+    }
+
+    /**
+     * 删除会员地址。
+     *
+     * @param addressId 地址ID
+     * @param memberId 会员ID
+     * @return 空响应
+     * @author Henfon
+     * @date 2026-08-29
+     */
+    @DeleteMapping("/addresses/{addressId}")
+    public ApiResponse<Void> deleteAddress(@PathVariable Long addressId,
+                                            @RequestParam Long memberId) {
+        service.deleteAddress(memberId, addressId);
+        return ApiResponse.success(MDC.get("requestId"));
+    }
+
+    /**
+     * 设置会员默认地址。
+     *
+     * @param addressId 地址ID
+     * @param memberId 会员ID
+     * @return 空响应
+     * @author Henfon
+     * @date 2026-08-29
+     */
+    @PutMapping("/addresses/{addressId}/default")
+    public ApiResponse<Void> setDefaultAddress(@PathVariable Long addressId,
+                                                @RequestParam Long memberId) {
+        service.setDefaultAddress(memberId, addressId);
+        return ApiResponse.success(MDC.get("requestId"));
     }
 
     /**

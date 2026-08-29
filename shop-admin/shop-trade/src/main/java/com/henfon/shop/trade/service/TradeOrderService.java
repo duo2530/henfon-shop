@@ -10,12 +10,18 @@ import com.henfon.shop.trade.mapper.TradeOrderItemMapper;
 import com.henfon.shop.trade.mapper.TradeOrderLogisticsMapper;
 import com.henfon.shop.trade.entity.TradeOrderLogistics;
 import com.henfon.shop.trade.dto.TradeOrderCreateRequest;
+import com.henfon.shop.trade.dto.TradeOrderShipRequest;
+import com.henfon.shop.trade.dto.TradeOrderCancelRequest;
+import com.henfon.shop.trade.dto.TradeOrderRemarkRequest;
+import com.henfon.shop.trade.dto.TradeOrderRefundRequest;
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
+import com.henfon.shop.common.exception.BusinessException;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.List;
 
 /**
@@ -26,6 +32,13 @@ import java.util.List;
  */
 @Service
 public class TradeOrderService {
+
+    private static final int STATUS_PENDING_PAYMENT = 10;
+    private static final int STATUS_PENDING_SHIPMENT = 20;
+    private static final int STATUS_SHIPPED = 30;
+    private static final int STATUS_COMPLETED = 40;
+    private static final int STATUS_CANCELLED = 50;
+    private static final int STATUS_REFUNDING = 60;
 
     private final TradeOrderMapper tradeOrderMapper;
     private final TradeOrderItemMapper tradeOrderItemMapper;
@@ -99,6 +112,136 @@ public class TradeOrderService {
                 .eq(TradeOrderLogistics::getOrderId, orderId)
                 .orderByAsc(TradeOrderLogistics::getSortNo)
                 .orderByAsc(TradeOrderLogistics::getEventTime));
+    }
+
+    /**
+     * 后台订单发货并记录首个物流节点。
+     *
+     * @param orderId 订单ID
+     * @param request 发货请求
+     * @author Henfon
+     * @date 2026-08-29
+     */
+    @Transactional
+    public void ship(Long orderId, TradeOrderShipRequest request) {
+        // 先读取订单并校验状态，避免已发货订单被重复覆盖物流信息。
+        TradeOrder order = requireOrder(orderId);
+        if (!Integer.valueOf(STATUS_PENDING_SHIPMENT).equals(order.getOrderStatus())) {
+            throw new BusinessException("TRADE_ORDER_STATUS_INVALID", "仅待发货订单允许发货");
+        }
+        LocalDateTime now = LocalDateTime.now();
+        order.setOrderStatus(STATUS_SHIPPED);
+        order.setLogisticsCompany(request.logisticsCompany().trim());
+        order.setTrackingNo(request.trackingNo().trim());
+        order.setShippedAt(now);
+        updateOrder(order);
+
+        // 物流轨迹与订单状态在同一事务内写入，确保后台发货后门户可以立即查看节点。
+        TradeOrderLogistics logistics = new TradeOrderLogistics();
+        logistics.setOrderId(orderId);
+        logistics.setTrackingNo(order.getTrackingNo());
+        logistics.setLogisticsCompany(order.getLogisticsCompany());
+        logistics.setLogisticsStatus("SHIPPED");
+        logistics.setEventTime(now);
+        logistics.setEventDescription("商家已发货，等待物流揽收");
+        logistics.setSortNo(0);
+        tradeOrderLogisticsMapper.insert(logistics);
+    }
+
+    /**
+     * 后台取消订单。
+     *
+     * @param orderId 订单ID
+     * @param request 取消请求
+     * @author Henfon
+     * @date 2026-08-29
+     */
+    @Transactional
+    public void cancel(Long orderId, TradeOrderCancelRequest request) {
+        TradeOrder order = requireOrder(orderId);
+        if (!Integer.valueOf(STATUS_PENDING_PAYMENT).equals(order.getOrderStatus())
+                && !Integer.valueOf(STATUS_PENDING_SHIPMENT).equals(order.getOrderStatus())) {
+            throw new BusinessException("TRADE_ORDER_STATUS_INVALID", "当前订单状态不允许取消");
+        }
+        order.setOrderStatus(STATUS_CANCELLED);
+        if (StringUtils.hasText(request.reason())) {
+            order.setRemark("后台取消：" + request.reason().trim());
+        }
+        updateOrder(order);
+    }
+
+    /**
+     * 更新订单卖家备注。
+     *
+     * @param orderId 订单ID
+     * @param request 备注请求
+     * @author Henfon
+     * @date 2026-08-29
+     */
+    @Transactional
+    public void updateRemark(Long orderId, TradeOrderRemarkRequest request) {
+        TradeOrder order = requireOrder(orderId);
+        order.setSellerRemark(request.sellerRemark() == null ? null : request.sellerRemark().trim());
+        updateOrder(order);
+    }
+
+    /**
+     * 后台确认订单退款。
+     *
+     * <p>当前支付模块尚未接入第三方退款，先将订单置为退款中并记录原因；支付模块完成后由退款单和回调推进最终状态。</p>
+     *
+     * @param orderId 订单ID
+     * @param request 退款请求
+     * @author Henfon
+     * @date 2026-08-29
+     */
+    @Transactional
+    public void refund(Long orderId, TradeOrderRefundRequest request) {
+        TradeOrder order = requireOrder(orderId);
+        if (!Integer.valueOf(1).equals(order.getPaymentStatus())) {
+            throw new BusinessException("TRADE_ORDER_PAYMENT_INVALID", "只有已支付订单允许退款");
+        }
+        BigDecimal paidAmount = order.getPaidAmount() == null ? BigDecimal.ZERO : order.getPaidAmount();
+        if (request.refundAmount().compareTo(paidAmount) > 0) {
+            throw new BusinessException("TRADE_REFUND_AMOUNT_INVALID", "退款金额不能超过实付金额");
+        }
+        if (STATUS_CANCELLED == order.getOrderStatus() || STATUS_REFUNDING == order.getOrderStatus()) {
+            throw new BusinessException("TRADE_ORDER_STATUS_INVALID", "当前订单状态不允许退款");
+        }
+        order.setOrderStatus(STATUS_REFUNDING);
+        order.setPaymentStatus(2);
+        order.setRemark("后台退款：" + request.reason().trim() + "，金额：" + request.refundAmount());
+        updateOrder(order);
+    }
+
+    /**
+     * 查询并校验订单存在。
+     *
+     * @param orderId 订单ID
+     * @return 订单实体
+     * @author Henfon
+     * @date 2026-08-29
+     */
+    private TradeOrder requireOrder(Long orderId) {
+        TradeOrder order = tradeOrderMapper.selectById(orderId);
+        if (order == null) {
+            throw new BusinessException("TRADE_ORDER_NOT_FOUND", "订单不存在或已删除");
+        }
+        return order;
+    }
+
+    /**
+     * 使用乐观锁更新订单。
+     *
+     * @param order 订单实体
+     * @author Henfon
+     * @date 2026-08-29
+     */
+    private void updateOrder(TradeOrder order) {
+        // updateById 会携带 version 条件，防止并发操作覆盖最新订单状态。
+        if (tradeOrderMapper.updateById(order) == 0) {
+            throw new BusinessException("TRADE_ORDER_CONCURRENT_UPDATE", "订单已被其他操作修改，请刷新后重试");
+        }
     }
 
     /**

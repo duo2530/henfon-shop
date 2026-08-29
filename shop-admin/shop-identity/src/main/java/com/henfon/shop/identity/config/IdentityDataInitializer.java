@@ -230,6 +230,20 @@ public class IdentityDataInitializer implements ApplicationRunner {
                 content.getId(), "BannerManagementView", "Image"));
         menus.add(ensureMenu("客户评价", "MENU", "content:review:query", "/content/reviews", 2,
                 content.getId(), "ReviewManagementView", "MessageSquare"));
+
+        // 订单操作按钮用于控制后台发货、取消、备注和退款等写权限。
+        String[][] tradeButtons = {
+                {"订单发货", "trade:order:ship"}, {"订单取消", "trade:order:cancel"},
+                {"订单备注", "trade:order:remark"}, {"订单退款", "trade:order:refund"}
+        };
+        for (String[] button : tradeButtons) {
+            SysMenu menu = ensureMenu(button[0], "BUTTON", button[1], null, 100);
+            if (!ecommerce.getId().equals(menu.getParentId())) {
+                menu.setParentId(ecommerce.getId());
+                sysMenuMapper.updateById(menu);
+            }
+            menus.add(menu);
+        }
         return menus;
     }
 

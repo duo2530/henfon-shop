@@ -28,6 +28,9 @@ import {
   fetchPortalProductDetail,
   fetchPortalProducts,
   savePortalAddress,
+  updatePortalAddress,
+  deletePortalAddress,
+  setDefaultPortalAddress,
   togglePortalFavorite,
   updatePortalCartItem,
   PortalBanner,
@@ -976,7 +979,7 @@ export default function App() {
   const handlePersistAddress = async (address: import('./types/ecommerce').Address) => {
     const memberId = resolveMemberId(currentUser);
     if (!memberId) return;
-    await savePortalAddress({
+    const savedId = await savePortalAddress({
       id: /^\d+$/.test(address.id) ? Number(address.id) : undefined,
       memberId,
       receiverName: address.receiverName,
@@ -988,6 +991,49 @@ export default function App() {
       addressTag: address.tag,
       isDefault: address.isDefault ? 1 : 0,
     });
+    const persistedAddress = { ...address, id: String(savedId) };
+    setMemberAddresses((previous) => [
+      ...(persistedAddress.isDefault ? previous.map((item) => ({ ...item, isDefault: false })) : previous),
+      persistedAddress,
+    ].filter((item, index, all) => all.findIndex((candidate) => candidate.id === item.id) === index));
+  };
+
+  const handleUpdateAddress = async (address: import('./types/ecommerce').Address) => {
+    const memberId = resolveMemberId(currentUser);
+    const addressId = Number(address.id);
+    if (!memberId || !Number.isFinite(addressId)) return;
+    await updatePortalAddress({
+      id: addressId,
+      memberId,
+      receiverName: address.receiverName,
+      receiverPhone: address.phone,
+      province: address.province,
+      city: address.city,
+      district: address.district,
+      detailAddress: address.detail,
+      addressTag: address.tag,
+      isDefault: address.isDefault ? 1 : 0,
+    });
+    setMemberAddresses((previous) => previous.map((item) => {
+      if (address.isDefault) return item.id === address.id ? address : { ...item, isDefault: false };
+      return item.id === address.id ? address : item;
+    }));
+  };
+
+  const handleDeleteAddress = async (addressId: string) => {
+    const memberId = resolveMemberId(currentUser);
+    const numericAddressId = Number(addressId);
+    if (!memberId || !Number.isFinite(numericAddressId)) return;
+    await deletePortalAddress(memberId, numericAddressId);
+    setMemberAddresses((previous) => previous.filter((item) => item.id !== addressId));
+  };
+
+  const handleSetDefaultAddress = async (addressId: string) => {
+    const memberId = resolveMemberId(currentUser);
+    const numericAddressId = Number(addressId);
+    if (!memberId || !Number.isFinite(numericAddressId)) return;
+    await setDefaultPortalAddress(memberId, numericAddressId);
+    setMemberAddresses((previous) => previous.map((item) => ({ ...item, isDefault: item.id === addressId })));
   };
 
   // Filtered & Sorted Products
@@ -1410,6 +1456,9 @@ export default function App() {
         onPersistOrder={handlePersistOrder}
         initialAddresses={memberAddresses}
         onPersistAddress={handlePersistAddress}
+        onUpdateAddress={handleUpdateAddress}
+        onDeleteAddress={handleDeleteAddress}
+        onSetDefaultAddress={handleSetDefaultAddress}
         onApplyCoupon={handleApplyCoupon}
         onRemoveCoupon={handleRemoveCoupon}
       />

@@ -1,6 +1,8 @@
 package com.henfon.shop.identity.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
+import com.henfon.shop.common.exception.BusinessException;
 import com.henfon.shop.identity.dto.MemberAddressRequest;
 import com.henfon.shop.identity.entity.MemberAddress;
 import com.henfon.shop.identity.entity.MemberCompareHistory;
@@ -90,7 +92,10 @@ public class MemberPortalService {
     @Transactional
     public Long saveAddress(MemberAddressRequest request) {
         MemberAddress address = new MemberAddress();
-        address.setId(request.id());
+        if (request.id() != null) {
+            // 编辑时校验地址归属，避免客户端借助 memberId 修改其他会员地址。
+            address = requireAddress(request.memberId(), request.id());
+        }
         address.setMemberId(request.memberId());
         address.setReceiverName(request.receiverName());
         address.setReceiverPhone(request.receiverPhone());
@@ -101,15 +106,89 @@ public class MemberPortalService {
         address.setAddressTag(request.addressTag());
         address.setIsDefault(request.isDefault() == null ? 0 : request.isDefault());
         if (address.getIsDefault() == 1) {
-            addressMapper.update(null, new com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper<MemberAddress>()
+            addressMapper.update(null, new UpdateWrapper<MemberAddress>()
                     .eq("member_id", request.memberId()).set("is_default", 0));
         }
-        if (address.getId() == null) {
+        if (request.id() == null) {
             addressMapper.insert(address);
         } else {
-            addressMapper.updateById(address);
+            if (addressMapper.updateById(address) == 0) {
+                throw new BusinessException("MEMBER_ADDRESS_CONCURRENT_UPDATE", "地址已被其他操作修改，请刷新后重试");
+            }
         }
         return address.getId();
+    }
+
+    /**
+     * 更新会员地址。
+     *
+     * @param addressId 地址ID
+     * @param request 地址内容
+     * @author Henfon
+     * @date 2026-08-29
+     */
+    @Transactional
+    public void updateAddress(Long addressId, MemberAddressRequest request) {
+        // 路径ID优先于请求体ID，确保更新目标不可被客户端混淆。
+        MemberAddressRequest normalized = new MemberAddressRequest(addressId, request.memberId(), request.receiverName(),
+                request.receiverPhone(), request.province(), request.city(), request.district(),
+                request.detailAddress(), request.addressTag(), request.isDefault());
+        saveAddress(normalized);
+    }
+
+    /**
+     * 删除会员地址。
+     *
+     * @param memberId 会员ID
+     * @param addressId 地址ID
+     * @author Henfon
+     * @date 2026-08-29
+     */
+    @Transactional
+    public void deleteAddress(Long memberId, Long addressId) {
+        MemberAddress address = requireAddress(memberId, addressId);
+        // 使用逻辑删除，保留历史订单地址快照所需的审计信息。
+        if (addressMapper.deleteById(address.getId()) == 0) {
+            throw new BusinessException("MEMBER_ADDRESS_DELETE_FAILED", "地址删除失败，请刷新后重试");
+        }
+    }
+
+    /**
+     * 设置会员默认地址。
+     *
+     * @param memberId 会员ID
+     * @param addressId 地址ID
+     * @author Henfon
+     * @date 2026-08-29
+     */
+    @Transactional
+    public void setDefaultAddress(Long memberId, Long addressId) {
+        MemberAddress address = requireAddress(memberId, addressId);
+        addressMapper.update(null, new UpdateWrapper<MemberAddress>()
+                .eq("member_id", memberId).set("is_default", 0));
+        address.setIsDefault(1);
+        if (addressMapper.updateById(address) == 0) {
+            throw new BusinessException("MEMBER_ADDRESS_CONCURRENT_UPDATE", "地址已被其他操作修改，请刷新后重试");
+        }
+    }
+
+    /**
+     * 查询并校验会员地址归属。
+     *
+     * @param memberId 会员ID
+     * @param addressId 地址ID
+     * @return 地址实体
+     * @author Henfon
+     * @date 2026-08-29
+     */
+    private MemberAddress requireAddress(Long memberId, Long addressId) {
+        MemberAddress address = addressMapper.selectOne(new LambdaQueryWrapper<MemberAddress>()
+                .eq(MemberAddress::getId, addressId)
+                .eq(MemberAddress::getMemberId, memberId));
+        if (address == null) {
+            throw new BusinessException("MEMBER_ADDRESS_NOT_FOUND", "地址不存在或不属于当前会员");
+        }
+        return address;
     }
 
     /**

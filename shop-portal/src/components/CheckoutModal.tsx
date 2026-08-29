@@ -29,6 +29,9 @@ interface CheckoutModalProps {
   onPersistOrder?: (order: Order) => Promise<void>;
   initialAddresses?: Address[];
   onPersistAddress?: (address: Address) => Promise<void>;
+  onUpdateAddress?: (address: Address) => Promise<void>;
+  onDeleteAddress?: (addressId: string) => Promise<void>;
+  onSetDefaultAddress?: (addressId: string) => Promise<void>;
 }
 
 export const CheckoutModal: React.FC<CheckoutModalProps> = ({
@@ -43,14 +46,18 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   onPersistOrder,
   initialAddresses,
   onPersistAddress,
+  onUpdateAddress,
+  onDeleteAddress,
+  onSetDefaultAddress,
 }) => {
   const safeItems = items || [];
 
-  const [addresses, setAddresses] = useState<Address[]>(initialAddresses?.length ? initialAddresses : INITIAL_ADDRESSES);
+  const [addresses, setAddresses] = useState<Address[]>(initialAddresses ?? INITIAL_ADDRESSES);
   const [selectedAddressId, setSelectedAddressId] = useState<string>(
     (initialAddresses?.[0] || INITIAL_ADDRESSES[0])?.id || ''
   );
   const [isAddingAddress, setIsAddingAddress] = useState(false);
+  const [editingAddressId, setEditingAddressId] = useState<string | null>(null);
   const [showCouponSelector, setShowCouponSelector] = useState(false);
 
   // New Address form
@@ -68,9 +75,9 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
-    if (initialAddresses && initialAddresses.length > 0) {
+    if (initialAddresses) {
       setAddresses(initialAddresses);
-      setSelectedAddressId(initialAddresses.find((address) => address.isDefault)?.id || initialAddresses[0].id);
+      setSelectedAddressId(initialAddresses.find((address) => address.isDefault)?.id || initialAddresses[0]?.id || '');
     }
   }, [initialAddresses]);
 
@@ -92,12 +99,33 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     : 0;
   const totalPayable = Math.max(0, rawSubtotal - couponDiscount + shippingFee);
 
-  const handleSaveNewAddress = async (e: React.FormEvent) => {
+  const resetAddressForm = () => {
+    setNewReceiver('');
+    setNewPhone('');
+    setNewRegion('北京市 朝阳区');
+    setNewDetail('');
+    setNewTag('家');
+    setEditingAddressId(null);
+    setIsAddingAddress(false);
+  };
+
+  const handleEditAddress = (address: Address) => {
+    setEditingAddressId(address.id);
+    setNewReceiver(address.receiverName);
+    setNewPhone(address.phone);
+    setNewRegion([address.province, address.city, address.district].filter(Boolean).join(' '));
+    setNewDetail(address.detail);
+    setNewTag(address.tag || '家');
+    setIsAddingAddress(true);
+  };
+
+  const handleSaveAddress = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newReceiver || !newPhone || !newDetail) return;
 
-    const newAddr: Address = {
-      id: `addr-${Date.now()}`,
+    const editingAddress = editingAddressId ? addresses.find((address) => address.id === editingAddressId) : undefined;
+    const nextAddress: Address = {
+      id: editingAddress?.id || `addr-${Date.now()}`,
       receiverName: newReceiver,
       phone: newPhone,
       province: newRegion.split(' ')[0] || '北京市',
@@ -108,17 +136,52 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       isDefault: false,
     };
 
-    setAddresses([newAddr, ...addresses]);
+    const previousAddresses = addresses;
+    const finalAddress = editingAddress ? { ...editingAddress, ...nextAddress } : nextAddress;
+    setAddresses(editingAddress
+      ? addresses.map((address) => address.id === editingAddress.id ? finalAddress : address)
+      : [finalAddress, ...addresses]);
     try {
-      await onPersistAddress?.(newAddr);
+      if (editingAddress) await onUpdateAddress?.(finalAddress);
+      else await onPersistAddress?.(finalAddress);
     } catch (error) {
-      console.warn('收货地址同步失败，已保留本地地址', error);
+      setAddresses(previousAddresses);
+      console.warn('收货地址同步失败，已恢复原地址', error);
+      return;
     }
-    setSelectedAddressId(newAddr.id);
-    setIsAddingAddress(false);
-    setNewReceiver('');
-    setNewPhone('');
-    setNewDetail('');
+    setSelectedAddressId(finalAddress.id);
+    resetAddressForm();
+  };
+
+  const handleSetDefaultAddress = async (addressId: string) => {
+    const previousAddresses = addresses;
+    setAddresses(addresses.map((address) => ({ ...address, isDefault: address.id === addressId })));
+    setSelectedAddressId(addressId);
+    try {
+      await onSetDefaultAddress?.(addressId);
+    } catch (error) {
+      setAddresses(previousAddresses);
+      console.warn('默认地址同步失败，已恢复原默认地址', error);
+    }
+  };
+
+  const handleDeleteAddress = async (addressId: string) => {
+    const address = addresses.find((item) => item.id === addressId);
+    if (!address || !window.confirm(`确定删除收货地址“${address.receiverName}”吗？`)) return;
+    const previousAddresses = addresses;
+    const previousSelectedAddressId = selectedAddressId;
+    const nextAddresses = addresses.filter((item) => item.id !== addressId);
+    setAddresses(nextAddresses);
+    if (selectedAddressId === addressId) {
+      setSelectedAddressId(nextAddresses.find((item) => item.isDefault)?.id || nextAddresses[0]?.id || '');
+    }
+    try {
+      await onDeleteAddress?.(addressId);
+    } catch (error) {
+      setAddresses(previousAddresses);
+      setSelectedAddressId(previousSelectedAddressId);
+      console.warn('收货地址删除失败，已恢复原地址', error);
+    }
   };
 
   const handlePayOrder = async () => {
@@ -231,18 +294,24 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                 收货地址
               </h3>
               <button
-                onClick={() => setIsAddingAddress(!isAddingAddress)}
+                onClick={() => {
+                  if (isAddingAddress) resetAddressForm();
+                  else {
+                    setEditingAddressId(null);
+                    setIsAddingAddress(true);
+                  }
+                }}
                 className="text-xs font-semibold text-zinc-800 hover:text-zinc-950 flex items-center gap-1"
               >
                 <Plus className="w-3.5 h-3.5" />
-                {isAddingAddress ? '取消新增' : '新增收货地址'}
+                {isAddingAddress ? '取消编辑' : '新增收货地址'}
               </button>
             </div>
 
             {/* Inline Add Address Form */}
             {isAddingAddress && (
               <form
-                onSubmit={handleSaveNewAddress}
+                onSubmit={handleSaveAddress}
                 className="p-4 rounded-2xl bg-zinc-50 border border-zinc-200 space-y-3 animate-in fade-in"
               >
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -325,7 +394,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                     type="submit"
                     className="px-4 py-1.5 rounded-xl bg-zinc-900 text-white text-xs font-semibold hover:bg-zinc-800 transition"
                   >
-                    保存并使用
+                    {editingAddressId ? '保存修改并使用' : '保存并使用'}
                   </button>
                 </div>
               </form>
@@ -363,6 +432,46 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                     <p className="text-xs text-zinc-600 leading-snug">
                       {addr.province} {addr.city} {addr.district} {addr.detail}
                     </p>
+                    <div className="flex items-center justify-between gap-2 mt-2 pt-2 border-t border-zinc-100">
+                      <div className="flex items-center gap-2">
+                        {addr.isDefault ? (
+                          <span className="text-[10px] font-semibold text-emerald-700">默认地址</span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              void handleSetDefaultAddress(addr.id);
+                            }}
+                            className="text-[10px] font-semibold text-zinc-500 hover:text-zinc-900"
+                          >
+                            设为默认
+                          </button>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            handleEditAddress(addr);
+                          }}
+                          className="text-[10px] font-semibold text-zinc-500 hover:text-zinc-900"
+                        >
+                          编辑
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            void handleDeleteAddress(addr.id);
+                          }}
+                          className="text-[10px] font-semibold text-rose-500 hover:text-rose-700"
+                        >
+                          删除
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 );
               })}

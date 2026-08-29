@@ -265,3 +265,26 @@ export async function savePortalAddress(payload: {
 }) {
   return request<number>('/api/portal/member/addresses', { method: 'POST', body: JSON.stringify(payload) });
 }
+
+export async function updatePortalAddress(payload: {
+  id: number;
+  memberId: number;
+  receiverName: string;
+  receiverPhone: string;
+  province: string;
+  city: string;
+  district: string;
+  detailAddress: string;
+  addressTag?: string;
+  isDefault?: number;
+}) {
+  return request<void>(`/api/portal/member/addresses/${payload.id}`, { method: 'PUT', body: JSON.stringify(payload) });
+}
+
+export async function deletePortalAddress(memberId: number, addressId: number) {
+  return request<void>(`/api/portal/member/addresses/${addressId}?memberId=${memberId}`, { method: 'DELETE' });
+}
+
+export async function setDefaultPortalAddress(memberId: number, addressId: number) {
+  return request<void>(`/api/portal/member/addresses/${addressId}/default?memberId=${memberId}`, { method: 'PUT' });
+}

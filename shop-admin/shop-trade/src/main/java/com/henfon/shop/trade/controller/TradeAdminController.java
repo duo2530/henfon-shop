@@ -5,11 +5,18 @@ import com.henfon.shop.common.api.ApiResponse;
 import com.henfon.shop.trade.entity.TradeOrder;
 import com.henfon.shop.trade.entity.TradeOrderItem;
 import com.henfon.shop.trade.entity.TradeOrderLogistics;
+import com.henfon.shop.trade.dto.TradeOrderShipRequest;
+import com.henfon.shop.trade.dto.TradeOrderCancelRequest;
+import com.henfon.shop.trade.dto.TradeOrderRemarkRequest;
+import com.henfon.shop.trade.dto.TradeOrderRefundRequest;
+import jakarta.validation.Valid;
 import com.henfon.shop.trade.service.TradeOrderService;
 import org.slf4j.MDC;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -86,5 +93,73 @@ public class TradeAdminController {
     @PreAuthorize("hasAuthority('trade:order:query')")
     public ApiResponse<List<TradeOrderLogistics>> listLogistics(@PathVariable Long orderId) {
         return ApiResponse.success(tradeOrderService.listLogistics(orderId), MDC.get("requestId"));
+    }
+
+    /**
+     * 后台订单发货。
+     *
+     * @param orderId 订单ID
+     * @param request 发货信息
+     * @return 空响应
+     * @author Henfon
+     * @date 2026-08-29
+     */
+    @PutMapping("/orders/{orderId}/ship")
+    @PreAuthorize("hasAuthority('trade:order:ship')")
+    public ApiResponse<Void> ship(@PathVariable Long orderId,
+                                  @Valid @RequestBody TradeOrderShipRequest request) {
+        tradeOrderService.ship(orderId, request);
+        return ApiResponse.success(MDC.get("requestId"));
+    }
+
+    /**
+     * 后台取消订单。
+     *
+     * @param orderId 订单ID
+     * @param request 取消原因
+     * @return 空响应
+     * @author Henfon
+     * @date 2026-08-29
+     */
+    @PutMapping("/orders/{orderId}/cancel")
+    @PreAuthorize("hasAuthority('trade:order:cancel')")
+    public ApiResponse<Void> cancel(@PathVariable Long orderId,
+                                    @Valid @RequestBody TradeOrderCancelRequest request) {
+        tradeOrderService.cancel(orderId, request);
+        return ApiResponse.success(MDC.get("requestId"));
+    }
+
+    /**
+     * 更新订单卖家备注。
+     *
+     * @param orderId 订单ID
+     * @param request 备注内容
+     * @return 空响应
+     * @author Henfon
+     * @date 2026-08-29
+     */
+    @PutMapping("/orders/{orderId}/remark")
+    @PreAuthorize("hasAuthority('trade:order:remark')")
+    public ApiResponse<Void> updateRemark(@PathVariable Long orderId,
+                                          @Valid @RequestBody TradeOrderRemarkRequest request) {
+        tradeOrderService.updateRemark(orderId, request);
+        return ApiResponse.success(MDC.get("requestId"));
+    }
+
+    /**
+     * 后台确认订单退款。
+     *
+     * @param orderId 订单ID
+     * @param request 退款信息
+     * @return 空响应
+     * @author Henfon
+     * @date 2026-08-29
+     */
+    @PutMapping("/orders/{orderId}/refund")
+    @PreAuthorize("hasAuthority('trade:order:refund')")
+    public ApiResponse<Void> refund(@PathVariable Long orderId,
+                                    @Valid @RequestBody TradeOrderRefundRequest request) {
+        tradeOrderService.refund(orderId, request);
+        return ApiResponse.success(MDC.get("requestId"));
     }
 }

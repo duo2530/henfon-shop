@@ -1,6 +1,7 @@
 package com.henfon.shop.identity.dto;
 
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 
 /**
  * 会员地址保存请求。
@@ -18,7 +19,7 @@ import jakarta.validation.constraints.NotBlank;
  * @author Henfon
  * @date 2026-08-29
  */
-public record MemberAddressRequest(Long id, Long memberId, @NotBlank String receiverName,
+public record MemberAddressRequest(Long id, @NotNull(message = "会员ID不能为空") Long memberId, @NotBlank String receiverName,
                                    @NotBlank String receiverPhone, @NotBlank String province,
                                    @NotBlank String city, @NotBlank String district,
                                    @NotBlank String detailAddress, String addressTag, Integer isDefault) {
