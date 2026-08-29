@@ -22,7 +22,7 @@ Henfon 商城后端模块化单体工程。
 
 ## 本地配置
 
-默认配置位于 `shop-boot/src/main/resources/application.yml`，已按当前本机服务填写：
+公共配置位于 `shop-boot/src/main/resources/application.yml`，本机开发连接信息位于 `shop-boot/src/main/resources/application-dev.yml`：
 
 - MySQL 8：`127.0.0.1:3306/henfon-shop`，用户 `root`，密码 `123456`
 - Redis：`127.0.0.1:6379`，用户 `default`，密码 `123456`
@@ -30,6 +30,26 @@ Henfon 商城后端模块化单体工程。
 - RocketMQ NameServer：`127.0.0.1:9876`
 
 所有连接信息都支持通过环境变量覆盖，生产环境不要使用默认密码。
+
+### 配置环境
+
+项目提供三套 Spring Boot 环境配置：
+
+- `dev`：开发环境，默认激活，连接本机 `henfon-shop`，开启 DEBUG 日志和 SQL 输出。
+- `test`：测试环境，默认连接独立的 `henfon-shop-test` 数据库，Redis 使用 DB 1。
+- `prod`：生产环境，不提供数据库、Redis、MinIO、RocketMQ 和 JWT 密钥默认值，必须由部署平台注入环境变量。
+
+通过环境变量或启动参数切换环境：
+
+```powershell
+$env:SPRING_PROFILES_ACTIVE = "dev"
+java -jar shop-boot/target/shop-boot-0.0.1-SNAPSHOT.jar
+
+# 或者
+java -jar shop-boot/target/shop-boot-0.0.1-SNAPSHOT.jar --spring.profiles.active=test
+```
+
+生产环境至少需要配置：`SHOP_MYSQL_URL`、`SHOP_MYSQL_USERNAME`、`SHOP_MYSQL_PASSWORD`、`SHOP_REDIS_HOST`、`SHOP_REDIS_PASSWORD`、`ROCKETMQ_NAME_SERVER`、`SHOP_JWT_SECRET`、`MINIO_ENDPOINT`、`MINIO_ACCESS_KEY` 和 `MINIO_SECRET_KEY`。
 
 ## 构建和启动
 

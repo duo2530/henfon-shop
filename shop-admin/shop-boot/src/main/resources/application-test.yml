@@ -1,0 +1,52 @@
+spring:
+  config:
+    activate:
+      on-profile: test
+  datasource:
+    # 测试环境默认使用独立库，避免测试数据污染开发库；执行测试前请创建该数据库或覆盖连接串。
+    url: ${SHOP_TEST_MYSQL_URL:jdbc:mysql://127.0.0.1:3306/henfon-shop-test?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true}
+    username: ${SHOP_TEST_MYSQL_USERNAME:root}
+    password: ${SHOP_TEST_MYSQL_PASSWORD:123456}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      pool-name: shop-hikari-test
+      minimum-idle: 1
+      maximum-pool-size: 5
+      initialization-fail-timeout: -1
+  data:
+    redis:
+      host: ${SHOP_TEST_REDIS_HOST:127.0.0.1}
+      port: ${SHOP_TEST_REDIS_PORT:6379}
+      username: ${SHOP_TEST_REDIS_USERNAME:}
+      password: ${SHOP_TEST_REDIS_PASSWORD:123456}
+      database: ${SHOP_TEST_REDIS_DATABASE:1}
+      timeout: ${SHOP_TEST_REDIS_TIMEOUT:3s}
+
+rocketmq:
+  # 测试环境使用独立生产者组，避免消费/发送标识与开发环境混用。
+  name-server: ${SHOP_TEST_ROCKETMQ_NAME_SERVER:127.0.0.1:9876}
+  producer:
+    group: ${SHOP_TEST_ROCKETMQ_PRODUCER_GROUP:shop-admin-test-producer}
+
+shop:
+  security:
+    jwt:
+      secret: ${SHOP_TEST_JWT_SECRET:henfon-shop-test-jwt-secret-key-change-me-2026}
+      expiration-seconds: ${SHOP_TEST_JWT_EXPIRATION_SECONDS:3600}
+      issuer: ${SHOP_TEST_JWT_ISSUER:henfon-shop-test}
+  storage:
+    minio:
+      endpoint: ${SHOP_TEST_MINIO_ENDPOINT:http://127.0.0.1:9000}
+      access-key: ${SHOP_TEST_MINIO_ACCESS_KEY:minioadmin}
+      secret-key: ${SHOP_TEST_MINIO_SECRET_KEY:minioadmin}
+      bucket: ${SHOP_TEST_MINIO_BUCKET:shop-test}
+
+logging:
+  level:
+    com.henfon.shop: ${SHOP_TEST_LOG_LEVEL:INFO}
+    org.springframework.web: WARN
+
+management:
+  endpoint:
+    health:
+      show-details: always

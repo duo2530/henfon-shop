@@ -1,0 +1,61 @@
+spring:
+  config:
+    activate:
+      on-profile: prod
+  datasource:
+    # 生产环境不提供默认连接信息，必须通过部署平台注入环境变量。
+    url: ${SHOP_MYSQL_URL}
+    username: ${SHOP_MYSQL_USERNAME}
+    password: ${SHOP_MYSQL_PASSWORD}
+    hikari:
+      minimum-idle: ${SHOP_MYSQL_POOL_MIN:10}
+      maximum-pool-size: ${SHOP_MYSQL_POOL_MAX:50}
+      connection-timeout: ${SHOP_MYSQL_CONNECTION_TIMEOUT:3000}
+  data:
+    redis:
+      host: ${SHOP_REDIS_HOST}
+      port: ${SHOP_REDIS_PORT:6379}
+      username: ${SHOP_REDIS_USERNAME:}
+      password: ${SHOP_REDIS_PASSWORD}
+      database: ${SHOP_REDIS_DATABASE:0}
+      timeout: ${SHOP_REDIS_TIMEOUT:3s}
+
+mybatis-plus:
+  configuration:
+    # 生产环境不输出 SQL 和参数，避免日志泄露敏感数据。
+    log-impl: org.apache.ibatis.logging.nologging.NoLoggingImpl
+
+rocketmq:
+  name-server: ${ROCKETMQ_NAME_SERVER}
+  producer:
+    group: ${ROCKETMQ_PRODUCER_GROUP:shop-admin-prod-producer}
+    send-message-timeout: ${ROCKETMQ_SEND_TIMEOUT:5000}
+    retry-times-when-send-failed: ${ROCKETMQ_RETRY_TIMES:3}
+
+shop:
+  security:
+    jwt:
+      # 生产环境必须使用长度足够且定期轮换的密钥。
+      secret: ${SHOP_JWT_SECRET}
+      expiration-seconds: ${SHOP_JWT_EXPIRATION_SECONDS:7200}
+      issuer: ${SHOP_JWT_ISSUER:henfon-shop}
+  storage:
+    minio:
+      endpoint: ${MINIO_ENDPOINT}
+      access-key: ${MINIO_ACCESS_KEY}
+      secret-key: ${MINIO_SECRET_KEY}
+      bucket: ${MINIO_BUCKET:shop}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: never
+
+logging:
+  level:
+    root: ${SHOP_ROOT_LOG_LEVEL:INFO}
+    com.henfon.shop: ${SHOP_LOG_LEVEL:INFO}
