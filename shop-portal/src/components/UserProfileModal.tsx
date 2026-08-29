@@ -1,0 +1,468 @@
+import React, { useState } from 'react';
+import {
+  X,
+  User,
+  Crown,
+  Sparkles,
+  Coins,
+  Wallet,
+  Ticket,
+  Package,
+  Heart,
+  ShieldCheck,
+  LogOut,
+  Edit3,
+  Check,
+  Smartphone,
+  Mail,
+  Calendar,
+  Layers,
+} from 'lucide-react';
+import { UserProfile, MemberLevel, Coupon } from '../types/ecommerce';
+
+interface UserProfileModalProps {
+  isOpen: boolean;
+  user: UserProfile | null;
+  claimedCoupons?: Coupon[];
+  onClose: () => void;
+  onUpdateUser: (updatedUser: UserProfile) => void;
+  onLogout: () => void;
+  onOpenOrders: () => void;
+  onOpenWishlist: () => void;
+  onOpenCouponCenter?: () => void;
+}
+
+const AVATAR_OPTIONS = [
+  'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
+  'https://images.unsplash.com/photo-1580489944761-15a19d654956?w=150&auto=format&fit=crop&q=80',
+  'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
+  'https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?w=150&auto=format&fit=crop&q=80',
+  'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150&auto=format&fit=crop&q=80',
+  'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
+];
+
+export const UserProfileModal: React.FC<UserProfileModalProps> = ({
+  isOpen,
+  user,
+  claimedCoupons = [],
+  onClose,
+  onUpdateUser,
+  onLogout,
+  onOpenOrders,
+  onOpenWishlist,
+  onOpenCouponCenter,
+}) => {
+  const [isEditing, setIsEditing] = useState(false);
+  const [showCouponsView, setShowCouponsView] = useState(false);
+  const [nickname, setNickname] = useState(user?.nickname || '');
+  const [email, setEmail] = useState(user?.email || '');
+  const [phone, setPhone] = useState(user?.phone || '');
+  const [selectedAvatar, setSelectedAvatar] = useState(user?.avatar || AVATAR_OPTIONS[0]);
+
+  if (!isOpen || !user) return null;
+
+  const handleSaveProfile = (e: React.FormEvent) => {
+    e.preventDefault();
+    onUpdateUser({
+      ...user,
+      nickname,
+      email,
+      phone,
+      avatar: selectedAvatar,
+    });
+    setIsEditing(false);
+  };
+
+  const getMemberLevelColor = (level: MemberLevel) => {
+    switch (level) {
+      case '黑金SVIP':
+        return {
+          bg: 'bg-zinc-950 text-amber-300 border-amber-400/40',
+          badge: '黑金SVIP · 专属9.2折',
+          perks: ['全场自营享 9.2 折专享价', '每月赠送 3 张顺丰免邮券', '购物享 2 倍积分返还', '1对1专属私享管家'],
+        };
+      case '黄金VIP':
+        return {
+          bg: 'bg-amber-500/10 text-amber-900 border-amber-400/40',
+          badge: '黄金VIP · 专属9.5折',
+          perks: ['全场自营享 9.5 折专享价', '每月赠送 1 张免邮券', '购物享 1.5 倍积分返还', '优先极速退款通道'],
+        };
+      default:
+        return {
+          bg: 'bg-zinc-100 text-zinc-800 border-zinc-200',
+          badge: '普通会员',
+          perks: ['注册即享新人礼包', '实付满 ¥99 顺丰包邮', '购物按 1:1 累计积分', '7天无理由退换'],
+        };
+    }
+  };
+
+  const levelInfo = getMemberLevelColor(user.memberLevel);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-zinc-950/70 backdrop-blur-sm animate-in fade-in duration-200">
+      <div
+        className="relative w-full max-w-lg bg-white rounded-3xl shadow-2xl border border-zinc-100 overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header with VIP Banner */}
+        <div className="bg-zinc-900 text-white p-6 pb-8 relative overflow-hidden shrink-0">
+          <div className="absolute -right-12 -top-12 w-48 h-48 bg-amber-400/15 rounded-full blur-3xl pointer-events-none" />
+
+          {/* Close button */}
+          <button
+            onClick={onClose}
+            className="absolute top-4 right-4 p-2 rounded-full bg-zinc-800/80 text-zinc-400 hover:text-white hover:bg-zinc-700 transition"
+          >
+            <X className="w-4 h-4" />
+          </button>
+
+          {/* User Info Header */}
+          <div className="flex items-center gap-4">
+            <div className="relative">
+              <img
+                src={isEditing ? selectedAvatar : user.avatar}
+                alt={user.nickname}
+                className="w-16 h-16 rounded-2xl object-cover ring-2 ring-amber-400/60 bg-zinc-800 shadow-md"
+              />
+              <div className="absolute -bottom-1 -right-1 p-1 rounded-full bg-amber-400 text-zinc-950 shadow-sm">
+                <Crown className="w-3.5 h-3.5" />
+              </div>
+            </div>
+
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2">
+                <h3 className="text-lg font-black text-white truncate">{user.nickname}</h3>
+                <span
+                  className={`text-[10px] px-2 py-0.5 rounded-full font-bold border ${levelInfo.bg}`}
+                >
+                  {user.memberLevel}
+                </span>
+              </div>
+              <p className="text-xs text-zinc-400 mt-0.5">账号: @{user.username}</p>
+              <p className="text-[11px] text-zinc-500 flex items-center gap-1 mt-1">
+                <Calendar className="w-3 h-3" />
+                注册于 {user.joinedDate}
+              </p>
+            </div>
+
+            {!isEditing && (
+              <button
+                onClick={() => {
+                  setNickname(user.nickname);
+                  setEmail(user.email);
+                  setPhone(user.phone);
+                  setSelectedAvatar(user.avatar);
+                  setIsEditing(true);
+                }}
+                className="px-3 py-1.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-zinc-200 text-xs font-semibold flex items-center gap-1.5 transition border border-zinc-700/80"
+              >
+                <Edit3 className="w-3.5 h-3.5" />
+                <span>编辑资料</span>
+              </button>
+            )}
+          </div>
+
+          {/* Asset summary pill row */}
+          <div className="grid grid-cols-3 gap-2 mt-5 bg-zinc-800/80 p-3 rounded-2xl border border-zinc-700/60">
+            <div className="text-center">
+              <span className="text-[10px] text-zinc-400 block font-medium">商城积分</span>
+              <span className="text-sm font-black text-amber-400">{user.points.toLocaleString()}</span>
+            </div>
+            <div className="text-center border-x border-zinc-700/80">
+              <span className="text-[10px] text-zinc-400 block font-medium">账户余额</span>
+              <span className="text-sm font-black text-white">¥{user.balance.toFixed(2)}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowCouponsView(!showCouponsView)}
+              className="text-center hover:bg-zinc-700/50 rounded-xl p-0.5 transition cursor-pointer"
+            >
+              <span className="text-[10px] text-zinc-400 block font-medium">可用优惠券</span>
+              <span className="text-sm font-black text-amber-300 flex items-center justify-center gap-1">
+                <Ticket className="w-3.5 h-3.5" />
+                {claimedCoupons.length || user.couponsCount} 张
+              </span>
+            </button>
+          </div>
+        </div>
+
+        {/* Modal Body */}
+        <div className="p-6 overflow-y-auto custom-scrollbar space-y-5 flex-1">
+          {showCouponsView ? (
+            /* My Claimed Coupons View */
+            <div className="space-y-4 animate-in fade-in duration-200">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Ticket className="w-4 h-4 text-amber-600" />
+                  <h4 className="text-sm font-bold text-zinc-900">我的优惠券包 ({claimedCoupons.length} 张)</h4>
+                </div>
+                {onOpenCouponCenter && (
+                  <button
+                    onClick={() => {
+                      onClose();
+                      onOpenCouponCenter();
+                    }}
+                    className="text-xs text-amber-700 hover:text-amber-900 font-bold underline"
+                  >
+                    领更多神券 &gt;
+                  </button>
+                )}
+              </div>
+
+              {claimedCoupons.length === 0 ? (
+                <div className="py-8 text-center bg-zinc-50 rounded-2xl border border-dashed border-zinc-200 space-y-2">
+                  <Ticket className="w-8 h-8 text-zinc-300 mx-auto" />
+                  <p className="text-xs text-zinc-500 font-medium">暂无领取的优惠券</p>
+                  {onOpenCouponCenter && (
+                    <button
+                      onClick={() => {
+                        onClose();
+                        onOpenCouponCenter();
+                      }}
+                      className="px-4 py-1.5 rounded-xl bg-zinc-900 text-white text-xs font-bold hover:bg-zinc-800 transition shadow-xs"
+                    >
+                      前往领券中心免费领取
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-2.5 max-h-64 overflow-y-auto pr-1">
+                  {claimedCoupons.map((c) => (
+                    <div
+                      key={c.code}
+                      className="p-3 rounded-2xl border border-amber-200/80 bg-linear-to-r from-amber-50/70 to-white flex items-center justify-between gap-3 shadow-2xs"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="w-12 h-12 rounded-xl bg-amber-500/10 border border-amber-300/60 text-rose-600 flex flex-col items-center justify-center shrink-0">
+                          <span className="text-[10px] font-bold leading-none">¥</span>
+                          <span className="text-lg font-black leading-none font-mono">{c.discountAmount}</span>
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-1.5">
+                            <h5 className="text-xs font-bold text-zinc-900">{c.title}</h5>
+                            {c.tag && (
+                              <span className="text-[9px] px-1.5 py-0.2 rounded bg-amber-100 text-amber-800 font-bold">
+                                {c.tag}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-[11px] text-zinc-500 mt-0.5">满 ¥{c.minSpend} 可用 · {c.description}</p>
+                          <span className="text-[10px] text-zinc-400">有效期至 {c.expiresAt}</span>
+                        </div>
+                      </div>
+
+                      <button
+                        onClick={() => {
+                          onClose();
+                        }}
+                        className="px-3 py-1.5 rounded-xl bg-zinc-900 text-white text-xs font-semibold hover:bg-zinc-800 transition shrink-0"
+                      >
+                        去使用
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <button
+                type="button"
+                onClick={() => setShowCouponsView(false)}
+                className="w-full py-2 rounded-xl border border-zinc-200 text-xs font-semibold text-zinc-600 hover:bg-zinc-50 transition"
+              >
+                返回个人中心
+              </button>
+            </div>
+          ) : isEditing ? (
+            /* Edit form */
+            <form onSubmit={handleSaveProfile} className="space-y-4">
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-zinc-700 block">选择头像</label>
+                <div className="flex items-center gap-2 overflow-x-auto pb-1">
+                  {AVATAR_OPTIONS.map((imgUrl, idx) => (
+                    <button
+                      type="button"
+                      key={idx}
+                      onClick={() => setSelectedAvatar(imgUrl)}
+                      className={`relative rounded-xl overflow-hidden shrink-0 transition ${
+                        selectedAvatar === imgUrl
+                          ? 'ring-2 ring-amber-500 scale-105 shadow-sm'
+                          : 'opacity-70 hover:opacity-100'
+                      }`}
+                    >
+                      <img src={imgUrl} alt={`avatar-${idx}`} className="w-11 h-11 object-cover" />
+                      {selectedAvatar === imgUrl && (
+                        <div className="absolute inset-0 bg-amber-500/20 flex items-center justify-center">
+                          <Check className="w-4 h-4 text-zinc-900" />
+                        </div>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-zinc-700 block">用户昵称</label>
+                <div className="relative flex items-center">
+                  <User className="w-4 h-4 text-zinc-400 absolute left-3 pointer-events-none" />
+                  <input
+                    type="text"
+                    required
+                    value={nickname}
+                    onChange={(e) => setNickname(e.target.value)}
+                    className="w-full py-2 pl-9 pr-3 bg-zinc-50 border border-zinc-200 rounded-xl text-xs text-zinc-900 focus:bg-white focus:border-zinc-900 focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-zinc-700 block">绑定邮箱</label>
+                <div className="relative flex items-center">
+                  <Mail className="w-4 h-4 text-zinc-400 absolute left-3 pointer-events-none" />
+                  <input
+                    type="email"
+                    required
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="w-full py-2 pl-9 pr-3 bg-zinc-50 border border-zinc-200 rounded-xl text-xs text-zinc-900 focus:bg-white focus:border-zinc-900 focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-xs font-bold text-zinc-700 block">绑定手机</label>
+                <div className="relative flex items-center">
+                  <Smartphone className="w-4 h-4 text-zinc-400 absolute left-3 pointer-events-none" />
+                  <input
+                    type="tel"
+                    required
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                    className="w-full py-2 pl-9 pr-3 bg-zinc-50 border border-zinc-200 rounded-xl text-xs text-zinc-900 focus:bg-white focus:border-zinc-900 focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setIsEditing(false)}
+                  className="flex-1 py-2.5 rounded-xl border border-zinc-200 text-xs font-semibold text-zinc-600 hover:bg-zinc-50 transition"
+                >
+                  取消
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 py-2.5 rounded-xl bg-zinc-900 text-white text-xs font-bold hover:bg-zinc-800 transition shadow-sm"
+                >
+                  保存修改
+                </button>
+              </div>
+            </form>
+          ) : (
+            /* Standard Profile details */
+            <>
+              {/* Member Privileges Card */}
+              <div className="bg-amber-50/70 border border-amber-200/80 rounded-2xl p-4 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-black text-amber-950 flex items-center gap-1.5">
+                    <Crown className="w-4 h-4 text-amber-600" />
+                    当前享有 {user.memberLevel} 特权
+                  </span>
+                  <span className="text-[11px] text-amber-700 font-semibold">{levelInfo.badge}</span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 text-[11px] text-amber-900/90 pt-1">
+                  {levelInfo.perks.map((perk, i) => (
+                    <div key={i} className="flex items-center gap-1.5">
+                      <Sparkles className="w-3 h-3 text-amber-500 shrink-0" />
+                      <span>{perk}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Quick Navigation Action Grid */}
+              <div className="grid grid-cols-2 gap-2.5">
+                <button
+                  onClick={() => {
+                    onClose();
+                    onOpenOrders();
+                  }}
+                  className="p-3 rounded-2xl bg-zinc-50 hover:bg-zinc-100 border border-zinc-200/70 text-left transition flex items-center justify-between group"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-xl bg-zinc-900 text-white flex items-center justify-center">
+                      <Package className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <span className="text-xs font-bold text-zinc-900 block">我的订单</span>
+                      <span className="text-[10px] text-zinc-500">查看实时物流</span>
+                    </div>
+                  </div>
+                </button>
+
+                <button
+                  onClick={() => {
+                    onClose();
+                    onOpenWishlist();
+                  }}
+                  className="p-3 rounded-2xl bg-zinc-50 hover:bg-zinc-100 border border-zinc-200/70 text-left transition flex items-center justify-between group"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-xl bg-rose-500 text-white flex items-center justify-center">
+                      <Heart className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <span className="text-xs font-bold text-zinc-900 block">心愿收藏</span>
+                      <span className="text-[10px] text-zinc-500">降价实时提醒</span>
+                    </div>
+                  </div>
+                </button>
+              </div>
+
+              {/* Security & Account Details List */}
+              <div className="space-y-2 border-t border-zinc-100 pt-3">
+                <div className="flex items-center justify-between text-xs py-1">
+                  <span className="text-zinc-500">绑定手机</span>
+                  <span className="font-semibold text-zinc-800">{user.phone}</span>
+                </div>
+                <div className="flex items-center justify-between text-xs py-1">
+                  <span className="text-zinc-500">绑定邮箱</span>
+                  <span className="font-semibold text-zinc-800">{user.email}</span>
+                </div>
+                <div className="flex items-center justify-between text-xs py-1">
+                  <span className="text-zinc-500">账号安全级别</span>
+                  <span className="font-bold text-emerald-600 flex items-center gap-1">
+                    <ShieldCheck className="w-3.5 h-3.5" />
+                    高 (已开通双重保护)
+                  </span>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* Bottom Actions */}
+        <div className="bg-zinc-50 border-t border-zinc-100 p-4 px-6 flex items-center justify-between shrink-0">
+          <button
+            onClick={() => {
+              onLogout();
+              onClose();
+            }}
+            className="px-3.5 py-2 rounded-xl text-xs font-semibold text-rose-600 hover:bg-rose-50 border border-rose-200/80 transition flex items-center gap-1.5"
+          >
+            <LogOut className="w-3.5 h-3.5" />
+            <span>退出登录</span>
+          </button>
+
+          <button
+            onClick={onClose}
+            className="px-5 py-2 rounded-xl bg-zinc-900 text-white text-xs font-bold hover:bg-zinc-800 transition"
+          >
+            关闭
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};

@@ -1,0 +1,6 @@
+{
+  "name": "Henfon电商后台管理系统",
+  "description": "专为高效电商运营设计的现代化后台管理系统，涵盖工作台看板、商品管理、订单履约、用户管理以及角色、菜单、系统用户、功能授权与数据权限全套RBAC管控。",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,6 @@
+{
+  "name": "Henfon商城",
+  "description": "Henfon商城，涵盖商品分类检索、详情规格选择、购物车结算与订单追踪系统",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

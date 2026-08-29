@@ -1,0 +1,48 @@
+# 操作系统临时文件
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# IDE 配置
+.idea/
+.vscode/
+*.iml
+*.ipr
+*.iws
+
+# Java / Maven 构建产物
+**/target/
+**/out/
+*.class
+hs_err_pid*
+
+# Node.js / Vite 依赖与构建产物
+**/node_modules/
+**/dist/
+**/.vite/
+*.tsbuildinfo
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+
+# 本地环境配置（保留示例文件）
+.env
+.env.*
+!.env.example
+!**/.env.example
+
+# 日志与临时文件
+*.log
+logs/
+tmp/
+temp/
+*.tmp
+*.temp
+
+# 测试与覆盖率输出
+coverage/
+.nyc_output/
+
+# 本地生成的图片、报告和缓存
+generated_images/
+.codex-temp/

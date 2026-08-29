@@ -1,0 +1,78 @@
+server:
+  port: ${SHOP_SERVER_PORT:8080}
+  servlet:
+    context-path: ${SHOP_CONTEXT_PATH:/}
+
+spring:
+  application:
+    name: shop-admin
+  datasource:
+    url: ${SHOP_MYSQL_URL:jdbc:mysql://127.0.0.1:3306/henfon-shop?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true}
+    username: ${SHOP_MYSQL_USERNAME:root}
+    password: ${SHOP_MYSQL_PASSWORD:123456}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      pool-name: shop-hikari
+      minimum-idle: 5
+      maximum-pool-size: 20
+      initialization-fail-timeout: -1
+  data:
+    redis:
+      host: ${SHOP_REDIS_HOST:127.0.0.1}
+      port: ${SHOP_REDIS_PORT:6379}
+      # 当前本机 Redis 使用密码认证（Redis 5 兼容模式），不发送 ACL 用户名。
+      username: ${SHOP_REDIS_USERNAME:}
+      password: ${SHOP_REDIS_PASSWORD:123456}
+      database: ${SHOP_REDIS_DATABASE:0}
+      timeout: ${SHOP_REDIS_TIMEOUT:3s}
+  jackson:
+    time-zone: Asia/Shanghai
+    date-format: yyyy-MM-dd HH:mm:ss
+  servlet:
+    multipart:
+      max-file-size: ${SHOP_UPLOAD_MAX_FILE_SIZE:20MB}
+      max-request-size: ${SHOP_UPLOAD_MAX_REQUEST_SIZE:50MB}
+
+mybatis-plus:
+  mapper-locations: classpath*:/mapper/**/*.xml
+  type-aliases-package: com.henfon.shop
+  global-config:
+    banner: false
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+
+# RocketMQ 用于跨模块异步事件；当前仍是单体部署，消息只承担异步解耦职责。
+rocketmq:
+  name-server: ${ROCKETMQ_NAME_SERVER:127.0.0.1:9876}
+  producer:
+    group: ${ROCKETMQ_PRODUCER_GROUP:shop-admin-producer}
+    send-message-timeout: ${ROCKETMQ_SEND_TIMEOUT:3000}
+    retry-times-when-send-failed: ${ROCKETMQ_RETRY_TIMES:2}
+
+shop:
+  security:
+    jwt:
+      # 生产环境请使用环境变量覆盖，密钥长度至少32字节。
+      secret: ${SHOP_JWT_SECRET:henfon-shop-jwt-secret-key-change-in-production-2026}
+      expiration-seconds: ${SHOP_JWT_EXPIRATION_SECONDS:28800}
+      issuer: ${SHOP_JWT_ISSUER:henfon-shop}
+  storage:
+    minio:
+      endpoint: ${MINIO_ENDPOINT:http://127.0.0.1:9000}
+      access-key: ${MINIO_ACCESS_KEY:minioadmin}
+      secret-key: ${MINIO_SECRET_KEY:minioadmin}
+      bucket: ${MINIO_BUCKET:shop}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: when_authorized
+
+logging:
+  pattern:
+    level: "%5p [requestId:%X{requestId}]"
