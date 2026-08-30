@@ -280,6 +280,39 @@ public class TradeOrderService {
     }
 
     /**
+     * 在待付款订单上应用服务端确认的优惠金额并重算应付金额。
+     *
+     * @param orderId 订单ID
+     * @param discountAmount 服务端确认的优惠金额
+     * @return 更新后的订单
+     * @author Henfon
+     * @date 2026-08-30
+     */
+    @Transactional
+    public TradeOrder applyCouponDiscount(Long orderId, BigDecimal discountAmount) {
+        TradeOrder order = requireOrder(orderId);
+        if (!Integer.valueOf(TradeOrderStateMachine.STATUS_PENDING_PAYMENT).equals(order.getOrderStatus())
+                || !Integer.valueOf(0).equals(order.getPaymentStatus())) {
+            throw new BusinessException("TRADE_COUPON_ORDER_STATUS_INVALID", "订单当前状态不允许应用优惠券");
+        }
+        BigDecimal subtotal = money(order.getSubtotalAmount());
+        BigDecimal freight = money(order.getFreightAmount());
+        BigDecimal discount = money(discountAmount);
+        if (discount.signum() < 0 || discount.compareTo(subtotal) > 0) {
+            throw new BusinessException("TRADE_COUPON_DISCOUNT_INVALID", "优惠金额超出订单可优惠范围");
+        }
+        BigDecimal payable = subtotal.subtract(discount).add(freight);
+        if (discount.compareTo(money(order.getDiscountAmount())) == 0
+                && payable.compareTo(money(order.getPayableAmount())) == 0) {
+            return order;
+        }
+        order.setDiscountAmount(discount);
+        order.setPayableAmount(payable);
+        updateOrder(order);
+        return order;
+    }
+
+    /**
      * 更新订单卖家备注。
      *
      * @param orderId 订单ID
@@ -589,6 +622,6 @@ public class TradeOrderService {
      * @date 2026-08-30
      */
     private BigDecimal money(BigDecimal amount) {
-        return amount.setScale(2, RoundingMode.HALF_UP);
+        return (amount == null ? BigDecimal.ZERO : amount).setScale(2, RoundingMode.HALF_UP);
     }
 }

@@ -1137,9 +1137,10 @@ export default function App() {
         receiverAddress: order.shippingAddress.detail,
         paymentMethod: order.paymentMethod,
         subtotalAmount: order.subtotal,
-        discountAmount: order.discount,
+        // 优惠金额由后端在优惠券核销时重新计算，创建订单阶段只提交未优惠金额。
+        discountAmount: 0,
         freightAmount: order.shippingFee,
-        payableAmount: order.totalPaid,
+        payableAmount: order.subtotal + order.shippingFee,
       });
       serverOrderId = serverOrder.id;
       serverOrderNo = serverOrder.orderNo;
@@ -1152,14 +1153,10 @@ export default function App() {
         'Apple Pay': 'APPLEPAY',
       };
       const channel = paymentChannels[order.paymentMethod] || 'WECHAT';
-      // 订单创建成功后记录优惠券核销，核销失败不阻断支付单创建，便于后续人工补偿。
+      // 订单创建成功后记录优惠券核销，支付单必须建立在服务端确认优惠金额之后。
       if (appliedCoupon?.id) {
-        try {
-          await redeemPortalCoupon(appliedCoupon.id, serverOrder.id);
-        } catch (error) {
-          console.warn('优惠券核销同步失败', error);
-          showToast('订单已创建，但优惠券核销待重试', 'error');
-        }
+        // 核销失败时阻止创建支付单，避免以未核销优惠金额发起支付。
+        await redeemPortalCoupon(appliedCoupon.id, serverOrder.id);
       }
       const payment = await createPortalPayment(memberId, serverOrder.id, channel);
       return {

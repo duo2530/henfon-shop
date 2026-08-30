@@ -14,6 +14,7 @@ import com.henfon.shop.trade.service.TradeOrderService;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
+import java.math.BigDecimal;
 import java.util.List;
 
 /**
@@ -161,14 +162,28 @@ public class MarketingPortalService {
             throw new BusinessException("MARKETING_COUPON_ALREADY_USED", "优惠券已使用或已失效");
         }
         MarketingCoupon coupon = couponMapper.selectById(record.getCouponId());
-        if (coupon == null || coupon.getEndAt() == null || LocalDateTime.now().isAfter(coupon.getEndAt())) {
-            throw new BusinessException("MARKETING_COUPON_EXPIRED", "优惠券已过期");
+        LocalDateTime now = LocalDateTime.now();
+        if (coupon == null || !Integer.valueOf(1).equals(coupon.getStatus())
+                || coupon.getStartAt() == null || coupon.getEndAt() == null
+                || now.isBefore(coupon.getStartAt()) || now.isAfter(coupon.getEndAt())) {
+            throw new BusinessException("MARKETING_COUPON_INACTIVE", "优惠券当前不可使用");
         }
-        if (order.getSubtotalAmount() == null || order.getSubtotalAmount().compareTo(coupon.getMinSpend()) < 0) {
+        if (!Integer.valueOf(10).equals(order.getOrderStatus()) || !Integer.valueOf(0).equals(order.getPaymentStatus())) {
+            throw new BusinessException("MARKETING_COUPON_ORDER_STATUS_INVALID", "订单当前状态不允许使用优惠券");
+        }
+        BigDecimal subtotal = order.getSubtotalAmount() == null ? BigDecimal.ZERO : order.getSubtotalAmount();
+        if (subtotal.compareTo(coupon.getMinSpend()) < 0) {
             throw new BusinessException("MARKETING_COUPON_MIN_SPEND", "订单金额未达到优惠券使用门槛");
         }
+        BigDecimal configuredDiscount = coupon.getDiscountAmount() == null ? BigDecimal.ZERO : coupon.getDiscountAmount();
+        if (configuredDiscount.signum() < 0) {
+            throw new BusinessException("MARKETING_COUPON_DISCOUNT_INVALID", "优惠券优惠金额配置无效");
+        }
+        // 现金券最高只能抵扣商品金额，避免错误配置导致订单应付金额为负数。
+        BigDecimal appliedDiscount = configuredDiscount.min(subtotal).setScale(2, java.math.RoundingMode.HALF_UP);
+        tradeOrderService.applyCouponDiscount(order.getId(), appliedDiscount);
         record.setReceiveStatus(1);
-        record.setUsedAt(LocalDateTime.now());
+        record.setUsedAt(now);
         record.setOrderId(request.orderId());
         if (memberCouponMapper.updateById(record) == 0) {
             throw new BusinessException("MARKETING_COUPON_CONCURRENT", "优惠券状态已变化，请刷新后重试");
@@ -178,7 +193,7 @@ public class MarketingPortalService {
         usage.setMemberCouponId(record.getId());
         usage.setMemberId(memberId);
         usage.setOrderId(request.orderId());
-        usage.setDiscountAmount(coupon.getDiscountAmount());
+        usage.setDiscountAmount(appliedDiscount);
         usage.setAction(1);
         usageMapper.insert(usage);
         return record;
