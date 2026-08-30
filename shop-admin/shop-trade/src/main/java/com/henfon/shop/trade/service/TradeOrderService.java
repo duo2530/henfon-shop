@@ -38,13 +38,6 @@ import java.util.List;
 @Service
 public class TradeOrderService {
 
-    private static final int STATUS_PENDING_PAYMENT = 10;
-    private static final int STATUS_PENDING_SHIPMENT = 20;
-    private static final int STATUS_SHIPPED = 30;
-    private static final int STATUS_COMPLETED = 40;
-    private static final int STATUS_CANCELLED = 50;
-    private static final int STATUS_REFUNDING = 60;
-
     private final TradeOrderMapper tradeOrderMapper;
     private final TradeOrderItemMapper tradeOrderItemMapper;
     private final TradeOrderLogisticsMapper tradeOrderLogisticsMapper;
@@ -137,11 +130,9 @@ public class TradeOrderService {
     public void ship(Long orderId, TradeOrderShipRequest request) {
         // 先读取订单并校验状态，避免已发货订单被重复覆盖物流信息。
         TradeOrder order = requireOrder(orderId);
-        if (!Integer.valueOf(STATUS_PENDING_SHIPMENT).equals(order.getOrderStatus())) {
-            throw new BusinessException("TRADE_ORDER_STATUS_INVALID", "仅待发货订单允许发货");
-        }
+        TradeOrderStateMachine.requireTransition(order.getOrderStatus(), TradeOrderStateMachine.STATUS_SHIPPED);
         LocalDateTime now = LocalDateTime.now();
-        order.setOrderStatus(STATUS_SHIPPED);
+        order.setOrderStatus(TradeOrderStateMachine.STATUS_SHIPPED);
         order.setLogisticsCompany(request.logisticsCompany().trim());
         order.setTrackingNo(request.trackingNo().trim());
         order.setShippedAt(now);
@@ -173,11 +164,8 @@ public class TradeOrderService {
     @Transactional
     public void cancel(Long orderId, TradeOrderCancelRequest request) {
         TradeOrder order = requireOrder(orderId);
-        if (!Integer.valueOf(STATUS_PENDING_PAYMENT).equals(order.getOrderStatus())
-                && !Integer.valueOf(STATUS_PENDING_SHIPMENT).equals(order.getOrderStatus())) {
-            throw new BusinessException("TRADE_ORDER_STATUS_INVALID", "当前订单状态不允许取消");
-        }
-        order.setOrderStatus(STATUS_CANCELLED);
+        TradeOrderStateMachine.requireTransition(order.getOrderStatus(), TradeOrderStateMachine.STATUS_CANCELLED);
+        order.setOrderStatus(TradeOrderStateMachine.STATUS_CANCELLED);
         if (StringUtils.hasText(request.reason())) {
             order.setRemark("后台取消：" + request.reason().trim());
         }
@@ -199,11 +187,8 @@ public class TradeOrderService {
     @Transactional
     public void cancelByMember(Long memberId, Long orderId, String reason) {
         TradeOrder order = requireMemberOrder(memberId, orderId);
-        if (!Integer.valueOf(STATUS_PENDING_PAYMENT).equals(order.getOrderStatus())
-                && !Integer.valueOf(STATUS_PENDING_SHIPMENT).equals(order.getOrderStatus())) {
-            throw new BusinessException("TRADE_ORDER_STATUS_INVALID", "当前订单状态不允许取消");
-        }
-        order.setOrderStatus(STATUS_CANCELLED);
+        TradeOrderStateMachine.requireTransition(order.getOrderStatus(), TradeOrderStateMachine.STATUS_CANCELLED);
+        order.setOrderStatus(TradeOrderStateMachine.STATUS_CANCELLED);
         if (StringUtils.hasText(reason)) {
             order.setRemark("买家取消：" + reason.trim());
         }
@@ -224,10 +209,8 @@ public class TradeOrderService {
     @Transactional
     public void confirmReceive(Long memberId, Long orderId) {
         TradeOrder order = requireMemberOrder(memberId, orderId);
-        if (!Integer.valueOf(STATUS_SHIPPED).equals(order.getOrderStatus())) {
-            throw new BusinessException("TRADE_ORDER_STATUS_INVALID", "仅已发货订单允许确认收货");
-        }
-        order.setOrderStatus(STATUS_COMPLETED);
+        TradeOrderStateMachine.requireTransition(order.getOrderStatus(), TradeOrderStateMachine.STATUS_COMPLETED);
+        order.setOrderStatus(TradeOrderStateMachine.STATUS_COMPLETED);
         order.setCompletedAt(LocalDateTime.now());
         updateOrder(order);
         tradeEventOutboxService.recordOrderCompleted(order);
@@ -268,10 +251,8 @@ public class TradeOrderService {
         if (request.refundAmount().compareTo(paidAmount) > 0) {
             throw new BusinessException("TRADE_REFUND_AMOUNT_INVALID", "退款金额不能超过实付金额");
         }
-        if (STATUS_CANCELLED == order.getOrderStatus() || STATUS_REFUNDING == order.getOrderStatus()) {
-            throw new BusinessException("TRADE_ORDER_STATUS_INVALID", "当前订单状态不允许退款");
-        }
-        order.setOrderStatus(STATUS_REFUNDING);
+        TradeOrderStateMachine.requireTransition(order.getOrderStatus(), TradeOrderStateMachine.STATUS_REFUNDING);
+        order.setOrderStatus(TradeOrderStateMachine.STATUS_REFUNDING);
         order.setPaymentStatus(2);
         order.setRemark("后台退款：" + request.reason().trim() + "，金额：" + request.refundAmount());
         updateOrder(order);
@@ -352,7 +333,7 @@ public class TradeOrderService {
         order.setOrderNo("AO" + IdWorker.getIdStr());
         order.setIdempotencyKey(idempotencyKey);
         order.setMemberId(request.memberId());
-        order.setOrderStatus(20);
+        order.setOrderStatus(TradeOrderStateMachine.STATUS_PENDING_SHIPMENT);
         order.setPaymentStatus(1);
         order.setPaymentMethod(request.paymentMethod());
         order.setSubtotalAmount(request.subtotalAmount());
@@ -416,7 +397,7 @@ public class TradeOrderService {
     public int closeExpiredOrders(int timeoutMinutes) {
         LocalDateTime cutoff = LocalDateTime.now().minusMinutes(Math.max(timeoutMinutes, 1));
         List<TradeOrder> orders = tradeOrderMapper.selectList(new LambdaQueryWrapper<TradeOrder>()
-                .eq(TradeOrder::getOrderStatus, STATUS_PENDING_PAYMENT)
+                .eq(TradeOrder::getOrderStatus, TradeOrderStateMachine.STATUS_PENDING_PAYMENT)
                 .eq(TradeOrder::getPaymentStatus, 0)
                 .le(TradeOrder::getCreatedAt, cutoff)
                 .orderByAsc(TradeOrder::getCreatedAt)
@@ -424,7 +405,8 @@ public class TradeOrderService {
         int closedCount = 0;
         for (TradeOrder order : orders) {
             // 乐观锁更新失败说明订单已被支付或人工取消，本轮跳过并交给下一次扫描。
-            order.setOrderStatus(STATUS_CANCELLED);
+            TradeOrderStateMachine.requireTransition(order.getOrderStatus(), TradeOrderStateMachine.STATUS_CANCELLED);
+            order.setOrderStatus(TradeOrderStateMachine.STATUS_CANCELLED);
             order.setRemark("系统关闭：订单超过支付时限");
             if (tradeOrderMapper.updateById(order) == 0) {
                 continue;
