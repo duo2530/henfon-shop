@@ -30,6 +30,9 @@ public class ContentReview {
     private Integer helpfulCount;
     private Integer status;
     private LocalDateTime reviewedAt;
+    private String replyContent;
+    private LocalDateTime repliedAt;
+    private String repliedBy;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
     @TableLogic

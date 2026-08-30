@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Order } from '../types/ecommerce';
-import { Package, X, ChevronDown, ChevronUp } from 'lucide-react';
+import { PortalAfterSaleRecord } from '../api/portalApi';
+import { Package, X, ChevronDown, ChevronUp, RotateCcw } from 'lucide-react';
 import { OrderTracking } from './OrderTracking';
 
 interface OrdersModalProps {
@@ -9,6 +10,11 @@ interface OrdersModalProps {
   onClose: () => void;
   onCancelOrder?: (order: Order) => Promise<void> | void;
   onConfirmOrder?: (order: Order) => Promise<void> | void;
+  afterSales?: PortalAfterSaleRecord[];
+  afterSalesLoading?: boolean;
+  afterSalesError?: string | null;
+  onApplyAfterSale?: (order: Order) => Promise<void> | void;
+  onCancelAfterSale?: (afterSale: PortalAfterSaleRecord) => Promise<void> | void;
 }
 
 export const OrdersModal: React.FC<OrdersModalProps> = ({
@@ -17,11 +23,17 @@ export const OrdersModal: React.FC<OrdersModalProps> = ({
   onClose,
   onCancelOrder,
   onConfirmOrder,
+  afterSales = [],
+  afterSalesLoading = false,
+  afterSalesError,
+  onApplyAfterSale,
+  onCancelAfterSale,
 }) => {
   const [expandedOrderId, setExpandedOrderId] = useState<string | null>(
     orders[0]?.id || null
   );
   const [actioningOrderId, setActioningOrderId] = useState<string | null>(null);
+  const [actioningAfterSaleId, setActioningAfterSaleId] = useState<number | null>(null);
 
   useEffect(() => {
     setExpandedOrderId((current) => {
@@ -40,6 +52,33 @@ export const OrdersModal: React.FC<OrdersModalProps> = ({
     } finally {
       setActioningOrderId(null);
     }
+  };
+
+  const runAfterSaleAction = async (
+    afterSale: PortalAfterSaleRecord,
+    action?: (afterSale: PortalAfterSaleRecord) => Promise<void> | void,
+  ) => {
+    if (!action) return;
+    setActioningAfterSaleId(afterSale.id);
+    try {
+      await action(afterSale);
+    } finally {
+      setActioningAfterSaleId(null);
+    }
+  };
+
+  const afterSaleStatusLabels: Record<number, string> = {
+    10: '待审核',
+    20: '处理中',
+    30: '已完成',
+    40: '已驳回',
+    50: '已取消',
+  };
+
+  const afterSaleTypeLabels: Record<number, string> = {
+    1: '仅退款',
+    2: '退货退款',
+    3: '换货',
   };
 
   return (
@@ -78,6 +117,8 @@ export const OrdersModal: React.FC<OrdersModalProps> = ({
           ) : (
             orders.map((ord) => {
               const isExpanded = expandedOrderId === ord.id;
+              const orderAfterSales = afterSales.filter((item) => String(item.orderId) === ord.id);
+              const canApplyAfterSale = ['paid', 'processing', 'shipped', 'delivered'].includes(ord.status);
               return (
                 <div
                   key={ord.id}
@@ -149,6 +190,16 @@ export const OrdersModal: React.FC<OrdersModalProps> = ({
                       </div>
 
                       <div className="flex justify-end gap-2 border-t border-zinc-200/80 pt-3">
+                        {canApplyAfterSale && onApplyAfterSale && (
+                          <button
+                            type="button"
+                            disabled={actioningOrderId === ord.id}
+                            onClick={() => void runOrderAction(ord, onApplyAfterSale)}
+                            className="px-3 py-1.5 rounded-lg border border-amber-200 text-amber-700 text-xs font-semibold hover:bg-amber-50 disabled:opacity-50"
+                          >
+                            {actioningOrderId === ord.id ? '提交中…' : '申请售后'}
+                          </button>
+                        )}
                         {(ord.status === 'placed' || ord.status === 'paid' || ord.status === 'processing') && (
                           <button
                             type="button"
@@ -170,6 +221,43 @@ export const OrdersModal: React.FC<OrdersModalProps> = ({
                           </button>
                         )}
                       </div>
+
+                      {(afterSalesLoading || afterSalesError || orderAfterSales.length > 0) && (
+                        <div className="pt-3 border-t border-zinc-200/80 space-y-2">
+                          <div className="flex items-center gap-1.5 text-xs font-bold text-zinc-800">
+                            <RotateCcw className="w-3.5 h-3.5 text-amber-600" />
+                            售后进度
+                          </div>
+                          {afterSalesLoading && (
+                            <p className="text-[11px] text-zinc-400">售后记录加载中…</p>
+                          )}
+                          {afterSalesError && (
+                            <p className="text-[11px] text-rose-600">{afterSalesError}</p>
+                          )}
+                          {orderAfterSales.map((afterSale) => (
+                            <div key={afterSale.id} className="rounded-xl bg-amber-50/60 border border-amber-200/80 p-2.5 text-[11px] text-zinc-600 space-y-1.5">
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="font-semibold text-zinc-900">
+                                  {afterSaleTypeLabels[afterSale.afterSaleType] || '售后申请'} · {afterSaleStatusLabels[afterSale.status] || '处理中'}
+                                </span>
+                                <span className="font-mono text-zinc-400">{afterSale.afterSaleNo}</span>
+                              </div>
+                              <p>原因：{afterSale.reason}</p>
+                              {afterSale.refundAmount > 0 && <p>申请退款：¥{Number(afterSale.refundAmount).toFixed(2)}</p>}
+                              {afterSale.status === 10 && onCancelAfterSale && (
+                                <button
+                                  type="button"
+                                  disabled={actioningAfterSaleId === afterSale.id}
+                                  onClick={() => void runAfterSaleAction(afterSale, onCancelAfterSale)}
+                                  className="text-rose-600 font-semibold hover:text-rose-700 disabled:opacity-50"
+                                >
+                                  {actioningAfterSaleId === afterSale.id ? '取消中…' : '取消售后申请'}
+                                </button>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
 
                       {/* Visual Shipment Timeline and Tracking */}
                       <div className="pt-2 border-t border-zinc-200/80">

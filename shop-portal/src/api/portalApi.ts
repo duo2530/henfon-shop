@@ -77,6 +77,32 @@ export interface PortalBanner {
   linkTarget?: string;
 }
 
+export interface PortalReviewRecord {
+  id: number;
+  productId: number;
+  memberId?: number;
+  memberName: string;
+  memberAvatarUrl?: string;
+  rating: number;
+  reviewContent: string;
+  variantSummary?: string;
+  helpfulCount: number;
+  status: number;
+  reviewedAt?: string;
+  createdAt?: string;
+  replyContent?: string;
+  repliedAt?: string;
+  repliedBy?: string;
+}
+
+export interface PortalReviewPage {
+  records: PortalReviewRecord[];
+  total: number;
+  size: number;
+  current: number;
+  pages: number;
+}
+
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = localStorage.getItem(MEMBER_TOKEN_KEY);
   const response = await fetch(`${API_BASE_URL}${path}`, {
@@ -237,6 +263,11 @@ export function clearPortalMemberToken(): void {
   localStorage.removeItem(MEMBER_REFRESH_TOKEN_KEY);
 }
 
+/** 判断门户当前是否存在会员访问令牌。 */
+export function hasPortalMemberSession(): boolean {
+  return Boolean(localStorage.getItem(MEMBER_TOKEN_KEY));
+}
+
 export async function fetchPortalProductDetail(productId: string): Promise<Product | null> {
   const numericId = productId.replace(/^prod-/, '');
   const detail = await request<{
@@ -303,6 +334,25 @@ export async function rollbackPortalCoupon(orderId: number): Promise<unknown> {
 
 export async function fetchPortalBanners(): Promise<PortalBanner[]> {
   return request<PortalBanner[]>('/api/portal/content/banners');
+}
+
+/** 查询门户商品评价分页数据。 */
+export async function fetchPortalProductReviews(productId: string, current = 1, size = 10): Promise<PortalReviewPage> {
+  const numericId = productId.replace(/^prod-/, '');
+  return request<PortalReviewPage>(`/api/portal/content/products/${numericId}/reviews/page?current=${current}&size=${size}`);
+}
+
+/** 提交门户商品评价，评价默认进入后台待审核状态。 */
+export async function submitPortalProductReview(payload: {
+  productId: number;
+  rating: number;
+  reviewContent: string;
+  variantSummary?: string;
+}): Promise<number> {
+  return request<number>(`/api/portal/content/products/${payload.productId}/reviews`, {
+    method: 'POST',
+    body: JSON.stringify({ rating: payload.rating, reviewContent: payload.reviewContent, variantSummary: payload.variantSummary }),
+  });
 }
 
 export interface PortalCartRecord {

@@ -7,6 +7,8 @@ export interface ProductReview {
   comment: string;
   variantUsed?: string;
   helpfulCount: number;
+  replyContent?: string;
+  replyDate?: string;
 }
 
 export interface ProductVariant {

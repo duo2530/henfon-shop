@@ -6,6 +6,7 @@ import com.henfon.shop.inventory.dto.InventoryAdjustRequest;
 import com.henfon.shop.inventory.dto.InventoryStockSaveRequest;
 import com.henfon.shop.inventory.entity.InventoryStock;
 import com.henfon.shop.inventory.service.InventoryStockService;
+import com.henfon.shop.inventory.service.InventoryReservationExpiryService;
 import jakarta.validation.Valid;
 import org.slf4j.MDC;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -30,6 +31,7 @@ import java.util.List;
 public class InventoryAdminController {
 
     private final InventoryStockService inventoryStockService;
+    private final InventoryReservationExpiryService expiryService;
 
     /**
      * 创建库存管理控制器。
@@ -38,8 +40,10 @@ public class InventoryAdminController {
      * @author Henfon
      * @date 2026-08-30
      */
-    public InventoryAdminController(InventoryStockService inventoryStockService) {
+    public InventoryAdminController(InventoryStockService inventoryStockService,
+                                    InventoryReservationExpiryService expiryService) {
         this.inventoryStockService = inventoryStockService;
+        this.expiryService = expiryService;
     }
 
     /**
@@ -102,5 +106,19 @@ public class InventoryAdminController {
     @PreAuthorize("hasAuthority('inventory:stock:adjust')")
     public ApiResponse<InventoryStock> save(@Valid @RequestBody InventoryStockSaveRequest request) {
         return ApiResponse.success(inventoryStockService.save(request), MDC.get("requestId"));
+    }
+
+    /**
+     * 手工触发库存预占过期补偿。
+     *
+     * @param limit 最多处理数量
+     * @return 实际释放数量
+     * @author Henfon
+     * @date 2026-08-30
+     */
+    @org.springframework.web.bind.annotation.PostMapping("/locks/expire-compensate")
+    @PreAuthorize("hasAuthority('inventory:stock:adjust')")
+    public ApiResponse<Integer> compensateExpiredLocks(@RequestParam(defaultValue = "200") int limit) {
+        return ApiResponse.success(expiryService.compensate(limit), MDC.get("requestId"));
     }
 }

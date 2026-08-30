@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useAdmin } from '../../context/AdminContext';
+import { listContentReviews, replyContentReview, updateContentReviewStatus } from '../../api/adminApi';
 import { 
   Star, 
   MessageSquare, 
@@ -75,25 +76,59 @@ export const ReviewManagementView: React.FC = () => {
   const { showToast } = useAdmin();
   const [reviews, setReviews] = useState<ReviewItem[]>(mockReviews);
   const [replyTextMap, setReplyTextMap] = useState<Record<string, string>>({});
+  const [loading, setLoading] = useState(true);
 
-  const handleReplySubmit = (id: string) => {
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    listContentReviews({ current: 1, size: 100 })
+      .then((page) => {
+        if (cancelled) return;
+        setReviews((page.records || []).map((review) => ({
+          id: String(review.id),
+          userName: review.memberName,
+          userAvatar: review.memberAvatarUrl || '',
+          productName: `商品 #${review.productId}`,
+          rating: review.rating,
+          content: review.reviewContent,
+          reply: review.replyContent || '',
+          status: review.status === 1 ? 'approved' : 'pending',
+          createdAt: review.createdAt || review.reviewedAt || '',
+          likes: review.helpfulCount || 0,
+        })));
+      })
+      .catch(() => showToast('评价接口暂不可用，当前显示演示数据', 'warning'))
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, []);
+
+  const handleReplySubmit = async (id: string) => {
     const text = replyTextMap[id];
     if (!text || !text.trim()) {
       showToast('请输入回复内容', 'error');
       return;
     }
-    setReviews((prev) =>
-      prev.map((r) => (r.id === id ? { ...r, reply: text, status: 'approved' } : r))
-    );
-    setReplyTextMap((prev) => ({ ...prev, [id]: '' }));
-    showToast('官方回复已发布并通知客户', 'success');
+    try {
+      await replyContentReview(Number(id), text.trim());
+      setReviews((prev) => prev.map((r) => (r.id === id ? { ...r, reply: text.trim() } : r)));
+      setReplyTextMap((prev) => ({ ...prev, [id]: '' }));
+      showToast('官方回复已发布并通知客户', 'success');
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : '回复发布失败，请稍后重试', 'error');
+    }
   };
 
-  const handleToggleFeatured = (id: string) => {
-    setReviews((prev) =>
-      prev.map((r) => (r.id === id ? { ...r, isFeatured: !r.isFeatured } : r))
-    );
-    showToast('精选置顶状态已更新', 'info');
+  const handleToggleStatus = async (review: ReviewItem) => {
+    const nextStatus = review.status === 'approved' ? 0 : 1;
+    try {
+      await updateContentReviewStatus(Number(review.id), nextStatus);
+      setReviews((prev) => prev.map((item) => item.id === review.id
+        ? { ...item, status: nextStatus === 1 ? 'approved' : 'hidden' }
+        : item));
+      showToast(nextStatus === 1 ? '评价已通过审核' : '评价已隐藏', 'success');
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : '评价状态更新失败，请稍后重试', 'error');
+    }
   };
 
   return (
@@ -115,7 +150,13 @@ export const ReviewManagementView: React.FC = () => {
       </div>
 
       {/* Review List */}
+      {loading && <div className="text-sm text-gray-500">正在加载真实评价数据…</div>}
       <div className="space-y-4">
+        {!loading && reviews.length === 0 && (
+          <div className="rounded-xl border border-dashed border-gray-300 bg-white py-12 text-center text-sm text-gray-400">
+            暂无评价数据
+          </div>
+        )}
         {reviews.map((rev) => (
           <div
             key={rev.id}
@@ -203,10 +244,10 @@ export const ReviewManagementView: React.FC = () => {
             <div className="flex items-center justify-between text-xs text-gray-400 pt-2 border-t border-gray-100">
               <span>{rev.createdAt} · 赞同 {rev.likes}</span>
               <button
-                onClick={() => handleToggleFeatured(rev.id)}
+                onClick={() => void handleToggleStatus(rev)}
                 className="text-gray-500 hover:text-amber-600 font-semibold"
               >
-                {rev.isFeatured ? '取消精选' : '设为精选'}
+                {rev.status === 'approved' ? '隐藏评价' : '通过审核'}
               </button>
             </div>
           </div>

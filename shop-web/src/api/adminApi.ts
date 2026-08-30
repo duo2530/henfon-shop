@@ -199,6 +199,24 @@ export interface BackendContentBanner {
   remark?: string;
 }
 
+export interface BackendContentReview {
+  id: number;
+  productId: number;
+  memberId?: number;
+  memberName: string;
+  memberAvatarUrl?: string;
+  rating: number;
+  reviewContent: string;
+  variantSummary?: string;
+  helpfulCount: number;
+  status: number;
+  reviewedAt?: string;
+  replyContent?: string;
+  repliedAt?: string;
+  repliedBy?: string;
+  createdAt?: string;
+}
+
 export interface BackendMarketingCoupon {
   id: number;
   couponCode: string;
@@ -525,6 +543,25 @@ export async function uploadStorageFile(file: File): Promise<BackendStorageUploa
 
 export function deleteStorageFile(objectKey: string): Promise<void> {
   return request<void>(`/api/admin/storage?objectKey=${encodeURIComponent(objectKey)}`, { method: 'DELETE' });
+}
+
+export function listContentReviews(params: { current?: number; size?: number; productId?: number; status?: number; keyword?: string } = {}): Promise<BackendPage<BackendContentReview>> {
+  const query = new URLSearchParams({ current: String(params.current || 1), size: String(params.size || 100) });
+  if (params.productId !== undefined) query.set('productId', String(params.productId));
+  if (params.status !== undefined) query.set('status', String(params.status));
+  if (params.keyword) query.set('keyword', params.keyword);
+  return request<BackendPage<BackendContentReview>>(`/api/admin/content/reviews?${query.toString()}`);
+}
+
+export function updateContentReviewStatus(id: number, status: number): Promise<void> {
+  return request<void>(`/api/admin/content/reviews/${id}/status?status=${status}`, { method: 'PUT' });
+}
+
+export function replyContentReview(id: number, replyContent: string): Promise<void> {
+  return request<void>(`/api/admin/content/reviews/${id}/reply`, {
+    method: 'PUT',
+    body: JSON.stringify({ replyContent }),
+  });
 }
 
 export function listContentBanners(params: { current?: number; size?: number; keyword?: string; status?: number } = {}): Promise<BackendPage<BackendContentBanner>> {

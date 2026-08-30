@@ -1,11 +1,17 @@
 package com.henfon.shop.content.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.henfon.shop.common.exception.BusinessException;
+import com.henfon.shop.content.dto.ContentReviewSubmitRequest;
 import com.henfon.shop.content.entity.ContentBanner;
 import com.henfon.shop.content.entity.ContentReview;
 import com.henfon.shop.content.mapper.ContentBannerMapper;
 import com.henfon.shop.content.mapper.ContentReviewMapper;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -66,5 +72,58 @@ public class ContentPortalService {
                 .eq(ContentReview::getStatus, 1)
                 .orderByDesc(ContentReview::getReviewedAt)
                 .last("LIMIT " + safeLimit));
+    }
+
+    /**
+     * 分页查询门户可展示评价。
+     *
+     * @param productId 商品ID
+     * @param current 当前页
+     * @param size 页大小
+     * @return 评价分页数据
+     * @author Henfon
+     * @date 2026-08-30
+     */
+    public IPage<ContentReview> reviewPage(Long productId, long current, long size) {
+        if (productId == null) {
+            throw new BusinessException("CONTENT_REVIEW_PRODUCT_REQUIRED", "商品ID不能为空");
+        }
+        // 门户只返回审核通过的评价，并限制单页大小避免评价内容接口被滥用。
+        long safeCurrent = Math.max(current, 1);
+        long safeSize = Math.min(Math.max(size, 1), 50);
+        return reviewMapper.selectPage(new Page<>(safeCurrent, safeSize), new LambdaQueryWrapper<ContentReview>()
+                .eq(ContentReview::getProductId, productId)
+                .eq(ContentReview::getStatus, 1)
+                .orderByDesc(ContentReview::getReviewedAt)
+                .orderByDesc(ContentReview::getCreatedAt));
+    }
+
+    /**
+     * 保存门户会员评价，初始状态为待审核。
+     *
+     * @param productId 商品ID
+     * @param memberId 会员ID
+     * @param memberName 会员名称快照
+     * @param request 评价请求
+     * @return 新评价ID
+     * @author Henfon
+     * @date 2026-08-30
+     */
+    @Transactional
+    public Long submitReview(Long productId, Long memberId, String memberName, ContentReviewSubmitRequest request) {
+        if (productId == null || memberId == null) {
+            throw new BusinessException("CONTENT_REVIEW_ARGUMENT_INVALID", "商品和会员信息不能为空");
+        }
+        ContentReview review = new ContentReview();
+        review.setProductId(productId);
+        review.setMemberId(memberId);
+        review.setMemberName(StringUtils.hasText(memberName) ? memberName.trim() : "会员");
+        review.setRating(request.rating());
+        review.setReviewContent(request.reviewContent().trim());
+        review.setVariantSummary(StringUtils.hasText(request.variantSummary()) ? request.variantSummary().trim() : null);
+        review.setHelpfulCount(0);
+        review.setStatus(0);
+        reviewMapper.insert(review);
+        return review.getId();
     }
 }

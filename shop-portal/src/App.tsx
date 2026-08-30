@@ -31,6 +31,9 @@ import {
   fetchPortalFavorites,
   fetchPortalOrders,
   fetchPortalOrderDetail,
+  fetchPortalAfterSales,
+  createPortalAfterSale,
+  cancelPortalAfterSale,
   cancelPortalOrder,
   confirmPortalOrder,
   fetchPortalProductDetail,
@@ -45,6 +48,7 @@ import {
   PortalBanner,
   PortalOrderItemRecord,
   PortalOrderLogisticsRecord,
+  PortalAfterSaleRecord,
 } from './api/portalApi';
 import {
   Product,
@@ -279,6 +283,9 @@ export default function App() {
       },
     ];
   });
+  const [afterSales, setAfterSales] = useState<PortalAfterSaleRecord[]>([]);
+  const [afterSalesLoading, setAfterSalesLoading] = useState(false);
+  const [afterSalesError, setAfterSalesError] = useState<string | null>(null);
 
   const [appliedCoupon, setAppliedCoupon] = useState<Coupon | null>(null);
 
@@ -427,6 +434,35 @@ export default function App() {
       active = false;
     };
   }, [currentUser, products]);
+
+  // 登录会员切换后独立加载售后记录，避免售后接口异常影响订单列表展示。
+  useEffect(() => {
+    const memberId = resolveMemberId(currentUser);
+    setAfterSales([]);
+    setAfterSalesError(null);
+    if (!memberId) {
+      setAfterSalesLoading(false);
+      return;
+    }
+    let active = true;
+    setAfterSalesLoading(true);
+    fetchPortalAfterSales(memberId)
+      .then((records) => {
+        if (active) setAfterSales(records || []);
+      })
+      .catch((error) => {
+        if (active) {
+          console.warn('售后记录加载失败', error);
+          setAfterSalesError(error instanceof Error ? error.message : '售后记录加载失败，请稍后重试');
+        }
+      })
+      .finally(() => {
+        if (active) setAfterSalesLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [currentUser]);
 
   // Modals & Drawers
   const [quickViewProduct, setQuickViewProduct] = useState<Product | null>(null);
@@ -1187,6 +1223,63 @@ export default function App() {
     }
   };
 
+  const handleApplyAfterSale = async (order: Order) => {
+    const memberId = resolveMemberId(currentUser);
+    const orderId = Number(order.id);
+    if (!memberId || !Number.isFinite(orderId)) {
+      showToast('当前订单尚未同步到服务端，暂不能申请售后', 'error');
+      return;
+    }
+    const typeInput = window.prompt('请选择售后类型：1 仅退款，2 退货退款，3 换货', '1');
+    if (typeInput === null) return;
+    const afterSaleType = Number(typeInput);
+    if (![1, 2, 3].includes(afterSaleType)) {
+      showToast('售后类型不合法，请重新申请', 'error');
+      return;
+    }
+    const defaultAmount = afterSaleType === 3 ? '0' : String(order.totalPaid);
+    const amountInput = window.prompt('请输入申请退款金额（元，换货填写 0）', defaultAmount);
+    if (amountInput === null) return;
+    const refundAmount = Number(amountInput);
+    if (!Number.isFinite(refundAmount) || refundAmount < 0 || refundAmount > order.totalPaid) {
+      showToast('退款金额不合法，不能超过订单实付金额', 'error');
+      return;
+    }
+    const reason = window.prompt('请填写售后原因', '商品存在质量问题');
+    if (!reason?.trim()) return;
+    try {
+      const record = await createPortalAfterSale(memberId, orderId, {
+        afterSaleType: afterSaleType as 1 | 2 | 3,
+        refundAmount,
+        reason: reason.trim(),
+      });
+      setAfterSales((previous) => [record, ...previous.filter((item) => item.id !== record.id)]);
+      showToast(`售后申请已提交（${record.afterSaleNo}），等待商家审核`, 'success');
+    } catch (error) {
+      console.error('申请售后失败', error);
+      showToast(error instanceof Error ? error.message : '申请售后失败，请稍后重试', 'error');
+    }
+  };
+
+  const handleCancelAfterSale = async (afterSale: PortalAfterSaleRecord) => {
+    const memberId = resolveMemberId(currentUser);
+    if (!memberId) {
+      showToast('当前登录账号无法识别，暂不能取消售后', 'error');
+      return;
+    }
+    if (!window.confirm(`确定取消售后申请“${afterSale.afterSaleNo}”吗？`)) return;
+    try {
+      await cancelPortalAfterSale(memberId, afterSale.id);
+      setAfterSales((previous) => previous.map((item) => item.id === afterSale.id
+        ? { ...item, status: 50 }
+        : item));
+      showToast('售后申请已取消', 'success');
+    } catch (error) {
+      console.error('取消售后失败', error);
+      showToast(error instanceof Error ? error.message : '取消售后失败，请稍后重试', 'error');
+    }
+  };
+
   const handlePersistAddress = async (address: import('./types/ecommerce').Address) => {
     const memberId = resolveMemberId(currentUser);
     if (!memberId) return;
@@ -1691,6 +1784,11 @@ export default function App() {
         onClose={() => setIsOrdersOpen(false)}
         onCancelOrder={handleCancelOrder}
         onConfirmOrder={handleConfirmOrder}
+        afterSales={afterSales}
+        afterSalesLoading={afterSalesLoading}
+        afterSalesError={afterSalesError}
+        onApplyAfterSale={handleApplyAfterSale}
+        onCancelAfterSale={handleCancelAfterSale}
       />
 
       <WishlistModal

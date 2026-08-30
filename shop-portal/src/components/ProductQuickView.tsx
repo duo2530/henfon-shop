@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Product, ProductReview } from '../types/ecommerce';
 import { MOCK_REVIEWS } from '../data/products';
+import { fetchPortalProductReviews, hasPortalMemberSession, submitPortalProductReview } from '../api/portalApi';
 import {
   X,
   Star,
@@ -22,6 +23,21 @@ import {
   ChevronRight,
   Film,
 } from 'lucide-react';
+
+function mapPortalReview(review: Awaited<ReturnType<typeof fetchPortalProductReviews>>['records'][number]): ProductReview {
+  return {
+    id: String(review.id),
+    userName: review.memberName,
+    userAvatar: review.memberAvatarUrl || '',
+    rating: review.rating,
+    date: (review.reviewedAt || review.createdAt || '').slice(0, 10),
+    comment: review.reviewContent,
+    variantUsed: review.variantSummary,
+    helpfulCount: review.helpfulCount,
+    replyContent: review.replyContent,
+    replyDate: review.repliedAt ? review.repliedAt.slice(0, 10) : undefined,
+  };
+}
 
 interface ProductQuickViewProps {
   product: Product | null;
@@ -45,6 +61,15 @@ export const ProductQuickView: React.FC<ProductQuickViewProps> = ({
   const [activeMediaIndex, setActiveMediaIndex] = useState(0);
   const [activeTab, setActiveTab] = useState<'details' | 'specs' | 'reviews'>('details');
   const [quantity, setQuantity] = useState(1);
+  const [reviews, setReviews] = useState<ProductReview[]>([]);
+  const [reviewLoading, setReviewLoading] = useState(false);
+  const [reviewError, setReviewError] = useState<string | null>(null);
+  const [reviewPageNo, setReviewPageNo] = useState(1);
+  const [reviewHasMore, setReviewHasMore] = useState(false);
+  const [reviewRating, setReviewRating] = useState(5);
+  const [reviewContent, setReviewContent] = useState('');
+  const [reviewVariant, setReviewVariant] = useState('');
+  const [reviewSubmitting, setReviewSubmitting] = useState(false);
 
   // Reset state when a new product is selected
   useEffect(() => {
@@ -62,6 +87,68 @@ export const ProductQuickView: React.FC<ProductQuickViewProps> = ({
       setSelectedVariants({});
     }
   }, [product.id, product.variants]);
+
+  // 评价页签打开后从内容中心分页加载真实评价，接口异常时保留演示数据兜底。
+  useEffect(() => {
+    if (activeTab !== 'reviews') return;
+    let cancelled = false;
+    setReviewLoading(true);
+    setReviewError(null);
+    fetchPortalProductReviews(product.id, 1, 10)
+      .then((page) => {
+        if (cancelled) return;
+        setReviewPageNo(1);
+        setReviewHasMore(page.current < page.pages);
+        setReviews((page.records || []).map(mapPortalReview));
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setReviewError('评价加载失败，当前显示示例内容');
+        setReviews(MOCK_REVIEWS.slice(0, 10));
+      })
+      .finally(() => { if (!cancelled) setReviewLoading(false); });
+    return () => { cancelled = true; };
+  }, [activeTab, product.id]);
+
+  const loadMoreReviews = async () => {
+    const nextPage = reviewPageNo + 1;
+    try {
+      const page = await fetchPortalProductReviews(product.id, nextPage, 10);
+      setReviews((current) => [...current, ...(page.records || []).map(mapPortalReview)]);
+      setReviewPageNo(nextPage);
+      setReviewHasMore(page.current < page.pages);
+    } catch (error) {
+      setReviewError(error instanceof Error ? error.message : '更多评价加载失败');
+    }
+  };
+
+  const submitReview = async () => {
+    if (!hasPortalMemberSession()) {
+      setReviewError('请先登录会员账号后再提交评价');
+      return;
+    }
+    if (!reviewContent.trim()) {
+      setReviewError('请填写评价内容');
+      return;
+    }
+    setReviewSubmitting(true);
+    setReviewError(null);
+    try {
+      await submitPortalProductReview({
+        productId: Number(product.id.replace(/^prod-/, '')),
+        rating: reviewRating,
+        reviewContent: reviewContent.trim(),
+        variantSummary: reviewVariant.trim() || undefined,
+      });
+      setReviewContent('');
+      setReviewVariant('');
+      setReviewError('评价已提交，审核通过后展示');
+    } catch (error) {
+      setReviewError(error instanceof Error ? error.message : '评价提交失败，请稍后重试');
+    } finally {
+      setReviewSubmitting(false);
+    }
+  };
 
   // Video playback & viewport states
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -778,34 +865,34 @@ export const ProductQuickView: React.FC<ProductQuickViewProps> = ({
             {/* Tab: Reviews */}
             {activeTab === 'reviews' && (
               <div className="space-y-4">
-                {MOCK_REVIEWS.map((rev) => (
+                {reviewLoading && <div className="text-sm text-zinc-500 py-6 text-center">正在加载评价…</div>}
+                {!reviewLoading && reviews.length === 0 && <div className="text-sm text-zinc-500 py-6 text-center">暂时还没有公开评价</div>}
+                {reviewError && <div className="text-xs text-amber-600 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">{reviewError}</div>}
+                {!reviewLoading && reviews.map((rev) => (
                   <div key={rev.id} className="p-4 rounded-2xl bg-zinc-50 border border-zinc-100 space-y-2">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2.5">
-                        <img src={rev.userAvatar} alt={rev.userName} className="w-8 h-8 rounded-full object-cover" />
+                        {rev.userAvatar ? <img src={rev.userAvatar} alt={rev.userName} className="w-8 h-8 rounded-full object-cover" /> : <div className="w-8 h-8 rounded-full bg-zinc-200 flex items-center justify-center text-xs font-bold text-zinc-500">{rev.userName.slice(0, 1)}</div>}
                         <div>
                           <div className="text-xs font-bold text-zinc-900">{rev.userName}</div>
-                          <div className="text-[11px] text-zinc-400">已购规格：{rev.variantUsed}</div>
+                          <div className="text-[11px] text-zinc-400">已购规格：{rev.variantUsed || '默认规格'}</div>
                         </div>
                       </div>
-
-                      <div className="flex items-center gap-1 text-amber-500">
-                        {Array.from({ length: rev.rating }).map((_, i) => (
-                          <Star key={i} className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
-                        ))}
-                      </div>
+                      <div className="flex items-center gap-1 text-amber-500">{Array.from({ length: rev.rating }).map((_, i) => <Star key={i} className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />)}</div>
                     </div>
-
-                    <p className="text-xs sm:text-sm text-zinc-700 leading-relaxed pt-1">
-                      {rev.comment}
-                    </p>
-
-                    <div className="flex items-center justify-between text-[11px] text-zinc-400 pt-1">
-                      <span>评价时间：{rev.date}</span>
-                      <span>赞同 ({rev.helpfulCount})</span>
-                    </div>
+                    <p className="text-xs sm:text-sm text-zinc-700 leading-relaxed pt-1">{rev.comment}</p>
+                    {rev.replyContent && <div className="text-xs text-zinc-600 bg-white border border-zinc-100 rounded-lg px-3 py-2"><span className="font-bold text-zinc-800">商家回复：</span>{rev.replyContent}{rev.replyDate && <span className="ml-2 text-[11px] text-zinc-400">{rev.replyDate}</span>}</div>}
+                    <div className="flex items-center justify-between text-[11px] text-zinc-400 pt-1"><span>评价时间：{rev.date || '—'}</span><span>赞同 ({rev.helpfulCount})</span></div>
                   </div>
                 ))}
+                {!reviewLoading && reviewHasMore && <button type="button" onClick={() => void loadMoreReviews()} className="w-full py-2 text-xs font-bold text-zinc-600 border border-zinc-200 rounded-lg hover:bg-zinc-50">加载更多评价</button>}
+                <div className="border border-zinc-200 rounded-2xl p-4 space-y-3">
+                  <div className="text-sm font-bold text-zinc-900">发表评价</div>
+                  <div className="flex items-center gap-2"><span className="text-xs text-zinc-500">评分</span>{[1, 2, 3, 4, 5].map((score) => <button type="button" key={score} onClick={() => setReviewRating(score)} className="p-0.5"><Star className={`w-4 h-4 ${score <= reviewRating ? 'fill-amber-400 text-amber-400' : 'text-zinc-300'}`} /></button>)}</div>
+                  <input value={reviewVariant} onChange={(event) => setReviewVariant(event.target.value)} placeholder="购买规格（可选）" maxLength={500} className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-xs outline-none focus:border-zinc-400" />
+                  <textarea value={reviewContent} onChange={(event) => setReviewContent(event.target.value)} placeholder="分享你的使用体验…" maxLength={2000} rows={3} className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-xs outline-none focus:border-zinc-400 resize-none" />
+                  <button type="button" disabled={reviewSubmitting} onClick={() => void submitReview()} className="rounded-lg bg-zinc-900 px-4 py-2 text-xs font-bold text-white disabled:opacity-50">{reviewSubmitting ? '提交中…' : '提交评价'}</button>
+                </div>
               </div>
             )}
           </div>
