@@ -140,6 +140,8 @@ public class TradeOrderService {
         order.setTrackingNo(request.trackingNo().trim());
         order.setShippedAt(now);
         updateOrder(order);
+        // 发货成功同时扣减锁定库存，任一环节失败都会回滚订单状态和库存变更。
+        inventoryStockService.deduct(order.getId(), order.getOrderNo());
 
         // 物流轨迹与订单状态在同一事务内写入，确保后台发货后门户可以立即查看节点。
         TradeOrderLogistics logistics = new TradeOrderLogistics();

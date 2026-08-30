@@ -19,7 +19,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 库存台账应用服务，负责库存预占、释放和人工调整。
@@ -32,6 +34,7 @@ public class InventoryStockService {
 
     private static final int LOCKED = 0;
     private static final int RELEASED = 1;
+    private static final int DEDUCTED = 2;
 
     private final InventoryWarehouseMapper warehouseMapper;
     private final InventoryStockMapper stockMapper;
@@ -88,11 +91,18 @@ public class InventoryStockService {
     @Transactional
     public void reserve(Long orderId, String orderNo, List<InventoryReservationItem> items) {
         InventoryWarehouse warehouse = defaultWarehouse();
+        // 合并同一订单中的重复 SKU，避免多行商品导致只锁定第一行数量。
+        Map<Long, InventoryReservationItem> mergedItems = new LinkedHashMap<>();
         for (InventoryReservationItem item : items) {
-            // 尚未选择 SKU 的老数据无法精确扣减库存，保留订单创建兼容性并跳过预占。
             if (item.skuId() == null) {
                 continue;
             }
+            InventoryReservationItem previous = mergedItems.get(item.skuId());
+            mergedItems.put(item.skuId(), previous == null
+                    ? item
+                    : new InventoryReservationItem(item.productId(), item.skuId(), previous.quantity() + item.quantity()));
+        }
+        for (InventoryReservationItem item : mergedItems.values()) {
             if (item.quantity() <= 0) {
                 throw new BusinessException("INVENTORY_QUANTITY_INVALID", "库存数量必须大于0");
             }
@@ -156,6 +166,35 @@ public class InventoryStockService {
             lockMapper.updateById(lock);
             saveLog(stock, "RELEASE", orderNo, lock.getQuantity(), beforeAvailable,
                     afterStock.getAvailableStock(), beforeLocked, afterStock.getLockedStock(), "订单取消释放库存");
+        }
+    }
+
+    /**
+     * 订单发货时扣减已锁定库存。
+     *
+     * @param orderId 订单ID
+     * @param orderNo 订单号
+     * @author Henfon
+     * @date 2026-08-30
+     */
+    @Transactional
+    public void deduct(Long orderId, String orderNo) {
+        List<InventoryStockLock> locks = lockMapper.selectList(new LambdaQueryWrapper<InventoryStockLock>()
+                .eq(InventoryStockLock::getOrderId, orderId)
+                .eq(InventoryStockLock::getStatus, LOCKED));
+        for (InventoryStockLock lock : locks) {
+            InventoryStock stock = stockMapper.selectById(lock.getStockId());
+            if (stock == null || stockMapper.deduct(stock.getId(), lock.getQuantity()) == 0) {
+                throw new BusinessException("INVENTORY_DEDUCT_FAILED", "发货扣减库存失败，请刷新后重试");
+            }
+            int beforeAvailable = stock.getAvailableStock();
+            int beforeLocked = stock.getLockedStock();
+            InventoryStock afterStock = stockMapper.selectById(stock.getId());
+            lock.setStatus(DEDUCTED);
+            lock.setDeductedAt(LocalDateTime.now());
+            lockMapper.updateById(lock);
+            saveLog(stock, "DEDUCT", orderNo, 0, beforeAvailable, afterStock.getAvailableStock(),
+                    beforeLocked, afterStock.getLockedStock(), "订单发货扣减锁定库存");
         }
     }
 

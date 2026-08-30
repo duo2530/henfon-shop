@@ -42,4 +42,18 @@ public interface InventoryStockMapper extends BaseMapper<InventoryStock> {
             + "locked_stock = locked_stock - #{quantity}, version = version + 1 "
             + "WHERE id = #{stockId} AND is_deleted = 0 AND locked_stock >= #{quantity}")
     int release(@Param("stockId") Long stockId, @Param("quantity") int quantity);
+
+    /**
+     * 原子扣减已锁定库存并累计销量。
+     *
+     * @param stockId 台账ID
+     * @param quantity 扣减数量
+     * @return 受影响行数
+     * @author Henfon
+     * @date 2026-08-30
+     */
+    @Update("UPDATE inventory_stock SET locked_stock = locked_stock - #{quantity}, "
+            + "sold_stock = sold_stock + #{quantity}, version = version + 1 "
+            + "WHERE id = #{stockId} AND is_deleted = 0 AND locked_stock >= #{quantity}")
+    int deduct(@Param("stockId") Long stockId, @Param("quantity") int quantity);
 }
