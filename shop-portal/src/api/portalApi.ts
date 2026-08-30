@@ -342,6 +342,21 @@ export interface PortalOrderDetailRecord {
   logistics: PortalOrderLogisticsRecord[];
 }
 
+export interface PortalPaymentOrderRecord {
+  id: number;
+  paymentNo: string;
+  orderId: number;
+  orderNo: string;
+  channel: string;
+  status: number;
+  amount: number;
+  transactionNo?: string;
+  paidAt?: string;
+  expireAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export async function fetchPortalCart(memberId: number): Promise<PortalCartRecord[]> {
   return request<PortalCartRecord[]>(`/api/portal/trade/cart?memberId=${memberId}`);
 }
@@ -420,6 +435,44 @@ export async function cancelPortalOrder(memberId: number, orderId: number, reaso
 
 export async function confirmPortalOrder(memberId: number, orderId: number): Promise<void> {
   return request<void>(`/api/portal/trade/orders/${orderId}/confirm?memberId=${memberId}`, {
+    method: 'PUT',
+  });
+}
+
+/**
+ * 创建订单支付单。
+ *
+ * @param memberId 会员ID
+ * @param orderId 订单ID
+ * @param channel 支付渠道
+ * @return 支付单
+ */
+export async function createPortalPayment(memberId: number, orderId: number, channel: string): Promise<PortalPaymentOrderRecord> {
+  return request<PortalPaymentOrderRecord>(`/api/portal/payment/orders/${orderId}?memberId=${memberId}`, {
+    method: 'POST',
+    body: JSON.stringify({ channel }),
+  });
+}
+
+/**
+ * 查询支付单状态。
+ *
+ * @param memberId 会员ID
+ * @param paymentNo 支付单号
+ * @return 支付单
+ */
+export async function fetchPortalPayment(memberId: number, paymentNo: string): Promise<PortalPaymentOrderRecord> {
+  return request<PortalPaymentOrderRecord>(`/api/portal/payment/orders/${encodeURIComponent(paymentNo)}?memberId=${memberId}`);
+}
+
+/**
+ * 关闭未完成支付单。
+ *
+ * @param memberId 会员ID
+ * @param paymentNo 支付单号
+ */
+export async function closePortalPayment(memberId: number, paymentNo: string): Promise<void> {
+  return request<void>(`/api/portal/payment/orders/${encodeURIComponent(paymentNo)}/close?memberId=${memberId}`, {
     method: 'PUT',
   });
 }

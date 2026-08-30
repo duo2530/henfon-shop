@@ -217,6 +217,53 @@ public class TradeOrderService {
     }
 
     /**
+     * 查询订单应用服务。
+     *
+     * @param orderId 订单ID
+     * @return 订单实体
+     * @author Henfon
+     * @date 2026-08-30
+     */
+    public TradeOrder findById(Long orderId) {
+        // 支付等领域服务通过应用服务读取订单，避免跨模块直接访问交易 Mapper。
+        return requireOrder(orderId);
+    }
+
+    /**
+     * 将待付款订单标记为已支付并记录领域事件。
+     *
+     * @param orderId 订单ID
+     * @param paymentMethod 支付渠道
+     * @param paidAmount 实付金额
+     * @param paidAt 支付时间
+     * @return 更新后的订单
+     * @author Henfon
+     * @date 2026-08-30
+     */
+    @Transactional
+    public TradeOrder markPaid(Long orderId, String paymentMethod, BigDecimal paidAmount, LocalDateTime paidAt) {
+        TradeOrder order = requireOrder(orderId);
+        if (Integer.valueOf(1).equals(order.getPaymentStatus())) {
+            return order;
+        }
+        if (!Integer.valueOf(0).equals(order.getPaymentStatus())
+                || !Integer.valueOf(TradeOrderStateMachine.STATUS_PENDING_PAYMENT).equals(order.getOrderStatus())) {
+            throw new BusinessException("PAYMENT_TRADE_STATUS_INVALID", "订单当前状态不允许确认支付");
+        }
+        TradeOrderStateMachine.requireTransition(order.getOrderStatus(),
+                TradeOrderStateMachine.STATUS_PENDING_SHIPMENT);
+        order.setOrderStatus(TradeOrderStateMachine.STATUS_PENDING_SHIPMENT);
+        order.setPaymentStatus(1);
+        order.setPaymentMethod(paymentMethod);
+        order.setPaidAmount(paidAmount);
+        order.setPaidAt(paidAt);
+        updateOrder(order);
+        // 订单状态与支付成功事件处于同一事务，保证状态变更后事件可被可靠投递。
+        tradeEventOutboxService.recordOrderEvent(order, "PAYMENT_SUCCEEDED", RocketMqTopics.PAYMENT_SUCCEEDED);
+        return order;
+    }
+
+    /**
      * 更新订单卖家备注。
      *
      * @param orderId 订单ID
