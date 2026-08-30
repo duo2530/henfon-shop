@@ -7,9 +7,11 @@ import com.henfon.shop.trade.entity.TradeOrderLogistics;
 import com.henfon.shop.trade.mapper.TradeOrderMapper;
 import com.henfon.shop.trade.service.TradeOrderService;
 import com.henfon.shop.trade.dto.TradeOrderCreateRequest;
+import com.henfon.shop.trade.dto.TradeOrderCancelRequest;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.slf4j.MDC;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -92,5 +94,37 @@ public class TradePortalController {
     @PostMapping("/orders")
     public ApiResponse<TradeOrder> create(@Valid @RequestBody TradeOrderCreateRequest request) {
         return ApiResponse.success(orderService.create(request), MDC.get("requestId"));
+    }
+
+    /**
+     * 门户会员取消订单。
+     *
+     * @param orderId 订单ID
+     * @param memberId 会员ID
+     * @param request 取消原因
+     * @return 空响应
+     * @author Henfon
+     * @date 2026-08-30
+     */
+    @PutMapping("/orders/{orderId}/cancel")
+    public ApiResponse<Void> cancel(@PathVariable Long orderId, @RequestParam Long memberId,
+                                    @Valid @RequestBody TradeOrderCancelRequest request) {
+        orderService.cancelByMember(memberId, orderId, request.reason());
+        return ApiResponse.success(MDC.get("requestId"));
+    }
+
+    /**
+     * 门户会员确认收货。
+     *
+     * @param orderId 订单ID
+     * @param memberId 会员ID
+     * @return 空响应
+     * @author Henfon
+     * @date 2026-08-30
+     */
+    @PutMapping("/orders/{orderId}/confirm")
+    public ApiResponse<Void> confirmReceive(@PathVariable Long orderId, @RequestParam Long memberId) {
+        orderService.confirmReceive(memberId, orderId);
+        return ApiResponse.success(MDC.get("requestId"));
     }
 }

@@ -72,7 +72,7 @@ java -jar shop-boot/target/shop-boot-0.0.1-SNAPSHOT.jar
 
 管理端前端通过 `/api/admin/auth/menus` 获取当前用户可见菜单，通过 `/api/admin/system/menus` 获取菜单配置树；角色、系统用户和数据权限页面的保存操作会回写对应身份权限接口，不依赖前端写死的菜单数据。
 
-商品目录接口前缀：`/api/admin/catalog`，支持商品分页查询、保存、逻辑删除和启用类目查询；交易订单基础接口前缀：`/api/admin/trade`，支持订单分页和订单明细查询；库存接口前缀：`/api/admin/inventory`，支持库存台账分页、初始化和增减调整，订单创建/取消/发货分别自动执行库存预占/释放/扣减。商品目录、交易和库存表结构分别位于 `db/init/003_catalog_tables.sql`、`db/init/004_trade_tables.sql`、`db/init/006_inventory_tables.sql`。
+商品目录接口前缀：`/api/admin/catalog`，支持商品分页查询、保存、逻辑删除和启用类目查询；交易订单基础接口前缀：`/api/admin/trade`，支持订单分页和订单明细查询；库存接口前缀：`/api/admin/inventory`，支持库存台账分页、初始化和增减调整，订单创建/取消/发货分别自动执行库存预占/释放/扣减。门户交易接口支持会员取消订单和确认收货。商品目录、交易和库存表结构分别位于 `db/init/003_catalog_tables.sql`、`db/init/004_trade_tables.sql`、`db/init/006_inventory_tables.sql`。
 
 数据库表结构位于 `db/init/002_identity_tables.sql`，可重复执行（使用 `IF NOT EXISTS`）。
 

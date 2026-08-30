@@ -227,6 +227,19 @@ export async function createPortalOrder(payload: PortalOrderCreatePayload): Prom
   });
 }
 
+export async function cancelPortalOrder(memberId: number, orderId: number, reason?: string): Promise<void> {
+  return request<void>(`/api/portal/trade/orders/${orderId}/cancel?memberId=${memberId}`, {
+    method: 'PUT',
+    body: JSON.stringify({ reason }),
+  });
+}
+
+export async function confirmPortalOrder(memberId: number, orderId: number): Promise<void> {
+  return request<void>(`/api/portal/trade/orders/${orderId}/confirm?memberId=${memberId}`, {
+    method: 'PUT',
+  });
+}
+
 export async function fetchPortalFavorites(memberId: number): Promise<Array<{ productId: number }>> {
   return request<Array<{ productId: number }>>(`/api/portal/member/favorites?memberId=${memberId}`);
 }

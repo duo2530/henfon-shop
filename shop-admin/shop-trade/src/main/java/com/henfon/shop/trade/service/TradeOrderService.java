@@ -180,6 +180,50 @@ public class TradeOrderService {
     }
 
     /**
+     * 门户会员取消自己的订单。
+     *
+     * @param memberId 会员ID
+     * @param orderId 订单ID
+     * @param reason 取消原因
+     * @author Henfon
+     * @date 2026-08-30
+     */
+    @Transactional
+    public void cancelByMember(Long memberId, Long orderId, String reason) {
+        TradeOrder order = requireMemberOrder(memberId, orderId);
+        if (!Integer.valueOf(STATUS_PENDING_PAYMENT).equals(order.getOrderStatus())
+                && !Integer.valueOf(STATUS_PENDING_SHIPMENT).equals(order.getOrderStatus())) {
+            throw new BusinessException("TRADE_ORDER_STATUS_INVALID", "当前订单状态不允许取消");
+        }
+        order.setOrderStatus(STATUS_CANCELLED);
+        if (StringUtils.hasText(reason)) {
+            order.setRemark("买家取消：" + reason.trim());
+        }
+        updateOrder(order);
+        // 买家取消同样释放订单创建时预占的库存。
+        inventoryStockService.release(order.getId(), order.getOrderNo());
+    }
+
+    /**
+     * 门户会员确认收货。
+     *
+     * @param memberId 会员ID
+     * @param orderId 订单ID
+     * @author Henfon
+     * @date 2026-08-30
+     */
+    @Transactional
+    public void confirmReceive(Long memberId, Long orderId) {
+        TradeOrder order = requireMemberOrder(memberId, orderId);
+        if (!Integer.valueOf(STATUS_SHIPPED).equals(order.getOrderStatus())) {
+            throw new BusinessException("TRADE_ORDER_STATUS_INVALID", "仅已发货订单允许确认收货");
+        }
+        order.setOrderStatus(STATUS_COMPLETED);
+        order.setCompletedAt(LocalDateTime.now());
+        updateOrder(order);
+    }
+
+    /**
      * 更新订单卖家备注。
      *
      * @param orderId 订单ID
@@ -235,6 +279,23 @@ public class TradeOrderService {
         TradeOrder order = tradeOrderMapper.selectById(orderId);
         if (order == null) {
             throw new BusinessException("TRADE_ORDER_NOT_FOUND", "订单不存在或已删除");
+        }
+        return order;
+    }
+
+    /**
+     * 查询并校验订单属于指定会员。
+     *
+     * @param memberId 会员ID
+     * @param orderId 订单ID
+     * @return 会员订单
+     * @author Henfon
+     * @date 2026-08-30
+     */
+    private TradeOrder requireMemberOrder(Long memberId, Long orderId) {
+        TradeOrder order = requireOrder(orderId);
+        if (memberId == null || !memberId.equals(order.getMemberId())) {
+            throw new BusinessException("TRADE_ORDER_FORBIDDEN", "无权操作该订单");
         }
         return order;
     }
