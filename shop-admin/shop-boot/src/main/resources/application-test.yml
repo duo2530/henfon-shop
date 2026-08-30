@@ -29,6 +29,35 @@ rocketmq:
     group: ${SHOP_TEST_ROCKETMQ_PRODUCER_GROUP:shop-admin-test-producer}
 
 shop:
+  payment:
+    wechat:
+      # ==================== 微信支付 V3 测试环境配置 ====================
+      # 测试环境变量统一使用 SHOP_TEST_WECHAT_PAY_ 前缀，避免误用开发或生产配置。
+      # enabled：是否启用支付。默认 false；联调前请确认使用的商户号和回调地址属于测试环境。
+      enabled: ${SHOP_TEST_WECHAT_PAY_ENABLED:false}
+      # mode：NATIVE=二维码支付，H5=手机网页支付，JSAPI=微信内支付；当前默认 NATIVE。
+      mode: ${SHOP_TEST_WECHAT_PAY_MODE:NATIVE}
+      # app-id：微信公众平台/小程序 AppID，例如 wx1234567890abcdef。
+      app-id: ${SHOP_TEST_WECHAT_PAY_APP_ID:}
+      # merchant-id：微信支付商户号（mchid），在商户平台账户中心查看。
+      merchant-id: ${SHOP_TEST_WECHAT_PAY_MERCHANT_ID:}
+      # merchant-serial-number：商户 API 证书序列号，在“API安全 -> 商户API证书”查看。
+      merchant-serial-number: ${SHOP_TEST_WECHAT_PAY_MERCHANT_SERIAL_NUMBER:}
+      # api-v3-key：32 位 API v3 密钥，不是商户登录密码；请通过环境变量注入。
+      api-v3-key: ${SHOP_TEST_WECHAT_PAY_API_V3_KEY:}
+      # merchant-private-key-path：商户私钥 apiclient_key.pem 的绝对路径。
+      merchant-private-key-path: ${SHOP_TEST_WECHAT_PAY_MERCHANT_PRIVATE_KEY_PATH:}
+      # platform-certificate-path：微信支付平台证书 wechatpay_*.pem 的绝对路径。
+      platform-certificate-path: ${SHOP_TEST_WECHAT_PAY_PLATFORM_CERTIFICATE_PATH:}
+      # notify-url：支付异步通知公网 HTTPS 地址，不能使用 localhost。
+      notify-url: ${SHOP_TEST_WECHAT_PAY_NOTIFY_URL:}
+      # refund-notify-url：退款异步通知公网 HTTPS 地址。
+      refund-notify-url: ${SHOP_TEST_WECHAT_PAY_REFUND_NOTIFY_URL:}
+      # api-base-url：微信支付 API 地址，默认正式接口地址；如有专用网关才需要修改。
+      api-base-url: ${SHOP_TEST_WECHAT_PAY_API_BASE_URL:https://api.mch.weixin.qq.com}
+      # 超时时间使用 Spring 时长格式，例如 3s、10s。
+      connect-timeout: ${SHOP_TEST_WECHAT_PAY_CONNECT_TIMEOUT:3s}
+      read-timeout: ${SHOP_TEST_WECHAT_PAY_READ_TIMEOUT:10s}
   security:
     jwt:
       secret: ${SHOP_TEST_JWT_SECRET:henfon-shop-test-jwt-secret-key-change-me-2026}

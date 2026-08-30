@@ -17,6 +17,10 @@
             <artifactId>shop-common</artifactId>
         </dependency>
         <dependency>
+            <groupId>com.henfon.shop</groupId>
+            <artifactId>shop-inventory</artifactId>
+        </dependency>
+        <dependency>
             <groupId>com.baomidou</groupId>
             <artifactId>mybatis-plus-spring-boot3-starter</artifactId>
         </dependency>

@@ -16,6 +16,8 @@ import com.henfon.shop.trade.dto.TradeOrderRemarkRequest;
 import com.henfon.shop.trade.dto.TradeOrderRefundRequest;
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.henfon.shop.common.exception.BusinessException;
+import com.henfon.shop.inventory.dto.InventoryReservationItem;
+import com.henfon.shop.inventory.service.InventoryStockService;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -43,6 +45,7 @@ public class TradeOrderService {
     private final TradeOrderMapper tradeOrderMapper;
     private final TradeOrderItemMapper tradeOrderItemMapper;
     private final TradeOrderLogisticsMapper tradeOrderLogisticsMapper;
+    private final InventoryStockService inventoryStockService;
 
     /**
      * 创建交易订单服务。
@@ -52,10 +55,12 @@ public class TradeOrderService {
      * @date 2026-08-29
      */
     public TradeOrderService(TradeOrderMapper tradeOrderMapper, TradeOrderItemMapper tradeOrderItemMapper,
-                             TradeOrderLogisticsMapper tradeOrderLogisticsMapper) {
+                             TradeOrderLogisticsMapper tradeOrderLogisticsMapper,
+                             InventoryStockService inventoryStockService) {
         this.tradeOrderMapper = tradeOrderMapper;
         this.tradeOrderItemMapper = tradeOrderItemMapper;
         this.tradeOrderLogisticsMapper = tradeOrderLogisticsMapper;
+        this.inventoryStockService = inventoryStockService;
     }
 
     /**
@@ -168,6 +173,8 @@ public class TradeOrderService {
             order.setRemark("后台取消：" + request.reason().trim());
         }
         updateOrder(order);
+        // 取消待付款或待发货订单时释放已预占库存，库存与订单状态保持一致。
+        inventoryStockService.release(order.getId(), order.getOrderNo());
     }
 
     /**
@@ -287,6 +294,10 @@ public class TradeOrderService {
             item.setItemAmount(itemRequest.unitPrice().multiply(BigDecimal.valueOf(itemRequest.quantity())));
             tradeOrderItemMapper.insert(item);
         }
+        // 订单和库存预占处于同一事务，库存不足时整个订单创建会回滚。
+        inventoryStockService.reserve(order.getId(), order.getOrderNo(), request.items().stream()
+                .map(item -> new InventoryReservationItem(item.productId(), item.skuId(), item.quantity()))
+                .toList());
         return order;
     }
 }

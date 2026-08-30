@@ -244,6 +244,16 @@ public class IdentityDataInitializer implements ApplicationRunner {
             }
             menus.add(menu);
         }
+        // 库存调整权限与库存查询菜单保持同一父节点，便于后台按按钮权限控制出入库操作。
+        String[][] inventoryButtons = {{"库存调整", "inventory:stock:adjust"}};
+        for (String[] button : inventoryButtons) {
+            SysMenu menu = ensureMenu(button[0], "BUTTON", button[1], null, 100);
+            if (!inventory.getId().equals(menu.getParentId())) {
+                menu.setParentId(inventory.getId());
+                sysMenuMapper.updateById(menu);
+            }
+            menus.add(menu);
+        }
         return menus;
     }
 

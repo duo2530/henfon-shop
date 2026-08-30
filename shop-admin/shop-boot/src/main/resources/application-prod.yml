@@ -33,6 +33,35 @@ rocketmq:
     retry-times-when-send-failed: ${ROCKETMQ_RETRY_TIMES:3}
 
 shop:
+  payment:
+    wechat:
+      # ==================== 微信支付 V3 生产环境配置 ====================
+      # 生产环境不提供敏感信息默认值，建议通过容器、系统服务或部署平台注入以下环境变量。
+      # enabled：确认所有证书、密钥和公网 HTTPS 回调已配置后，才改为 true。
+      enabled: ${SHOP_WECHAT_PAY_ENABLED:false}
+      # mode：NATIVE=二维码支付；H5=手机浏览器支付；JSAPI=微信内置浏览器支付。
+      mode: ${SHOP_WECHAT_PAY_MODE:NATIVE}
+      # app-id：生产公众号/小程序 AppID，例如 wx1234567890abcdef。
+      app-id: ${SHOP_WECHAT_PAY_APP_ID:}
+      # merchant-id：生产微信支付商户号（mchid）。
+      merchant-id: ${SHOP_WECHAT_PAY_MERCHANT_ID:}
+      # merchant-serial-number：生产商户 API 证书序列号。
+      merchant-serial-number: ${SHOP_WECHAT_PAY_MERCHANT_SERIAL_NUMBER:}
+      # api-v3-key：生产 API v3 密钥，必须 32 位；严禁提交到代码仓库或写入日志。
+      api-v3-key: ${SHOP_WECHAT_PAY_API_V3_KEY:}
+      # merchant-private-key-path：生产商户私钥 apiclient_key.pem 的绝对路径。
+      merchant-private-key-path: ${SHOP_WECHAT_PAY_MERCHANT_PRIVATE_KEY_PATH:}
+      # platform-certificate-path：生产微信支付平台证书 wechatpay_*.pem 的绝对路径。
+      platform-certificate-path: ${SHOP_WECHAT_PAY_PLATFORM_CERTIFICATE_PATH:}
+      # notify-url：生产支付异步通知公网 HTTPS 地址，必须在商户平台配置并与此值一致。
+      notify-url: ${SHOP_WECHAT_PAY_NOTIFY_URL:}
+      # refund-notify-url：生产退款异步通知公网 HTTPS 地址。
+      refund-notify-url: ${SHOP_WECHAT_PAY_REFUND_NOTIFY_URL:}
+      # api-base-url：正式微信支付接口地址，通常保持默认值。
+      api-base-url: ${SHOP_WECHAT_PAY_API_BASE_URL:https://api.mch.weixin.qq.com}
+      # 超时时间使用 Spring 时长格式，可按网络情况调整，默认连接 3 秒、读取 10 秒。
+      connect-timeout: ${SHOP_WECHAT_PAY_CONNECT_TIMEOUT:3s}
+      read-timeout: ${SHOP_WECHAT_PAY_READ_TIMEOUT:10s}
   security:
     jwt:
       # 生产环境必须使用长度足够且定期轮换的密钥。

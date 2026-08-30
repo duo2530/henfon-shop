@@ -176,6 +176,19 @@ export interface BackendTradeOrder {
   completedAt?: string;
 }
 
+export interface BackendInventoryStock {
+  id: number;
+  warehouseId: number;
+  productId?: number;
+  skuId: number;
+  availableStock: number;
+  lockedStock: number;
+  soldStock: number;
+  safetyStock: number;
+  updatedAt?: string;
+  remark?: string;
+}
+
 interface ApiEnvelope<T> {
   code: string;
   message: string;
@@ -334,6 +347,33 @@ export function refundTradeOrder(orderId: number, refundAmount: number, reason: 
   return request<void>(`/api/admin/trade/orders/${orderId}/refund`, {
     method: 'PUT',
     body: JSON.stringify({ refundAmount, reason })
+  });
+}
+
+export function listInventoryStocks(params: { current?: number; size?: number; skuId?: number } = {}): Promise<BackendPage<BackendInventoryStock>> {
+  const query = new URLSearchParams({ current: String(params.current || 1), size: String(params.size || 200) });
+  if (params.skuId !== undefined) query.set('skuId', String(params.skuId));
+  return request<BackendPage<BackendInventoryStock>>(`/api/admin/inventory/stocks?${query.toString()}`);
+}
+
+export function saveInventoryStock(payload: {
+  warehouseId?: number;
+  productId?: number;
+  skuId: number;
+  availableStock: number;
+  safetyStock?: number;
+  remark?: string;
+}): Promise<BackendInventoryStock> {
+  return request<BackendInventoryStock>('/api/admin/inventory/stocks', {
+    method: 'POST',
+    body: JSON.stringify({ safetyStock: 0, ...payload })
+  });
+}
+
+export function adjustInventoryStock(stockId: number, changeQuantity: number, remark?: string): Promise<BackendInventoryStock> {
+  return request<BackendInventoryStock>(`/api/admin/inventory/stocks/${stockId}/adjust`, {
+    method: 'PUT',
+    body: JSON.stringify({ changeQuantity, remark })
   });
 }
 
