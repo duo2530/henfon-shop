@@ -194,6 +194,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
       const orderItems = items.map((it) => ({
         productId: it.productId,
+        skuId: it.skuId,
         title: it.product.title,
         image: it.product.images[0],
         variantsSummary: Object.entries(it.selectedVariants)
