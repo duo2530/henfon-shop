@@ -69,6 +69,12 @@ function resolveMemberId(user: UserProfile | null): number | null {
   return match ? Number(match[1]) : null;
 }
 
+function resolveSelectedSku(product: Product, variants: Record<string, string>) {
+  return product.skus?.find((sku) =>
+    Object.entries(sku.attributes).every(([name, value]) => variants[name] === value)
+  );
+}
+
 export default function App() {
   // 1. Persistence & State
   const [products, setProducts] = useState<Product[]>(PRODUCTS);
@@ -284,12 +290,13 @@ export default function App() {
             return {
               id: `server-${item.id}`,
               productId: product.id,
+              skuId: item.skuId,
               product,
               selectedVariants: {},
               quantity: item.quantity,
               unitPrice: product.price,
               selected: item.selected === 1,
-            } satisfies CartItem;
+            } as CartItem;
           })
           .filter((item): item is CartItem => Boolean(item));
         if (mappedCart.length > 0) setCartItems(mappedCart);
@@ -512,9 +519,10 @@ export default function App() {
       });
     }
 
+    const selectedSku = resolveSelectedSku(product, finalVariants);
     // Calculate unit price modifier
-    let finalUnitPrice = product.price;
-    if (product.variants) {
+    let finalUnitPrice = selectedSku?.price ?? product.price;
+    if (!selectedSku && product.variants) {
       product.variants.forEach((variant) => {
         const selectedOptionLabel = finalVariants[variant.name];
         const found = variant.options.find((o) => o.label === selectedOptionLabel);
@@ -523,6 +531,7 @@ export default function App() {
         }
       });
     }
+    const availableStock = selectedSku?.stock ?? (product.skus?.length ? 0 : product.stock);
 
     const cartKey = `${product.id}-${JSON.stringify(finalVariants)}`;
 
@@ -531,7 +540,7 @@ export default function App() {
       if (existing) {
         return prev.map((item) =>
           item.id === cartKey
-            ? { ...item, quantity: Math.min(product.stock, item.quantity + quantity) }
+            ? { ...item, quantity: Math.min(availableStock, item.quantity + quantity) }
             : item
         );
       } else {
@@ -540,6 +549,7 @@ export default function App() {
           {
             id: cartKey,
             productId: product.id,
+            skuId: selectedSku?.id,
             product,
             selectedVariants: finalVariants,
             quantity,
@@ -553,7 +563,7 @@ export default function App() {
     const memberId = resolveMemberId(currentUser);
     const productId = Number(product.id.replace('prod-', ''));
     if (memberId && Number.isFinite(productId)) {
-      addPortalCartItem(memberId, productId, quantity).catch((error) =>
+      addPortalCartItem(memberId, productId, quantity, selectedSku?.id).catch((error) =>
         console.warn('购物车同步失败，已保留本地购物车', error)
       );
     }
@@ -581,8 +591,9 @@ export default function App() {
           });
         }
 
-        let finalUnitPrice = product.price;
-        if (product.variants) {
+        const selectedSku = resolveSelectedSku(product, finalVariants);
+        let finalUnitPrice = selectedSku?.price ?? product.price;
+        if (!selectedSku && product.variants) {
           product.variants.forEach((variant) => {
             const selectedOptionLabel = finalVariants[variant.name];
             const found = variant.options.find((o) => o.label === selectedOptionLabel);
@@ -598,13 +609,14 @@ export default function App() {
         if (existingIndex >= 0) {
           updated[existingIndex] = {
             ...updated[existingIndex],
-            quantity: Math.min(product.stock, updated[existingIndex].quantity + quantity),
+            quantity: Math.min(selectedSku?.stock ?? (product.skus?.length ? 0 : product.stock), updated[existingIndex].quantity + quantity),
             selected: true,
           };
         } else {
           updated.push({
             id: cartKey,
             productId: product.id,
+            skuId: selectedSku?.id,
             product,
             selectedVariants: finalVariants,
             quantity,
@@ -629,8 +641,9 @@ export default function App() {
     selectedVariants: Record<string, string>,
     quantity: number
   ) => {
-    let finalUnitPrice = product.price;
-    if (product.variants) {
+    const selectedSku = resolveSelectedSku(product, selectedVariants);
+    let finalUnitPrice = selectedSku?.price ?? product.price;
+    if (!selectedSku && product.variants) {
       product.variants.forEach((variant) => {
         const selectedOptionLabel = selectedVariants[variant.name];
         const found = variant.options.find((o) => o.label === selectedOptionLabel);
@@ -643,6 +656,7 @@ export default function App() {
     const tempItem: CartItem = {
       id: `instant-${product.id}-${Date.now()}`,
       productId: product.id,
+      skuId: selectedSku?.id,
       product,
       selectedVariants,
       quantity,
@@ -960,14 +974,22 @@ export default function App() {
         memberId,
         // 使用本地订单 ID 作为幂等键，网络重试时仍能定位同一笔订单。
         idempotencyKey: order.id,
-        items: order.items.map((item) => ({
-          productId: Number(item.productId.replace('prod-', '')) || undefined,
-          productName: item.title,
-          imageUrl: item.image,
-          unitPrice: item.price,
-          quantity: item.quantity,
-          skuName: item.variantsSummary,
-        })),
+        items: order.items.map((item) => {
+          const product = products.find((candidate) => candidate.id === item.productId);
+          const sku = product ? resolveSelectedSku(product, Object.fromEntries(
+            item.variantsSummary.split(' / ').map((entry) => entry.split(':')).filter((entry) => entry.length === 2)
+          )) : undefined;
+          return {
+            productId: Number(item.productId.replace('prod-', '')) || undefined,
+            skuId: item.skuId || sku?.id,
+            skuCode: sku?.skuCode,
+            productName: item.title,
+            imageUrl: item.image,
+            unitPrice: item.price,
+            quantity: item.quantity,
+            skuName: item.variantsSummary,
+          };
+        }),
         receiverName: order.shippingAddress.receiverName,
         receiverPhone: order.shippingAddress.phone,
         receiverProvince: province,

@@ -1,4 +1,4 @@
-import { Coupon, Product } from '../types/ecommerce';
+import { Coupon, Product, ProductSku, ProductVariant } from '../types/ecommerce';
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080').replace(/\/$/, '');
 const MEMBER_TOKEN_KEY = 'henfon_shop_member_token';
@@ -40,6 +40,16 @@ interface CatalogProductRecord {
   salesCount?: number;
   mainImageUrl?: string;
   tagsCsv?: string;
+}
+
+interface CatalogSkuRecord {
+  id: number;
+  skuCode: string;
+  skuName: string;
+  attributesJson?: string | Record<string, string | number>;
+  price: number;
+  marketPrice?: number;
+  stock?: number;
 }
 
 interface ProductPage {
@@ -122,6 +132,50 @@ function mapProduct(record: CatalogProductRecord): Product {
   };
 }
 
+function parseSkuAttributes(value?: string | Record<string, string | number>): Record<string, string> {
+  if (!value) return {};
+  const parsed = typeof value === 'string' ? (() => {
+    try {
+      return JSON.parse(value) as unknown;
+    } catch {
+      return {};
+    }
+  })() : value;
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+  return Object.fromEntries(Object.entries(parsed as Record<string, unknown>)
+    .filter(([, item]) => item !== null && item !== undefined)
+    .map(([key, item]) => [key, String(item)]));
+}
+
+function mapSku(record: CatalogSkuRecord): ProductSku {
+  return {
+    id: record.id,
+    skuCode: record.skuCode,
+    skuName: record.skuName,
+    attributes: parseSkuAttributes(record.attributesJson),
+    price: Number(record.price || 0),
+    marketPrice: Number(record.marketPrice || record.price || 0),
+    stock: Number(record.stock || 0),
+  };
+}
+
+function buildSkuVariants(skus: ProductSku[], basePrice: number): ProductVariant[] {
+  const values = new Map<string, Map<string, ProductSku>>();
+  skus.forEach((sku) => Object.entries(sku.attributes).forEach(([name, label]) => {
+    const options = values.get(name) || new Map<string, ProductSku>();
+    if (!options.has(label)) options.set(label, sku);
+    values.set(name, options);
+  }));
+  return Array.from(values.entries()).map(([name, options]) => ({
+    name,
+    options: Array.from(options.entries()).map(([label, sku]) => ({
+      id: String(sku.id),
+      label,
+      priceModifier: Number((sku.price - basePrice).toFixed(2)),
+    })),
+  }));
+}
+
 export async function fetchPortalProducts(keyword?: string): Promise<Product[]> {
   const query = keyword ? `?keyword=${encodeURIComponent(keyword)}` : '';
   const page = await request<ProductPage>(`/api/portal/catalog/products${query}`);
@@ -188,10 +242,21 @@ export async function fetchPortalProductDetail(productId: string): Promise<Produ
     product: CatalogProductRecord;
     features?: Array<{ featureText: string }>;
     specs?: Array<{ specName: string; specValue: string }>;
+    skus?: CatalogSkuRecord[];
     media?: Array<{ mediaUrl?: string; isCover?: number }>;
   }>(`/api/portal/catalog/products/${numericId}`);
   if (!detail?.product) return null;
   const product = mapProduct(detail.product);
+  const skus = (detail.skus || []).map(mapSku);
+  if (skus.length > 0) {
+    product.skus = skus;
+    product.variants = buildSkuVariants(skus, product.price);
+    if (skus.length === 1) {
+      product.price = skus[0].price;
+      product.originalPrice = skus[0].marketPrice;
+      product.stock = skus[0].stock;
+    }
+  }
   product.features = (detail.features || []).map((item) => item.featureText);
   product.specs = Object.fromEntries((detail.specs || []).map((item) => [item.specName, item.specValue]));
   const mediaUrls = (detail.media || []).map((item) => item.mediaUrl).filter((url): url is string => Boolean(url));

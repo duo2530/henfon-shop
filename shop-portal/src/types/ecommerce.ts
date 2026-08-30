@@ -19,6 +19,16 @@ export interface ProductVariant {
   }[];
 }
 
+export interface ProductSku {
+  id: number;
+  skuCode: string;
+  skuName: string;
+  attributes: Record<string, string>;
+  price: number;
+  marketPrice: number;
+  stock: number;
+}
+
 export interface Product {
   id: string;
   title: string;
@@ -40,6 +50,7 @@ export interface Product {
   features: string[];
   specs: Record<string, string>;
   variants?: ProductVariant[];
+  skus?: ProductSku[];
   description: string;
   isFreeShipping: boolean;
   deliveryEstimate: string;
@@ -48,6 +59,7 @@ export interface Product {
 export interface CartItem {
   id: string; // unique cart item id (product.id + variant options key)
   productId: string;
+  skuId?: number;
   product: Product;
   selectedVariants: Record<string, string>; // e.g. { "颜色": "深空灰", "容量": "256GB" }
   quantity: number;
@@ -82,6 +94,7 @@ export interface Coupon {
 
 export interface OrderItem {
   productId: string;
+  skuId?: number;
   title: string;
   image: string;
   variantsSummary: string;

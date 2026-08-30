@@ -61,7 +61,7 @@ export const ProductQuickView: React.FC<ProductQuickViewProps> = ({
     } else {
       setSelectedVariants({});
     }
-  }, [product.id]);
+  }, [product.id, product.variants]);
 
   // Video playback & viewport states
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -254,8 +254,11 @@ export const ProductQuickView: React.FC<ProductQuickViewProps> = ({
   });
 
   // Calculate final unit price including variant price modifiers
-  let currentPrice = product.price;
-  if (product.variants) {
+  const selectedSku = product.skus?.find((sku) =>
+    Object.entries(sku.attributes).every(([name, value]) => selectedVariants[name] === value)
+  );
+  let currentPrice = selectedSku?.price ?? product.price;
+  if (!selectedSku && !product.skus?.length && product.variants) {
     product.variants.forEach((variant) => {
       const selectedOptionLabel = selectedVariants[variant.name];
       const foundOption = variant.options.find((opt) => opt.label === selectedOptionLabel);
@@ -264,6 +267,7 @@ export const ProductQuickView: React.FC<ProductQuickViewProps> = ({
       }
     });
   }
+  const currentStock = selectedSku?.stock ?? (product.skus?.length ? 0 : product.stock);
 
   const handleVariantSelect = (variantName: string, optionLabel: string) => {
     setSelectedVariants((prev) => ({
@@ -600,7 +604,7 @@ export const ProductQuickView: React.FC<ProductQuickViewProps> = ({
                 <div className="text-right">
                   <span className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200/60">
                     <Check className="w-3.5 h-3.5" />
-                    现货充足 ({product.stock}件)
+                    {currentStock > 0 ? `现货充足 (${currentStock}件)` : '暂时缺货'}
                   </span>
                 </div>
               </div>
@@ -649,14 +653,14 @@ export const ProductQuickView: React.FC<ProductQuickViewProps> = ({
                     <input
                       type="number"
                       min={1}
-                      max={product.stock}
+                      max={currentStock}
                       value={quantity}
-                      onChange={(e) => setQuantity(Math.max(1, Math.min(product.stock, Number(e.target.value) || 1)))}
+                      onChange={(e) => setQuantity(Math.max(1, Math.min(currentStock, Number(e.target.value) || 1)))}
                       className="w-12 text-center text-xs font-semibold text-zinc-900 focus:outline-none bg-transparent"
                     />
                     <button
-                      onClick={() => setQuantity((q) => Math.min(product.stock, q + 1))}
-                      disabled={quantity >= product.stock}
+                      onClick={() => setQuantity((q) => Math.min(currentStock, q + 1))}
+                      disabled={quantity >= currentStock}
                       className="p-1.5 rounded-lg hover:bg-zinc-100 text-zinc-600 disabled:opacity-30 transition"
                     >
                       <Plus className="w-3.5 h-3.5" />
@@ -682,6 +686,7 @@ export const ProductQuickView: React.FC<ProductQuickViewProps> = ({
 
                 <button
                   onClick={handleAdd}
+                  disabled={currentStock <= 0}
                   className="flex-1 py-3.5 px-4 rounded-2xl border-2 border-zinc-900 text-zinc-900 hover:bg-zinc-50 font-bold text-xs sm:text-sm transition flex items-center justify-center gap-2"
                 >
                   <ShoppingBag className="w-4 h-4" />
@@ -690,6 +695,7 @@ export const ProductQuickView: React.FC<ProductQuickViewProps> = ({
 
                 <button
                   onClick={handleBuy}
+                  disabled={currentStock <= 0}
                   className="flex-1 py-3.5 px-4 rounded-2xl bg-zinc-900 text-white hover:bg-zinc-800 font-bold text-xs sm:text-sm transition flex items-center justify-center gap-2 shadow-md"
                 >
                   <Zap className="w-4 h-4 text-amber-400" />
