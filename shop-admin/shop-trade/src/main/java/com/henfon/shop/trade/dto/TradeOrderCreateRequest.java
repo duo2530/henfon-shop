@@ -5,6 +5,7 @@ import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -25,6 +26,7 @@ import java.util.List;
  * @param discountAmount 优惠金额
  * @param freightAmount 运费
  * @param payableAmount 应付金额
+ * @param idempotencyKey 订单幂等键
  * @author Henfon
  * @date 2026-08-29
  */
@@ -33,7 +35,8 @@ public record TradeOrderCreateRequest(@NotNull Long memberId, @NotEmpty List<@Va
                                       String receiverProvince, String receiverCity, String receiverDistrict,
                                       @NotBlank String receiverAddress, String paymentMethod,
                                       @NotNull BigDecimal subtotalAmount, @NotNull BigDecimal discountAmount,
-                                      @NotNull BigDecimal freightAmount, @NotNull BigDecimal payableAmount) {
+                                      @NotNull BigDecimal freightAmount, @NotNull BigDecimal payableAmount,
+                                      @Size(max = 64, message = "订单幂等键长度不能超过64") String idempotencyKey) {
     /**
      * 订单商品请求。
      *

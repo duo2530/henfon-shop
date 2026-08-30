@@ -23,6 +23,7 @@ public class TradeOrder {
     @TableId(type = IdType.AUTO)
     private Long id;
     private String orderNo;
+    private String idempotencyKey;
     private Long memberId;
     private String memberName;
     private Integer orderStatus;

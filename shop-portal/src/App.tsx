@@ -958,6 +958,8 @@ export default function App() {
     try {
       await createPortalOrder({
         memberId,
+        // 使用本地订单 ID 作为幂等键，网络重试时仍能定位同一笔订单。
+        idempotencyKey: order.id,
         items: order.items.map((item) => ({
           productId: Number(item.productId.replace('prod-', '')) || undefined,
           productName: item.title,

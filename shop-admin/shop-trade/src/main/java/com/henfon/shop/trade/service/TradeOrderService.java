@@ -21,8 +21,10 @@ import com.henfon.shop.inventory.service.InventoryStockService;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
+import org.springframework.dao.DuplicateKeyException;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -324,8 +326,22 @@ public class TradeOrderService {
      */
     @Transactional
     public TradeOrder create(TradeOrderCreateRequest request) {
+        String idempotencyKey = StringUtils.hasText(request.idempotencyKey())
+                ? request.idempotencyKey().trim() : null;
+        if (idempotencyKey != null) {
+            // 同一会员重复提交同一幂等键时直接返回原订单，避免重复扣库存。
+            TradeOrder existing = tradeOrderMapper.selectOne(new LambdaQueryWrapper<TradeOrder>()
+                    .eq(TradeOrder::getMemberId, request.memberId())
+                    .eq(TradeOrder::getIdempotencyKey, idempotencyKey)
+                    .last("LIMIT 1 FOR UPDATE"));
+            if (existing != null) {
+                return existing;
+            }
+        }
+        validateAmounts(request);
         TradeOrder order = new TradeOrder();
         order.setOrderNo("AO" + IdWorker.getIdStr());
+        order.setIdempotencyKey(idempotencyKey);
         order.setMemberId(request.memberId());
         order.setOrderStatus(20);
         order.setPaymentStatus(1);
@@ -342,7 +358,21 @@ public class TradeOrderService {
         order.setReceiverDistrict(request.receiverDistrict());
         order.setReceiverAddress(request.receiverAddress());
         order.setPaidAt(java.time.LocalDateTime.now());
-        tradeOrderMapper.insert(order);
+        try {
+            tradeOrderMapper.insert(order);
+        } catch (DuplicateKeyException exception) {
+            if (idempotencyKey != null) {
+                // 并发请求由数据库唯一索引仲裁，冲突方读取并返回已创建订单。
+                TradeOrder existing = tradeOrderMapper.selectOne(new LambdaQueryWrapper<TradeOrder>()
+                        .eq(TradeOrder::getMemberId, request.memberId())
+                        .eq(TradeOrder::getIdempotencyKey, idempotencyKey)
+                        .last("LIMIT 1 FOR UPDATE"));
+                if (existing != null) {
+                    return existing;
+                }
+            }
+            throw exception;
+        }
         for (TradeOrderCreateRequest.Item itemRequest : request.items()) {
             TradeOrderItem item = new TradeOrderItem();
             item.setOrderId(order.getId());
@@ -362,5 +392,53 @@ public class TradeOrderService {
                 .map(item -> new InventoryReservationItem(item.productId(), item.skuId(), item.quantity()))
                 .toList());
         return order;
+    }
+
+    /**
+     * 校验订单明细与金额汇总的一致性。
+     *
+     * @param request 订单创建请求
+     * @author Henfon
+     * @date 2026-08-30
+     */
+    private void validateAmounts(TradeOrderCreateRequest request) {
+        // 先按明细单价和数量重算商品小计，拒绝客户端直接篡改汇总金额。
+        BigDecimal calculatedSubtotal = request.items().stream()
+                .map(item -> {
+                    if (item.unitPrice().signum() < 0) {
+                        throw new BusinessException("TRADE_PRICE_INVALID", "商品单价不能为负数");
+                    }
+                    return item.unitPrice().multiply(BigDecimal.valueOf(item.quantity()));
+                })
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal subtotal = money(request.subtotalAmount());
+        BigDecimal discount = money(request.discountAmount());
+        BigDecimal freight = money(request.freightAmount());
+        BigDecimal payable = money(request.payableAmount());
+        if (discount.signum() < 0 || freight.signum() < 0) {
+            throw new BusinessException("TRADE_AMOUNT_INVALID", "优惠金额和运费不能为负数");
+        }
+        if (discount.compareTo(subtotal) > 0) {
+            throw new BusinessException("TRADE_DISCOUNT_INVALID", "优惠金额不能超过商品小计");
+        }
+        if (money(calculatedSubtotal).compareTo(subtotal) != 0) {
+            throw new BusinessException("TRADE_SUBTOTAL_MISMATCH", "商品小计与明细金额不一致");
+        }
+        BigDecimal calculatedPayable = subtotal.subtract(discount).add(freight);
+        if (calculatedPayable.compareTo(payable) != 0) {
+            throw new BusinessException("TRADE_PAYABLE_MISMATCH", "应付金额与订单优惠、运费不一致");
+        }
+    }
+
+    /**
+     * 将金额统一为两位小数。
+     *
+     * @param amount 原始金额
+     * @return 两位小数金额
+     * @author Henfon
+     * @date 2026-08-30
+     */
+    private BigDecimal money(BigDecimal amount) {
+        return amount.setScale(2, RoundingMode.HALF_UP);
     }
 }

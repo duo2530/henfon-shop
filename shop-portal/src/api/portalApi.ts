@@ -273,6 +273,7 @@ export async function fetchPortalOrders(memberId: number): Promise<PortalOrderRe
 
 export interface PortalOrderCreatePayload {
   memberId: number;
+  idempotencyKey?: string;
   items: Array<{
     productId?: number;
     skuId?: number;
