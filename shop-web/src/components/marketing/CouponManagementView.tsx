@@ -1,5 +1,12 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useAdmin } from '../../context/AdminContext';
+import {
+  BackendMarketingCoupon,
+  deleteMarketingCoupon,
+  listMarketingCoupons,
+  saveMarketingCoupon,
+  updateMarketingCouponStatus,
+} from '../../api/adminApi';
 import { 
   Ticket, 
   Plus, 
@@ -37,6 +44,32 @@ export interface CouponItem {
   scope: 'all' | 'category' | 'single_product';
   scopeTargetName?: string;
   perUserLimit: number;
+}
+
+function mapBackendCoupon(record: BackendMarketingCoupon): CouponItem {
+  const now = new Date();
+  const start = new Date(record.startAt);
+  const end = new Date(record.endAt);
+  const status: CouponItem['status'] = record.status !== 1
+    ? 'disabled'
+    : now < start ? 'scheduled' : now > end ? 'expired' : 'active';
+  return {
+    id: String(record.id),
+    name: record.couponTitle,
+    code: record.couponCode,
+    type: 'cash',
+    discountValue: Number(record.discountAmount || 0),
+    minSpend: Number(record.minSpend || 0),
+    totalQuantity: Number(record.totalQuantity || 0),
+    claimedQuantity: Number(record.claimedQuantity || 0),
+    usedQuantity: 0,
+    status,
+    startDate: record.startAt?.slice(0, 10) || '',
+    endDate: record.endAt?.slice(0, 10) || '',
+    scope: record.categoryCode ? 'category' : 'all',
+    scopeTargetName: record.categoryCode,
+    perUserLimit: 1,
+  };
 }
 
 const mockCoupons: CouponItem[] = [
@@ -143,6 +176,7 @@ const mockCoupons: CouponItem[] = [
 export const CouponManagementView: React.FC = () => {
   const { showToast } = useAdmin();
   const [coupons, setCoupons] = useState<CouponItem[]>(mockCoupons);
+  const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [typeFilter, setTypeFilter] = useState<'all' | 'cash' | 'discount' | 'shipping'>('all');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'scheduled' | 'expired' | 'disabled'>('all');
@@ -167,6 +201,23 @@ export const CouponManagementView: React.FC = () => {
     perUserLimit: 1
   });
 
+  const loadCoupons = async () => {
+    setLoading(true);
+    try {
+      const page = await listMarketingCoupons({ size: 200 });
+      setCoupons((page.records || []).map(mapBackendCoupon));
+    } catch (error) {
+      console.warn('优惠券列表加载失败，暂使用演示数据', error);
+      showToast('优惠券接口暂不可用，当前显示演示数据', 'warning');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void loadCoupons();
+  }, []);
+
   const filteredCoupons = useMemo(() => {
     return coupons.filter((c) => {
       const matchSearch = searchTerm === '' || c.name.toLowerCase().includes(searchTerm.toLowerCase()) || c.code.toLowerCase().includes(searchTerm.toLowerCase());
@@ -182,40 +233,65 @@ export const CouponManagementView: React.FC = () => {
   const claimRate = totalIssued > 0 ? ((totalClaimed / totalIssued) * 100).toFixed(1) : '0';
   const useRate = totalClaimed > 0 ? ((totalUsed / totalClaimed) * 100).toFixed(1) : '0';
 
-  const handleToggleStatus = (id: string) => {
-    setCoupons((prev) =>
-      prev.map((c) => {
-        if (c.id === id) {
-          const nextStatus = c.status === 'active' ? 'disabled' : 'active';
-          showToast(`优惠券已${nextStatus === 'active' ? '启用上线' : '下架停用'}`, 'info');
-          return { ...c, status: nextStatus };
-        }
-        return c;
-      })
-    );
+  const handleToggleStatus = async (id: string) => {
+    const coupon = coupons.find((item) => item.id === id);
+    if (!coupon) return;
+    const numericId = Number(id);
+    const nextEnabled = coupon.status !== 'active';
+    try {
+      if (Number.isFinite(numericId)) {
+        await updateMarketingCouponStatus(numericId, nextEnabled ? 1 : 0);
+        await loadCoupons();
+      } else {
+        setCoupons((prev) => prev.map((item) => item.id === id ? { ...item, status: nextEnabled ? 'active' : 'disabled' } : item));
+      }
+      showToast(`优惠券已${nextEnabled ? '启用上线' : '下架停用'}`, 'success');
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : '优惠券状态更新失败', 'error');
+    }
   };
 
-  const handleDeleteCoupon = (id: string) => {
-    setCoupons((prev) => prev.filter((c) => c.id !== id));
-    showToast('优惠券已成功删除', 'success');
+  const handleDeleteCoupon = async (id: string) => {
+    const numericId = Number(id);
+    try {
+      if (Number.isFinite(numericId)) {
+        await deleteMarketingCoupon(numericId);
+        await loadCoupons();
+      } else {
+        setCoupons((prev) => prev.filter((c) => c.id !== id));
+      }
+      showToast('优惠券已成功删除', 'success');
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : '优惠券删除失败', 'error');
+    }
   };
 
-  const handleCreateSubmit = (e: React.FormEvent) => {
+  const handleCreateSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.name.trim()) {
       showToast('请输入优惠券名称', 'error');
       return;
     }
-    const newCoupon: CouponItem = {
-      ...formData,
-      id: `cpn-${Date.now().toString().slice(-4)}`,
-      code: formData.code || `CPN${Math.floor(1000 + Math.random() * 9000)}`,
-      claimedQuantity: 0,
-      usedQuantity: 0
-    };
-    setCoupons([newCoupon, ...coupons]);
-    setIsCreateModalOpen(false);
-    showToast('优惠券活动已成功创建', 'success');
+    try {
+      await saveMarketingCoupon({
+        couponCode: formData.code || `CPN${Math.floor(1000 + Math.random() * 9000)}`,
+        couponTitle: formData.name.trim(),
+        discountAmount: formData.discountValue,
+        minSpend: formData.minSpend,
+        categoryCode: formData.scope === 'category' ? formData.scopeTargetName : undefined,
+        tag: formData.type,
+        description: formData.name,
+        totalQuantity: formData.totalQuantity,
+        startAt: `${formData.startDate}T00:00:00`,
+        endAt: `${formData.endDate}T23:59:59`,
+        status: formData.status === 'active' ? 1 : 0,
+      });
+      await loadCoupons();
+      setIsCreateModalOpen(false);
+      showToast('优惠券活动已成功创建', 'success');
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : '优惠券创建失败', 'error');
+    }
   };
 
   const handleExportCSV = () => {
@@ -394,7 +470,11 @@ export const CouponManagementView: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100 text-sm text-gray-800">
-              {filteredCoupons.length === 0 ? (
+              {loading ? (
+                <tr>
+                  <td colSpan={7} className="text-center py-16 text-gray-400">正在加载优惠券数据…</td>
+                </tr>
+              ) : filteredCoupons.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="text-center py-16 text-gray-400">
                     <Ticket className="w-12 h-12 mx-auto mb-2 opacity-40" />

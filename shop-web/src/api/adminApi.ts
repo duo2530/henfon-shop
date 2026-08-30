@@ -182,6 +182,24 @@ export interface BackendContentBanner {
   remark?: string;
 }
 
+export interface BackendMarketingCoupon {
+  id: number;
+  couponCode: string;
+  couponTitle: string;
+  discountAmount: number;
+  minSpend: number;
+  categoryCode?: string;
+  tag?: string;
+  description?: string;
+  totalQuantity: number;
+  claimedQuantity: number;
+  startAt: string;
+  endAt: string;
+  status: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 export interface BackendTradeOrder {
   id: number;
   orderNo: string;
@@ -415,6 +433,38 @@ export function updateContentBannerStatus(id: number, status: number): Promise<v
 
 export function deleteContentBanner(id: number): Promise<void> {
   return request<void>(`/api/admin/content/banners/${id}`, { method: 'DELETE' });
+}
+
+export function listMarketingCoupons(params: { current?: number; size?: number; keyword?: string; status?: number } = {}): Promise<BackendPage<BackendMarketingCoupon>> {
+  const query = new URLSearchParams({ current: String(params.current || 1), size: String(params.size || 200) });
+  if (params.keyword) query.set('keyword', params.keyword);
+  if (params.status !== undefined) query.set('status', String(params.status));
+  return request<BackendPage<BackendMarketingCoupon>>(`/api/admin/marketing/coupons?${query.toString()}`);
+}
+
+export function saveMarketingCoupon(payload: {
+  id?: number;
+  couponCode: string;
+  couponTitle: string;
+  discountAmount: number;
+  minSpend: number;
+  categoryCode?: string;
+  tag?: string;
+  description?: string;
+  totalQuantity: number;
+  startAt: string;
+  endAt: string;
+  status: number;
+}): Promise<number> {
+  return request<number>('/api/admin/marketing/coupons', { method: 'POST', body: JSON.stringify(payload) });
+}
+
+export function updateMarketingCouponStatus(id: number, status: number): Promise<void> {
+  return request<void>(`/api/admin/marketing/coupons/${id}/status?status=${status}`, { method: 'PUT' });
+}
+
+export function deleteMarketingCoupon(id: number): Promise<void> {
+  return request<void>(`/api/admin/marketing/coupons/${id}`, { method: 'DELETE' });
 }
 
 export function listTradeOrders(params: { current?: number; size?: number; keyword?: string; orderStatus?: number } = {}): Promise<BackendPage<BackendTradeOrder>> {
