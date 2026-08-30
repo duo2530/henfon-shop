@@ -5,6 +5,9 @@ import com.henfon.shop.common.api.ApiResponse;
 import com.henfon.shop.identity.entity.MemberUser;
 import com.henfon.shop.identity.dto.MemberAdminAdjustRequest;
 import com.henfon.shop.identity.dto.MemberAdminUpdateRequest;
+import com.henfon.shop.identity.dto.MemberTagSaveRequest;
+import com.henfon.shop.identity.dto.MemberUserTagsRequest;
+import com.henfon.shop.identity.entity.MemberTag;
 import com.henfon.shop.identity.service.MemberAdminService;
 import org.slf4j.MDC;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -16,6 +19,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import jakarta.validation.Valid;
+import java.util.List;
 
 /**
  * 后台会员管理接口。
@@ -111,5 +115,79 @@ public class MemberAdminController {
     public ApiResponse<MemberUser> adjust(@PathVariable Long id,
                                           @Valid @RequestBody MemberAdminAdjustRequest request) {
         return ApiResponse.success(memberAdminService.adjust(id, request), MDC.get("requestId"));
+    }
+
+    /**
+     * 查询会员标签。
+     *
+     * @return 启用标签列表
+     * @author Henfon
+     * @date 2026-08-30
+     */
+    @GetMapping("/tags")
+    @PreAuthorize("hasAuthority('member:user:query')")
+    public ApiResponse<List<MemberTag>> listTags() {
+        return ApiResponse.success(memberAdminService.listTags(), MDC.get("requestId"));
+    }
+
+    /**
+     * 新增会员标签。
+     *
+     * @param request 标签请求
+     * @return 保存后的标签
+     * @author Henfon
+     * @date 2026-08-30
+     */
+    @PutMapping("/tags")
+    @PreAuthorize("hasAuthority('member:user:status')")
+    public ApiResponse<MemberTag> saveTag(@Valid @RequestBody MemberTagSaveRequest request) {
+        return ApiResponse.success(memberAdminService.saveTag(null, request), MDC.get("requestId"));
+    }
+
+    /**
+     * 修改会员标签。
+     *
+     * @param id 标签ID
+     * @param request 标签请求
+     * @return 保存后的标签
+     * @author Henfon
+     * @date 2026-08-30
+     */
+    @PutMapping("/tags/{id}")
+    @PreAuthorize("hasAuthority('member:user:status')")
+    public ApiResponse<MemberTag> updateTag(@PathVariable Long id,
+                                             @Valid @RequestBody MemberTagSaveRequest request) {
+        return ApiResponse.success(memberAdminService.saveTag(id, request), MDC.get("requestId"));
+    }
+
+    /**
+     * 删除会员标签。
+     *
+     * @param id 标签ID
+     * @return 空响应
+     * @author Henfon
+     * @date 2026-08-30
+     */
+    @org.springframework.web.bind.annotation.DeleteMapping("/tags/{id}")
+    @PreAuthorize("hasAuthority('member:user:status')")
+    public ApiResponse<Void> deleteTag(@PathVariable Long id) {
+        memberAdminService.deleteTag(id);
+        return ApiResponse.success(MDC.get("requestId"));
+    }
+
+    /**
+     * 覆盖会员标签绑定。
+     *
+     * @param id 会员ID
+     * @param request 标签名称列表
+     * @return 更新后的会员
+     * @author Henfon
+     * @date 2026-08-30
+     */
+    @PutMapping("/users/{id}/tags")
+    @PreAuthorize("hasAuthority('member:user:status')")
+    public ApiResponse<MemberUser> updateTags(@PathVariable Long id,
+                                               @Valid @RequestBody MemberUserTagsRequest request) {
+        return ApiResponse.success(memberAdminService.updateTags(id, request), MDC.get("requestId"));
     }
 }

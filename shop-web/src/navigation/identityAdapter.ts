@@ -119,15 +119,15 @@ export function backendMembersToFrontend(source: BackendMemberUser[]): User[] {
     avatar: member.avatarUrl,
     email: member.email || '-',
     registeredAt: member.registeredAt?.replace('T', ' ') || '-',
-    totalSpent: 0,
-    orderCount: 0,
+    totalSpent: Number(member.totalSpent || 0),
+    orderCount: Number(member.orderCount || 0),
     status: member.status === 1 ? 'active' : 'suspended',
     tier: (['regular', 'silver', 'gold', 'platinum'].includes(member.memberLevel.toLowerCase())
       ? member.memberLevel.toLowerCase() : 'regular') as User['tier'],
     lastActive: member.lastLoginAt?.replace('T', ' ') || '-',
     balance: Number(member.balance || 0),
     points: Number(member.points || 0),
-    tags: [],
+    tags: splitList(member.tagsCsv),
     notes: member.remark || '',
     growthValue: 0
   }));

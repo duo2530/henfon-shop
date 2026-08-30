@@ -18,7 +18,12 @@ import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.henfon.shop.common.exception.BusinessException;
 import com.henfon.shop.inventory.dto.InventoryReservationItem;
 import com.henfon.shop.inventory.service.InventoryStockService;
+import com.henfon.shop.catalog.entity.CatalogProduct;
+import com.henfon.shop.catalog.entity.CatalogSku;
+import com.henfon.shop.catalog.mapper.CatalogProductMapper;
+import com.henfon.shop.catalog.mapper.CatalogSkuMapper;
 import com.henfon.shop.integration.messaging.RocketMqTopics;
+import com.henfon.shop.identity.service.MemberAdminService;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -43,6 +48,9 @@ public class TradeOrderService {
     private final TradeOrderLogisticsMapper tradeOrderLogisticsMapper;
     private final InventoryStockService inventoryStockService;
     private final TradeEventOutboxService tradeEventOutboxService;
+    private final CatalogProductMapper catalogProductMapper;
+    private final CatalogSkuMapper catalogSkuMapper;
+    private final MemberAdminService memberAdminService;
 
     /**
      * 创建交易订单服务。
@@ -54,12 +62,18 @@ public class TradeOrderService {
     public TradeOrderService(TradeOrderMapper tradeOrderMapper, TradeOrderItemMapper tradeOrderItemMapper,
                              TradeOrderLogisticsMapper tradeOrderLogisticsMapper,
                              InventoryStockService inventoryStockService,
-                             TradeEventOutboxService tradeEventOutboxService) {
+                             TradeEventOutboxService tradeEventOutboxService,
+                             CatalogProductMapper catalogProductMapper,
+                             CatalogSkuMapper catalogSkuMapper,
+                             MemberAdminService memberAdminService) {
         this.tradeOrderMapper = tradeOrderMapper;
         this.tradeOrderItemMapper = tradeOrderItemMapper;
         this.tradeOrderLogisticsMapper = tradeOrderLogisticsMapper;
         this.inventoryStockService = inventoryStockService;
         this.tradeEventOutboxService = tradeEventOutboxService;
+        this.catalogProductMapper = catalogProductMapper;
+        this.catalogSkuMapper = catalogSkuMapper;
+        this.memberAdminService = memberAdminService;
     }
 
     /**
@@ -258,6 +272,8 @@ public class TradeOrderService {
         order.setPaidAmount(paidAmount);
         order.setPaidAt(paidAt);
         updateOrder(order);
+        // 支付成功后同步会员消费统计，退款成功时再按原支付金额回滚。
+        memberAdminService.recordPaid(order.getMemberId(), paidAmount, paidAt);
         // 订单状态与支付成功事件处于同一事务，保证状态变更后事件可被可靠投递。
         tradeEventOutboxService.recordOrderEvent(order, "PAYMENT_SUCCEEDED", RocketMqTopics.PAYMENT_SUCCEEDED);
         return order;
@@ -326,6 +342,8 @@ public class TradeOrderService {
         order.setPaymentStatus(2);
         order.setRemark("退款成功，金额：" + refundAmount);
         updateOrder(order);
+        // 统计按有效消费口径回滚退款金额，全额退款同时减少订单数。
+        memberAdminService.recordRefunded(order.getMemberId(), refundAmount, order.getPaidAmount());
         tradeEventOutboxService.recordOrderEvent(order, "REFUND_SUCCEEDED", RocketMqTopics.REFUND_SUCCEEDED);
         return order;
     }
@@ -400,6 +418,7 @@ public class TradeOrderService {
             }
         }
         validateAmounts(request);
+        validateCatalogItems(request);
         TradeOrder order = new TradeOrder();
         order.setOrderNo("AO" + IdWorker.getIdStr());
         order.setIdempotencyKey(idempotencyKey);
@@ -436,14 +455,16 @@ public class TradeOrderService {
             throw exception;
         }
         for (TradeOrderCreateRequest.Item itemRequest : request.items()) {
+            CatalogProduct product = catalogProductMapper.selectById(itemRequest.productId());
+            CatalogSku sku = itemRequest.skuId() == null ? null : catalogSkuMapper.selectById(itemRequest.skuId());
             TradeOrderItem item = new TradeOrderItem();
             item.setOrderId(order.getId());
             item.setProductId(itemRequest.productId());
             item.setSkuId(itemRequest.skuId());
-            item.setProductName(itemRequest.productName());
-            item.setSkuName(itemRequest.skuName());
-            item.setSkuCode(itemRequest.skuCode());
-            item.setImageUrl(itemRequest.imageUrl());
+            item.setProductName(product.getProductName());
+            item.setSkuName(sku == null ? itemRequest.skuName() : sku.getSkuName());
+            item.setSkuCode(sku == null ? itemRequest.skuCode() : sku.getSkuCode());
+            item.setImageUrl(StringUtils.hasText(product.getMainImageUrl()) ? product.getMainImageUrl() : itemRequest.imageUrl());
             item.setUnitPrice(itemRequest.unitPrice());
             item.setQuantity(itemRequest.quantity());
             item.setItemAmount(itemRequest.unitPrice().multiply(BigDecimal.valueOf(itemRequest.quantity())));
@@ -523,6 +544,39 @@ public class TradeOrderService {
         BigDecimal calculatedPayable = subtotal.subtract(discount).add(freight);
         if (calculatedPayable.compareTo(payable) != 0) {
             throw new BusinessException("TRADE_PAYABLE_MISMATCH", "应付金额与订单优惠、运费不一致");
+        }
+    }
+
+    /**
+     * 按商品目录事实校验商品、SKU、上下架状态、库存和成交单价。
+     *
+     * @param request 订单创建请求
+     * @author Henfon
+     * @date 2026-08-30
+     */
+    private void validateCatalogItems(TradeOrderCreateRequest request) {
+        for (TradeOrderCreateRequest.Item item : request.items()) {
+            CatalogProduct product = item.productId() == null ? null : catalogProductMapper.selectById(item.productId());
+            if (product == null || !Integer.valueOf(1).equals(product.getStatus())) {
+                throw new BusinessException("TRADE_PRODUCT_UNAVAILABLE", "商品不存在或已下架");
+            }
+            BigDecimal actualPrice = product.getPrice();
+            Integer stock = product.getCurrentStock();
+            if (item.skuId() != null) {
+                CatalogSku sku = catalogSkuMapper.selectById(item.skuId());
+                if (sku == null || !item.productId().equals(sku.getProductId()) || !Integer.valueOf(1).equals(sku.getStatus())) {
+                    throw new BusinessException("TRADE_SKU_UNAVAILABLE", "商品规格不存在或已停用");
+                }
+                actualPrice = sku.getPrice();
+                stock = sku.getStock();
+            }
+            if (actualPrice == null || item.unitPrice() == null || actualPrice.setScale(2, RoundingMode.HALF_UP)
+                    .compareTo(item.unitPrice().setScale(2, RoundingMode.HALF_UP)) != 0) {
+                throw new BusinessException("TRADE_PRICE_CHANGED", "商品价格已变化，请刷新后重试");
+            }
+            if (stock == null || stock < item.quantity()) {
+                throw new BusinessException("TRADE_STOCK_NOT_ENOUGH", "商品库存不足，请减少购买数量");
+            }
         }
     }
 

@@ -5,6 +5,10 @@ import com.henfon.shop.trade.dto.TradeCartItemRequest;
 import com.henfon.shop.trade.dto.TradeCartItemUpdateRequest;
 import com.henfon.shop.trade.entity.TradeCartItem;
 import com.henfon.shop.trade.mapper.TradeCartItemMapper;
+import com.henfon.shop.catalog.entity.CatalogProduct;
+import com.henfon.shop.catalog.entity.CatalogSku;
+import com.henfon.shop.catalog.mapper.CatalogProductMapper;
+import com.henfon.shop.catalog.mapper.CatalogSkuMapper;
 import com.henfon.shop.common.exception.BusinessException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -20,6 +24,8 @@ import java.util.List;
 @Service
 public class TradeCartService {
     private final TradeCartItemMapper mapper;
+    private final CatalogProductMapper productMapper;
+    private final CatalogSkuMapper skuMapper;
 
     /**
      * 创建购物车服务。
@@ -28,8 +34,10 @@ public class TradeCartService {
      * @author Henfon
      * @date 2026-08-29
      */
-    public TradeCartService(TradeCartItemMapper mapper) {
+    public TradeCartService(TradeCartItemMapper mapper, CatalogProductMapper productMapper, CatalogSkuMapper skuMapper) {
         this.mapper = mapper;
+        this.productMapper = productMapper;
+        this.skuMapper = skuMapper;
     }
 
     /**
@@ -55,6 +63,7 @@ public class TradeCartService {
      */
     @Transactional
     public Long add(TradeCartItemRequest request) {
+        validateProductAndSku(request.productId(), request.skuId(), request.quantity());
         LambdaQueryWrapper<TradeCartItem> query = new LambdaQueryWrapper<TradeCartItem>()
                 .eq(TradeCartItem::getMemberId, request.memberId())
                 .eq(TradeCartItem::getProductId, request.productId());
@@ -74,7 +83,9 @@ public class TradeCartService {
             item.setSelected(request.selected() == null ? 1 : request.selected());
             mapper.insert(item);
         } else {
-            item.setQuantity(item.getQuantity() + request.quantity());
+            int nextQuantity = item.getQuantity() + request.quantity();
+            validateProductAndSku(request.productId(), request.skuId(), nextQuantity);
+            item.setQuantity(nextQuantity);
             item.setSelected(request.selected() == null ? item.getSelected() : request.selected());
             mapper.updateById(item);
         }
@@ -106,12 +117,40 @@ public class TradeCartService {
     public void update(Long memberId, Long id, TradeCartItemUpdateRequest request) {
         TradeCartItem item = requireMemberItem(memberId, id);
         if (request.quantity() != null) {
+            validateProductAndSku(item.getProductId(), item.getSkuId(), request.quantity());
             item.setQuantity(request.quantity());
         }
         if (request.selected() != null) {
             item.setSelected(request.selected());
         }
         mapper.updateById(item);
+    }
+
+    /**
+     * 校验商品和 SKU 处于可售状态，并验证购物车数量不超过库存。
+     *
+     * @param productId 商品ID
+     * @param skuId SKU ID
+     * @param quantity 目标数量
+     * @author Henfon
+     * @date 2026-08-30
+     */
+    private void validateProductAndSku(Long productId, Long skuId, int quantity) {
+        CatalogProduct product = productId == null ? null : productMapper.selectById(productId);
+        if (product == null || !Integer.valueOf(1).equals(product.getStatus())) {
+            throw new BusinessException("TRADE_CART_PRODUCT_UNAVAILABLE", "商品不存在或已下架");
+        }
+        Integer stock = product.getCurrentStock();
+        if (skuId != null) {
+            CatalogSku sku = skuMapper.selectById(skuId);
+            if (sku == null || !productId.equals(sku.getProductId()) || !Integer.valueOf(1).equals(sku.getStatus())) {
+                throw new BusinessException("TRADE_CART_SKU_UNAVAILABLE", "商品规格不存在或已停用");
+            }
+            stock = sku.getStock();
+        }
+        if (quantity <= 0 || stock == null || quantity > stock) {
+            throw new BusinessException("TRADE_CART_STOCK_NOT_ENOUGH", "商品库存不足");
+        }
     }
 
     /**

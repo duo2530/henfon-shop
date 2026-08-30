@@ -34,6 +34,7 @@ import {
   updateMemberStatus,
   updateMemberProfile,
   adjustMemberAssets,
+  updateMemberTags,
   listDepartments,
   listDataRules,
   listRoleMenuIds,
@@ -793,10 +794,20 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   };
 
   const updateUserTags = (id: string, tags: string[]) => {
+    const previous = users.find((user) => user.id === id);
     setUsers((prev) =>
       prev.map((u) => (u.id === id ? { ...u, tags } : u))
     );
     showToast('用户画像标签更新成功', 'success');
+    const numericId = Number(id);
+    if (!previous || !Number.isFinite(numericId)) return;
+    void updateMemberTags(numericId, tags).then((record) => {
+      const synced = backendMembersToFrontend([record])[0];
+      setUsers((prev) => prev.map((user) => user.id === id ? synced : user));
+    }).catch((error) => {
+      setUsers((prev) => prev.map((user) => user.id === id ? previous : user));
+      showToast(error instanceof Error ? error.message : '会员标签保存失败，已回滚', 'warning');
+    });
   };
 
   // RBAC Role Methods

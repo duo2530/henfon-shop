@@ -1709,7 +1709,7 @@ export default function App() {
 
           <div className="pt-8 border-t border-zinc-100 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-zinc-400">
             <div>
-                © 2026 Henfon商城. All rights reserved. 沪ICP备20260828号
+                © 2026 Henfon商城. All rights reserved.
             </div>
             <div className="flex gap-4">
               <span className="hover:text-zinc-600 cursor-pointer">用户协议</span>

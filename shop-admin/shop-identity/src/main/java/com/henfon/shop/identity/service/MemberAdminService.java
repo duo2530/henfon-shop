@@ -8,6 +8,14 @@ import com.henfon.shop.identity.entity.MemberUser;
 import com.henfon.shop.identity.dto.MemberAdminAdjustRequest;
 import com.henfon.shop.identity.dto.MemberAdminUpdateRequest;
 import com.henfon.shop.identity.mapper.MemberUserMapper;
+import com.henfon.shop.identity.mapper.MemberTagMapper;
+import com.henfon.shop.identity.mapper.MemberUserTagMapper;
+import com.henfon.shop.identity.mapper.MemberConsumptionStatMapper;
+import com.henfon.shop.identity.entity.MemberTag;
+import com.henfon.shop.identity.entity.MemberUserTag;
+import com.henfon.shop.identity.entity.MemberConsumptionStat;
+import com.henfon.shop.identity.dto.MemberTagSaveRequest;
+import com.henfon.shop.identity.dto.MemberUserTagsRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.springframework.dao.DuplicateKeyException;
@@ -15,6 +23,13 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 /**
  * 后台会员管理应用服务。
@@ -26,16 +41,27 @@ import java.math.RoundingMode;
 public class MemberAdminService {
 
     private final MemberUserMapper memberUserMapper;
+    private final MemberTagMapper memberTagMapper;
+    private final MemberUserTagMapper memberUserTagMapper;
+    private final MemberConsumptionStatMapper memberConsumptionStatMapper;
 
     /**
      * 创建后台会员管理服务。
      *
      * @param memberUserMapper 会员数据访问对象
+     * @param memberTagMapper 标签数据访问对象
+     * @param memberUserTagMapper 会员标签关联数据访问对象
+     * @param memberConsumptionStatMapper 消费统计数据访问对象
      * @author Henfon
      * @date 2026-08-30
      */
-    public MemberAdminService(MemberUserMapper memberUserMapper) {
+    public MemberAdminService(MemberUserMapper memberUserMapper, MemberTagMapper memberTagMapper,
+                              MemberUserTagMapper memberUserTagMapper,
+                              MemberConsumptionStatMapper memberConsumptionStatMapper) {
         this.memberUserMapper = memberUserMapper;
+        this.memberTagMapper = memberTagMapper;
+        this.memberUserTagMapper = memberUserTagMapper;
+        this.memberConsumptionStatMapper = memberConsumptionStatMapper;
     }
 
     /**
@@ -65,7 +91,9 @@ public class MemberAdminService {
                         .or().like(MemberUser::getPhone, keyword)
                         .or().like(MemberUser::getEmail, keyword))
                 .orderByDesc(MemberUser::getCreatedAt);
-        return memberUserMapper.selectPage(new Page<>(Math.max(current, 1), Math.min(Math.max(size, 1), 200)), wrapper);
+        IPage<MemberUser> page = memberUserMapper.selectPage(new Page<>(Math.max(current, 1), Math.min(Math.max(size, 1), 200)), wrapper);
+        page.getRecords().forEach(this::enrichMember);
+        return page;
     }
 
     /**
@@ -115,7 +143,7 @@ public class MemberAdminService {
         member.setAvatarUrl(trimToNull(request.avatarUrl()));
         member.setRemark(trimToNull(request.remark()));
         updateMember(member);
-        return member;
+        return enrichMember(member);
     }
 
     /**
@@ -148,6 +176,235 @@ public class MemberAdminService {
             member.setRemark("调账：" + request.remark().trim());
         }
         updateMember(member);
+        return enrichMember(member);
+    }
+
+    /**
+     * 查询启用的会员标签。
+     *
+     * @return 标签列表
+     * @author Henfon
+     * @date 2026-08-30
+     */
+    public List<MemberTag> listTags() {
+        // 标签只返回默认租户下的启用数据，避免后台误绑定已停用标签。
+        return memberTagMapper.selectList(new LambdaQueryWrapper<MemberTag>()
+                .eq(MemberTag::getTenantId, 0L)
+                .eq(MemberTag::getStatus, 1)
+                .orderByAsc(MemberTag::getSortNo)
+                .orderByAsc(MemberTag::getId));
+    }
+
+    /**
+     * 新增或修改会员标签。
+     *
+     * @param id 标签ID，新增时为空
+     * @param request 标签请求
+     * @return 保存后的标签
+     * @author Henfon
+     * @date 2026-08-30
+     */
+    @Transactional
+    public MemberTag saveTag(Long id, MemberTagSaveRequest request) {
+        String tagName = request.tagName().trim();
+        MemberTag tag = id == null ? new MemberTag() : memberTagMapper.selectOne(new LambdaQueryWrapper<MemberTag>()
+                .eq(MemberTag::getId, id).eq(MemberTag::getTenantId, 0L));
+        if (tag == null) {
+            throw new BusinessException("MEMBER_TAG_NOT_FOUND", "会员标签不存在");
+        }
+        tag.setTenantId(0L);
+        tag.setTagName(tagName);
+        tag.setSortNo(request.sortNo() == null ? 0 : request.sortNo());
+        tag.setStatus(request.status() == null ? 1 : request.status());
+        if (tag.getStatus() != 0 && tag.getStatus() != 1) {
+            throw new BusinessException("MEMBER_TAG_STATUS_INVALID", "标签状态只能是启用或停用");
+        }
+        try {
+            if (tag.getId() == null) {
+                memberTagMapper.insert(tag);
+            } else if (memberTagMapper.updateById(tag) == 0) {
+                throw new BusinessException("MEMBER_CONCURRENT_UPDATE", "会员标签已被其他操作修改，请刷新后重试");
+            }
+        } catch (DuplicateKeyException exception) {
+            throw new BusinessException("MEMBER_TAG_EXISTS", "会员标签名称已存在");
+        }
+        return tag;
+    }
+
+    /**
+     * 删除会员标签。
+     *
+     * @param id 标签ID
+     * @author Henfon
+     * @date 2026-08-30
+     */
+    @Transactional
+    public void deleteTag(Long id) {
+        MemberTag tag = memberTagMapper.selectOne(new LambdaQueryWrapper<MemberTag>()
+                .eq(MemberTag::getId, id).eq(MemberTag::getTenantId, 0L));
+        if (tag == null) {
+            throw new BusinessException("MEMBER_TAG_NOT_FOUND", "会员标签不存在");
+        }
+        // 先逻辑删除关联，避免历史关联在恢复标签后产生脏数据。
+        List<MemberUserTag> relations = memberUserTagMapper.selectList(new LambdaQueryWrapper<MemberUserTag>()
+                .eq(MemberUserTag::getTagId, id));
+        relations.forEach(memberUserTagMapper::deleteById);
+        memberTagMapper.deleteById(id);
+    }
+
+    /**
+     * 覆盖会员标签绑定关系。
+     *
+     * @param memberId 会员ID
+     * @param request 标签名称列表
+     * @return 更新后的会员
+     * @author Henfon
+     * @date 2026-08-30
+     */
+    @Transactional
+    public MemberUser updateTags(Long memberId, MemberUserTagsRequest request) {
+        MemberUser member = requireMember(memberId);
+        LinkedHashSet<String> names = request.tags().stream()
+                .filter(StringUtils::hasText)
+                .map(String::trim)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+        List<MemberUserTag> existing = memberUserTagMapper.selectList(new LambdaQueryWrapper<MemberUserTag>()
+                .eq(MemberUserTag::getMemberId, memberId));
+        Map<Long, MemberUserTag> existingByTag = existing.stream()
+                .collect(Collectors.toMap(MemberUserTag::getTagId, Function.identity(), (left, right) -> left));
+        List<Long> targetTagIds = new ArrayList<>();
+        for (String name : names) {
+            MemberTag tag = memberTagMapper.selectOne(new LambdaQueryWrapper<MemberTag>()
+                    .eq(MemberTag::getTenantId, 0L).eq(MemberTag::getTagName, name));
+            if (tag == null) {
+                tag = new MemberTag();
+                tag.setTenantId(0L);
+                tag.setTagName(name);
+                tag.setSortNo(0);
+                tag.setStatus(1);
+                try {
+                    memberTagMapper.insert(tag);
+                } catch (DuplicateKeyException exception) {
+                    tag = memberTagMapper.selectOne(new LambdaQueryWrapper<MemberTag>()
+                            .eq(MemberTag::getTenantId, 0L).eq(MemberTag::getTagName, name));
+                }
+            }
+            if (tag == null) {
+                throw new BusinessException("MEMBER_TAG_SAVE_FAILED", "会员标签保存失败");
+            }
+            targetTagIds.add(tag.getId());
+            if (!existingByTag.containsKey(tag.getId())) {
+                MemberUserTag relation = new MemberUserTag();
+                relation.setMemberId(memberId);
+                relation.setTagId(tag.getId());
+                memberUserTagMapper.insert(relation);
+            }
+        }
+        existing.stream().filter(item -> !targetTagIds.contains(item.getTagId())).forEach(memberUserTagMapper::deleteById);
+        return enrichMember(member);
+    }
+
+    /**
+     * 记录会员支付成功后的消费统计。
+     *
+     * @param memberId 会员ID
+     * @param amount 实付金额
+     * @param paidAt 支付时间
+     * @author Henfon
+     * @date 2026-08-30
+     */
+    @Transactional
+    public void recordPaid(Long memberId, BigDecimal amount, LocalDateTime paidAt) {
+        if (memberId == null) {
+            return;
+        }
+        MemberConsumptionStat stat = memberConsumptionStatMapper.selectOne(new LambdaQueryWrapper<MemberConsumptionStat>()
+                .eq(MemberConsumptionStat::getMemberId, memberId));
+        BigDecimal normalizedAmount = amount == null ? BigDecimal.ZERO : amount.setScale(2, RoundingMode.HALF_UP);
+        if (stat == null) {
+            stat = new MemberConsumptionStat();
+            stat.setMemberId(memberId);
+            stat.setPaidOrderCount(1L);
+            stat.setPaidAmount(normalizedAmount);
+            stat.setLastOrderAt(paidAt == null ? LocalDateTime.now() : paidAt);
+            try {
+                memberConsumptionStatMapper.insert(stat);
+                return;
+            } catch (DuplicateKeyException exception) {
+                stat = memberConsumptionStatMapper.selectOne(new LambdaQueryWrapper<MemberConsumptionStat>()
+                        .eq(MemberConsumptionStat::getMemberId, memberId));
+            }
+        }
+        if (stat == null) {
+            throw new BusinessException("MEMBER_STAT_SAVE_FAILED", "会员消费统计保存失败");
+        }
+        stat.setPaidOrderCount((stat.getPaidOrderCount() == null ? 0L : stat.getPaidOrderCount()) + 1L);
+        stat.setPaidAmount((stat.getPaidAmount() == null ? BigDecimal.ZERO : stat.getPaidAmount()).add(normalizedAmount));
+        if (stat.getLastOrderAt() == null || (paidAt != null && paidAt.isAfter(stat.getLastOrderAt()))) {
+            stat.setLastOrderAt(paidAt);
+        }
+        if (memberConsumptionStatMapper.updateById(stat) == 0) {
+            throw new BusinessException("MEMBER_STAT_CONCURRENT_UPDATE", "会员消费统计已被其他操作修改，请重试");
+        }
+    }
+
+    /**
+     * 记录退款成功后的消费统计回滚。
+     *
+     * @param memberId 会员ID
+     * @param refundAmount 退款金额
+     * @param paidAmount 原支付金额
+     * @author Henfon
+     * @date 2026-08-30
+     */
+    @Transactional
+    public void recordRefunded(Long memberId, BigDecimal refundAmount, BigDecimal paidAmount) {
+        if (memberId == null) {
+            return;
+        }
+        MemberConsumptionStat stat = memberConsumptionStatMapper.selectOne(new LambdaQueryWrapper<MemberConsumptionStat>()
+                .eq(MemberConsumptionStat::getMemberId, memberId));
+        if (stat == null) {
+            return;
+        }
+        BigDecimal refund = refundAmount == null ? BigDecimal.ZERO : refundAmount.setScale(2, RoundingMode.HALF_UP);
+        BigDecimal current = stat.getPaidAmount() == null ? BigDecimal.ZERO : stat.getPaidAmount();
+        stat.setPaidAmount(current.subtract(refund).max(BigDecimal.ZERO));
+        if (paidAmount != null && refund.compareTo(paidAmount) >= 0) {
+            stat.setPaidOrderCount(Math.max(0L, (stat.getPaidOrderCount() == null ? 0L : stat.getPaidOrderCount()) - 1L));
+        }
+        if (memberConsumptionStatMapper.updateById(stat) == 0) {
+            throw new BusinessException("MEMBER_STAT_CONCURRENT_UPDATE", "会员消费统计已被其他操作修改，请重试");
+        }
+    }
+
+    /**
+     * 给会员补充标签和消费统计字段。
+     *
+     * @param member 会员实体
+     * @return 补充后的会员实体
+     * @author Henfon
+     * @date 2026-08-30
+     */
+    private MemberUser enrichMember(MemberUser member) {
+        if (member == null) {
+            return null;
+        }
+        List<MemberUserTag> relations = memberUserTagMapper.selectList(new LambdaQueryWrapper<MemberUserTag>()
+                .eq(MemberUserTag::getMemberId, member.getId()));
+        if (relations.isEmpty()) {
+            member.setTagsCsv("");
+        } else {
+            List<Long> tagIds = relations.stream().map(MemberUserTag::getTagId).toList();
+            List<MemberTag> tags = memberTagMapper.selectList(new LambdaQueryWrapper<MemberTag>()
+                    .in(MemberTag::getId, tagIds).eq(MemberTag::getTenantId, 0L));
+            member.setTagsCsv(tags.stream().map(MemberTag::getTagName).collect(Collectors.joining(",")));
+        }
+        MemberConsumptionStat stat = memberConsumptionStatMapper.selectOne(new LambdaQueryWrapper<MemberConsumptionStat>()
+                .eq(MemberConsumptionStat::getMemberId, member.getId()));
+        member.setTotalSpent(stat == null || stat.getPaidAmount() == null ? BigDecimal.ZERO : stat.getPaidAmount());
+        member.setOrderCount(stat == null || stat.getPaidOrderCount() == null ? 0L : stat.getPaidOrderCount());
+        member.setLastOrderAt(stat == null ? null : stat.getLastOrderAt());
         return member;
     }
 

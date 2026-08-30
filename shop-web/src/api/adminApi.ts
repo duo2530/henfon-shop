@@ -61,6 +61,17 @@ export interface BackendMemberUser {
   registeredAt?: string;
   lastLoginAt?: string;
   remark?: string;
+  tagsCsv?: string;
+  totalSpent?: number;
+  orderCount?: number;
+  lastOrderAt?: string;
+}
+
+export interface BackendMemberTag {
+  id: number;
+  tagName: string;
+  sortNo: number;
+  status: number;
 }
 
 export interface BackendDepartment {
@@ -362,6 +373,17 @@ export function adjustMemberAssets(id: number, pointsDelta: number, balanceDelta
   return request<BackendMemberUser>(`/api/admin/member/users/${id}/assets`, {
     method: 'PUT',
     body: JSON.stringify({ pointsDelta, balanceDelta, remark }),
+  });
+}
+
+export function listMemberTags(): Promise<BackendMemberTag[]> {
+  return request<BackendMemberTag[]>('/api/admin/member/tags');
+}
+
+export function updateMemberTags(id: number, tags: string[]): Promise<BackendMemberUser> {
+  return request<BackendMemberUser>(`/api/admin/member/users/${id}/tags`, {
+    method: 'PUT',
+    body: JSON.stringify({ tags }),
   });
 }
 
