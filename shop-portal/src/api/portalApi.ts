@@ -310,6 +310,38 @@ export interface PortalOrderRecord {
   createdAt: string;
 }
 
+export interface PortalOrderItemRecord {
+  id: number;
+  orderId: number;
+  productId?: number;
+  skuId?: number;
+  productName: string;
+  skuName?: string;
+  skuCode?: string;
+  imageUrl?: string;
+  unitPrice: number;
+  quantity: number;
+  itemAmount?: number;
+}
+
+export interface PortalOrderLogisticsRecord {
+  id: number;
+  orderId: number;
+  trackingNo?: string;
+  logisticsCompany?: string;
+  logisticsStatus?: string;
+  eventTime?: string;
+  eventDescription?: string;
+  eventLocation?: string;
+  sortNo?: number;
+}
+
+export interface PortalOrderDetailRecord {
+  order: PortalOrderRecord;
+  items: PortalOrderItemRecord[];
+  logistics: PortalOrderLogisticsRecord[];
+}
+
 export async function fetchPortalCart(memberId: number): Promise<PortalCartRecord[]> {
   return request<PortalCartRecord[]>(`/api/portal/trade/cart?memberId=${memberId}`);
 }
@@ -334,6 +366,16 @@ export async function updatePortalCartItem(id: number, quantity?: number, select
 
 export async function fetchPortalOrders(memberId: number): Promise<PortalOrderRecord[]> {
   return request<PortalOrderRecord[]>(`/api/portal/trade/orders?memberId=${memberId}`);
+}
+
+/**
+ * 查询门户订单详情、商品明细及物流轨迹。
+ *
+ * @param orderId 订单ID
+ * @return 订单聚合详情
+ */
+export async function fetchPortalOrderDetail(orderId: number): Promise<PortalOrderDetailRecord> {
+  return request<PortalOrderDetailRecord>(`/api/portal/trade/orders/${orderId}`);
 }
 
 export interface PortalOrderCreatePayload {

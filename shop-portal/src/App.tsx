@@ -26,6 +26,9 @@ import {
   fetchPortalCoupons,
   fetchPortalFavorites,
   fetchPortalOrders,
+  fetchPortalOrderDetail,
+  cancelPortalOrder,
+  confirmPortalOrder,
   fetchPortalProductDetail,
   fetchPortalProducts,
   logoutPortalMember,
@@ -36,6 +39,8 @@ import {
   togglePortalFavorite,
   updatePortalCartItem,
   PortalBanner,
+  PortalOrderItemRecord,
+  PortalOrderLogisticsRecord,
 } from './api/portalApi';
 import {
   Product,
@@ -73,6 +78,52 @@ function resolveSelectedSku(product: Product, variants: Record<string, string>) 
   return product.skus?.find((sku) =>
     Object.entries(sku.attributes).every(([name, value]) => variants[name] === value)
   );
+}
+
+function mapPortalOrderStatus(orderStatus: number): { status: Order['status']; label: string } {
+  switch (orderStatus) {
+    case 10:
+      return { status: 'placed', label: '待付款' };
+    case 20:
+      return { status: 'processing', label: '待发货（已付款）' };
+    case 30:
+      return { status: 'shipped', label: '运输中' };
+    case 40:
+      return { status: 'delivered', label: '已完成' };
+    case 50:
+      return { status: 'cancelled', label: '已取消' };
+    case 60:
+      return { status: 'refunding', label: '退款中' };
+    default:
+      return { status: 'processing', label: '处理中' };
+  }
+}
+
+function formatPortalDate(value?: string): string {
+  return value ? value.replace('T', ' ') : '';
+}
+
+function mapPortalOrderItem(item: PortalOrderItemRecord, products: Product[]): import('./types/ecommerce').OrderItem {
+  const product = item.productId ? products.find((candidate) => candidate.id === `prod-${item.productId}`) : undefined;
+  return {
+    productId: item.productId ? `prod-${item.productId}` : product?.id || '',
+    skuId: item.skuId,
+    title: item.productName,
+    image: item.imageUrl || product?.images[0] || '',
+    variantsSummary: item.skuName || item.skuCode || '默认规格',
+    price: Number(item.unitPrice || 0),
+    quantity: Number(item.quantity || 0),
+  };
+}
+
+function mapPortalLogistics(logistics: PortalOrderLogisticsRecord[]): Order['trackingSteps'] {
+  return logistics.map((event) => ({
+    title: event.eventDescription || event.logisticsStatus || '物流状态更新',
+    time: formatPortalDate(event.eventTime),
+    completed: true,
+    description: event.eventDescription || '',
+    location: event.eventLocation,
+  }));
 }
 
 export default function App() {
@@ -278,7 +329,7 @@ export default function App() {
       fetchPortalOrders(memberId),
       fetchPortalAddresses(memberId),
     ])
-      .then(([remoteCart, remoteFavorites, remoteOrders, remoteAddresses]) => {
+      .then(async ([remoteCart, remoteFavorites, remoteOrders, remoteAddresses]) => {
         if (!active) return;
         const productMap = new Map<number, Product>(
           products.map((product): [number, Product] => [Number(product.id.replace('prod-', '')), product])
@@ -314,15 +365,30 @@ export default function App() {
             isDefault: address.isDefault === 1,
           })));
         }
-        if (remoteOrders.length > 0) {
-          setOrders(remoteOrders.map((order) => ({
+        // 订单列表只包含汇总字段，详情接口补齐明细和真实物流节点。
+        const details = await Promise.all(remoteOrders.map(async (order) => {
+          try {
+            return await fetchPortalOrderDetail(order.id);
+          } catch (error) {
+            console.warn(`订单 ${order.orderNo} 详情加载失败`, error);
+            return null;
+          }
+        }));
+        if (!active) return;
+        setOrders(remoteOrders.map((order, index) => {
+          const detail = details[index];
+          const status = mapPortalOrderStatus(order.orderStatus);
+          const detailItems = detail?.items || [];
+          const detailLogistics = detail?.logistics || [];
+          return {
             id: String(order.id),
             orderNumber: order.orderNo,
-            trackingNumber: order.trackingNo || '',
-            createdAt: order.createdAt,
-            status: order.orderStatus === 30 ? 'shipped' : order.orderStatus === 40 ? 'delivered' : 'processing',
-            statusLabel: order.orderStatus === 30 ? '运输中' : order.orderStatus === 40 ? '已完成' : '处理中',
-            items: [],
+            trackingNumber: order.trackingNo || detail?.order?.trackingNo || detailLogistics[0]?.trackingNo || '',
+            carrier: order.logisticsCompany || detail?.order?.logisticsCompany || detailLogistics[0]?.logisticsCompany || undefined,
+            createdAt: formatPortalDate(order.createdAt),
+            status: status.status,
+            statusLabel: status.label,
+            items: detailItems.map((item) => mapPortalOrderItem(item, products)),
             subtotal: Number(order.subtotalAmount || 0),
             discount: Number(order.discountAmount || 0),
             shippingFee: Number(order.freightAmount || 0),
@@ -338,10 +404,17 @@ export default function App() {
               isDefault: false,
             },
             paymentMethod: order.paymentMethod || '在线支付',
-            estimatedDelivery: '以物流轨迹为准',
-            trackingSteps: [],
-          })));
-        }
+            estimatedDelivery: detailLogistics.length > 0 ? '物流持续更新中' : '以物流轨迹为准',
+            trackingSteps: detailLogistics.length > 0
+              ? mapPortalLogistics(detailLogistics)
+              : [{
+                  title: '暂无物流轨迹',
+                  time: '待同步',
+                  completed: false,
+                  description: '物流服务尚未返回新的轨迹节点，请稍后刷新订单。',
+                }],
+          };
+        }));
       })
       .catch((error) => console.warn('会员数据接口暂不可用，继续使用本地数据', error));
     return () => {
@@ -1008,6 +1081,44 @@ export default function App() {
     }
   };
 
+  const handleCancelOrder = async (order: Order) => {
+    const memberId = resolveMemberId(currentUser);
+    const orderId = Number(order.id);
+    if (!memberId || !Number.isFinite(orderId)) {
+      showToast('当前订单尚未同步到服务端，暂不能取消', 'error');
+      return;
+    }
+    try {
+      await cancelPortalOrder(memberId, orderId, '会员主动取消');
+      setOrders((previous) => previous.map((item) => item.id === order.id
+        ? { ...item, status: 'cancelled', statusLabel: '已取消' }
+        : item));
+      showToast('订单已取消，预占库存将自动释放', 'success');
+    } catch (error) {
+      console.error('取消订单失败', error);
+      showToast(error instanceof Error ? error.message : '取消订单失败，请稍后重试', 'error');
+    }
+  };
+
+  const handleConfirmOrder = async (order: Order) => {
+    const memberId = resolveMemberId(currentUser);
+    const orderId = Number(order.id);
+    if (!memberId || !Number.isFinite(orderId)) {
+      showToast('当前订单尚未同步到服务端，暂不能确认收货', 'error');
+      return;
+    }
+    try {
+      await confirmPortalOrder(memberId, orderId);
+      setOrders((previous) => previous.map((item) => item.id === order.id
+        ? { ...item, status: 'delivered', statusLabel: '已完成' }
+        : item));
+      showToast('已确认收货，感谢您的支持', 'success');
+    } catch (error) {
+      console.error('确认收货失败', error);
+      showToast(error instanceof Error ? error.message : '确认收货失败，请稍后重试', 'error');
+    }
+  };
+
   const handlePersistAddress = async (address: import('./types/ecommerce').Address) => {
     const memberId = resolveMemberId(currentUser);
     if (!memberId) return;
@@ -1509,6 +1620,8 @@ export default function App() {
         isOpen={isOrdersOpen}
         orders={orders}
         onClose={() => setIsOrdersOpen(false)}
+        onCancelOrder={handleCancelOrder}
+        onConfirmOrder={handleConfirmOrder}
       />
 
       <WishlistModal

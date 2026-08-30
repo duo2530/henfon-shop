@@ -116,6 +116,7 @@ export interface Order {
   id: string;
   orderNumber: string;
   trackingNumber: string;
+  carrier?: string;
   createdAt: string;
   status: OrderStatus;
   statusLabel: string;

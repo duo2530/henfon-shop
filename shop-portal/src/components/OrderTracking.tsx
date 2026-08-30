@@ -251,6 +251,7 @@ export const OrderTracking: React.FC<OrderTrackingProps> = ({
 
   const orderNumber = order?.orderNumber || propOrderNumber || 'ORD-2026-889921';
   const trackingNumber = order?.trackingNumber || propTrackingNumber || 'SF19837482910';
+  const effectiveCarrier = order?.carrier || carrier;
   const estimatedDelivery =
     order?.estimatedDelivery || propEstimatedDelivery || '预计 1-2 日内顺丰送达';
 
@@ -294,7 +295,7 @@ export const OrderTracking: React.FC<OrderTrackingProps> = ({
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="text-[11px] font-bold px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
                   <Truck className="w-3 h-3" />
-                  {carrier}
+                  {effectiveCarrier}
                 </span>
                 <span className="text-xs font-mono text-zinc-400">
                   单号: <strong className="text-zinc-200">{trackingNumber}</strong>

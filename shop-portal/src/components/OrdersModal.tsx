@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Order } from '../types/ecommerce';
 import { Package, X, ChevronDown, ChevronUp } from 'lucide-react';
 import { OrderTracking } from './OrderTracking';
@@ -7,18 +7,40 @@ interface OrdersModalProps {
   isOpen: boolean;
   orders: Order[];
   onClose: () => void;
+  onCancelOrder?: (order: Order) => Promise<void> | void;
+  onConfirmOrder?: (order: Order) => Promise<void> | void;
 }
 
 export const OrdersModal: React.FC<OrdersModalProps> = ({
   isOpen,
   orders,
   onClose,
+  onCancelOrder,
+  onConfirmOrder,
 }) => {
-  if (!isOpen) return null;
-
   const [expandedOrderId, setExpandedOrderId] = useState<string | null>(
     orders[0]?.id || null
   );
+  const [actioningOrderId, setActioningOrderId] = useState<string | null>(null);
+
+  useEffect(() => {
+    setExpandedOrderId((current) => {
+      if (current && orders.some((order) => order.id === current)) return current;
+      return orders[0]?.id || null;
+    });
+  }, [orders]);
+
+  if (!isOpen) return null;
+
+  const runOrderAction = async (order: Order, action?: (order: Order) => Promise<void> | void) => {
+    if (!action) return;
+    setActioningOrderId(order.id);
+    try {
+      await action(order);
+    } finally {
+      setActioningOrderId(null);
+    }
+  };
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 animate-in fade-in duration-200">
@@ -76,7 +98,7 @@ export const OrdersModal: React.FC<OrdersModalProps> = ({
                         </span>
                       </div>
                       <div className="text-[11px] text-zinc-400">
-                        下单时间：{ord.createdAt} | 顺丰单号：{ord.trackingNumber}
+                        下单时间：{ord.createdAt} {ord.trackingNumber ? `| ${ord.trackingNumber}` : '| 暂无运单号'}
                       </div>
                     </div>
 
@@ -100,7 +122,7 @@ export const OrdersModal: React.FC<OrdersModalProps> = ({
                     <div className="p-4 space-y-4 border-t border-zinc-200/80 animate-in fade-in">
                       {/* Products */}
                       <div className="space-y-2">
-                        {ord.items.map((item, i) => (
+                        {ord.items.length > 0 ? ord.items.map((item, i) => (
                           <div key={i} className="flex items-center justify-between gap-3 text-xs">
                             <div className="flex items-center gap-2.5 min-w-0">
                               <img
@@ -121,12 +143,37 @@ export const OrdersModal: React.FC<OrdersModalProps> = ({
                               ¥{(item.price * item.quantity).toFixed(2)}
                             </span>
                           </div>
-                        ))}
+                        )) : (
+                          <p className="text-xs text-zinc-400 py-2">订单明细加载中或暂无明细</p>
+                        )}
+                      </div>
+
+                      <div className="flex justify-end gap-2 border-t border-zinc-200/80 pt-3">
+                        {(ord.status === 'placed' || ord.status === 'paid' || ord.status === 'processing') && (
+                          <button
+                            type="button"
+                            disabled={actioningOrderId === ord.id}
+                            onClick={() => void runOrderAction(ord, onCancelOrder)}
+                            className="px-3 py-1.5 rounded-lg border border-rose-200 text-rose-600 text-xs font-semibold hover:bg-rose-50 disabled:opacity-50"
+                          >
+                            {actioningOrderId === ord.id ? '处理中…' : '取消订单'}
+                          </button>
+                        )}
+                        {ord.status === 'shipped' && (
+                          <button
+                            type="button"
+                            disabled={actioningOrderId === ord.id}
+                            onClick={() => void runOrderAction(ord, onConfirmOrder)}
+                            className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-semibold hover:bg-emerald-700 disabled:opacity-50"
+                          >
+                            {actioningOrderId === ord.id ? '处理中…' : '确认收货'}
+                          </button>
+                        )}
                       </div>
 
                       {/* Visual Shipment Timeline and Tracking */}
                       <div className="pt-2 border-t border-zinc-200/80">
-                        <OrderTracking order={ord} interactiveSimulator={true} />
+                        <OrderTracking order={ord} interactiveSimulator={false} />
                       </div>
                     </div>
                   )}
