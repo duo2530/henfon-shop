@@ -206,6 +206,21 @@ export interface BackendInventoryStock {
   remark?: string;
 }
 
+export interface BackendTradeAfterSale {
+  id: number;
+  afterSaleNo: string;
+  orderId: number;
+  orderItemId?: number;
+  memberId?: number;
+  afterSaleType: number;
+  status: number;
+  reason: string;
+  refundAmount: number;
+  createdAt?: string;
+  updatedAt?: string;
+  remark?: string;
+}
+
 interface ApiEnvelope<T> {
   code: string;
   message: string;
@@ -376,6 +391,27 @@ export function refundTradeOrder(orderId: number, refundAmount: number, reason: 
   return request<void>(`/api/admin/trade/orders/${orderId}/refund`, {
     method: 'PUT',
     body: JSON.stringify({ refundAmount, reason })
+  });
+}
+
+export function listTradeAfterSales(params: { current?: number; size?: number; status?: number; orderId?: number } = {}): Promise<BackendPage<BackendTradeAfterSale>> {
+  const query = new URLSearchParams({ current: String(params.current || 1), size: String(params.size || 200) });
+  if (params.status !== undefined) query.set('status', String(params.status));
+  if (params.orderId !== undefined) query.set('orderId', String(params.orderId));
+  return request<BackendPage<BackendTradeAfterSale>>(`/api/admin/trade/after-sales?${query.toString()}`);
+}
+
+export function approveTradeAfterSale(afterSaleId: number, remark?: string): Promise<BackendTradeAfterSale> {
+  return request<BackendTradeAfterSale>(`/api/admin/trade/after-sales/${afterSaleId}/approve`, {
+    method: 'PUT',
+    body: JSON.stringify({ remark })
+  });
+}
+
+export function rejectTradeAfterSale(afterSaleId: number, remark?: string): Promise<BackendTradeAfterSale> {
+  return request<BackendTradeAfterSale>(`/api/admin/trade/after-sales/${afterSaleId}/reject`, {
+    method: 'PUT',
+    body: JSON.stringify({ remark })
   });
 }
 

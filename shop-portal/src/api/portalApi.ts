@@ -424,6 +424,67 @@ export async function confirmPortalOrder(memberId: number, orderId: number): Pro
   });
 }
 
+export interface PortalAfterSaleRecord {
+  id: number;
+  afterSaleNo: string;
+  orderId: number;
+  orderItemId?: number;
+  afterSaleType: number;
+  status: number;
+  reason: string;
+  refundAmount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PortalAfterSaleCreatePayload {
+  orderItemId?: number;
+  afterSaleType: 1 | 2 | 3;
+  refundAmount?: number;
+  reason: string;
+}
+
+/**
+ * 查询会员售后申请。
+ *
+ * @param memberId 会员ID
+ * @return 售后申请列表
+ */
+export async function fetchPortalAfterSales(memberId: number): Promise<PortalAfterSaleRecord[]> {
+  return request<PortalAfterSaleRecord[]>(`/api/portal/trade/after-sales?memberId=${memberId}`);
+}
+
+/**
+ * 创建会员售后申请。
+ *
+ * @param memberId 会员ID
+ * @param orderId 订单ID
+ * @param payload 售后申请内容
+ * @return 新建售后单
+ */
+export async function createPortalAfterSale(
+  memberId: number,
+  orderId: number,
+  payload: PortalAfterSaleCreatePayload,
+): Promise<PortalAfterSaleRecord> {
+  return request<PortalAfterSaleRecord>(`/api/portal/trade/after-sales?memberId=${memberId}&orderId=${orderId}`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+/**
+ * 取消会员待审核售后申请。
+ *
+ * @param memberId 会员ID
+ * @param afterSaleId 售后单ID
+ */
+export async function cancelPortalAfterSale(memberId: number, afterSaleId: number): Promise<void> {
+  return request<void>(`/api/portal/trade/after-sales/${afterSaleId}?memberId=${memberId}`, {
+    method: 'DELETE',
+  });
+}
+
 export async function fetchPortalFavorites(memberId: number): Promise<Array<{ productId: number }>> {
   return request<Array<{ productId: number }>>(`/api/portal/member/favorites?memberId=${memberId}`);
 }

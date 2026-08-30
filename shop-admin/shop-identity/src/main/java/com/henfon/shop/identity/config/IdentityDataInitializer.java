@@ -235,7 +235,8 @@ public class IdentityDataInitializer implements ApplicationRunner {
         // 订单操作按钮用于控制后台发货、取消、备注和退款等写权限。
         String[][] tradeButtons = {
                 {"订单发货", "trade:order:ship"}, {"订单取消", "trade:order:cancel"},
-                {"订单备注", "trade:order:remark"}, {"订单退款", "trade:order:refund"}
+                {"订单备注", "trade:order:remark"}, {"订单退款", "trade:order:refund"},
+                {"售后查询", "trade:after-sale:query"}, {"售后审核", "trade:after-sale:audit"}
         };
         for (String[] button : tradeButtons) {
             SysMenu menu = ensureMenu(button[0], "BUTTON", button[1], null, 100);
