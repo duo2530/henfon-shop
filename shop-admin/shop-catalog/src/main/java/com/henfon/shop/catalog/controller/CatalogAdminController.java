@@ -2,10 +2,14 @@ package com.henfon.shop.catalog.controller;
 
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.henfon.shop.catalog.dto.CatalogProductSaveRequest;
+import com.henfon.shop.catalog.dto.CatalogCategorySaveRequest;
+import com.henfon.shop.catalog.dto.CatalogSkuSaveRequest;
 import com.henfon.shop.catalog.entity.CatalogCategory;
 import com.henfon.shop.catalog.entity.CatalogProduct;
+import com.henfon.shop.catalog.entity.CatalogSku;
 import com.henfon.shop.catalog.service.CatalogCategoryService;
 import com.henfon.shop.catalog.service.CatalogProductService;
+import com.henfon.shop.catalog.service.CatalogSkuService;
 import com.henfon.shop.common.api.ApiResponse;
 import jakarta.validation.Valid;
 import org.slf4j.MDC;
@@ -33,6 +37,7 @@ public class CatalogAdminController {
 
     private final CatalogProductService catalogProductService;
     private final CatalogCategoryService catalogCategoryService;
+    private final CatalogSkuService catalogSkuService;
 
     /**
      * 创建商品目录管理控制器。
@@ -43,9 +48,11 @@ public class CatalogAdminController {
      * @date 2026-08-29
      */
     public CatalogAdminController(CatalogProductService catalogProductService,
-                                  CatalogCategoryService catalogCategoryService) {
+                                  CatalogCategoryService catalogCategoryService,
+                                  CatalogSkuService catalogSkuService) {
         this.catalogProductService = catalogProductService;
         this.catalogCategoryService = catalogCategoryService;
+        this.catalogSkuService = catalogSkuService;
     }
 
     /**
@@ -86,6 +93,87 @@ public class CatalogAdminController {
     }
 
     /**
+     * 修改商品上下架状态。
+     *
+     * @param id 商品ID
+     * @param status 目标状态：0草稿、1上架、2下架
+     * @return 空响应
+     * @author Henfon
+     * @date 2026-08-30
+     */
+    @org.springframework.web.bind.annotation.PutMapping("/products/{id}/status")
+    @PreAuthorize("hasAuthority('catalog:product:query')")
+    public ApiResponse<Void> updateProductStatus(@PathVariable Long id, @RequestParam Integer status) {
+        catalogProductService.updateStatus(id, status);
+        return ApiResponse.success(requestId());
+    }
+
+    /**
+     * 查询商品 SKU。
+     *
+     * @param productId 商品ID
+     * @return SKU列表
+     * @author Henfon
+     * @date 2026-08-30
+     */
+    @GetMapping("/products/{productId}/skus")
+    @PreAuthorize("hasAuthority('catalog:product:query')")
+    public ApiResponse<List<CatalogSku>> listSkus(@PathVariable Long productId) {
+        return ApiResponse.success(catalogSkuService.listByProduct(productId), requestId());
+    }
+
+    /**
+     * 保存商品 SKU。
+     *
+     * @param productId 商品ID
+     * @param request SKU保存请求
+     * @return SKU ID
+     * @author Henfon
+     * @date 2026-08-30
+     */
+    @PostMapping("/products/{productId}/skus")
+    @PreAuthorize("hasAuthority('catalog:product:query')")
+    public ApiResponse<Long> saveSku(@PathVariable Long productId,
+                                     @Valid @RequestBody CatalogSkuSaveRequest request) {
+        return ApiResponse.success(catalogSkuService.save(productId, request), requestId());
+    }
+
+    /**
+     * 修改 SKU 启停状态。
+     *
+     * @param productId 商品ID
+     * @param skuId SKU ID
+     * @param status 目标状态
+     * @return 空响应
+     * @author Henfon
+     * @date 2026-08-30
+     */
+    @org.springframework.web.bind.annotation.PutMapping("/products/{productId}/skus/{skuId}/status")
+    @PreAuthorize("hasAuthority('catalog:product:query')")
+    public ApiResponse<Void> updateSkuStatus(@PathVariable Long productId,
+                                             @PathVariable Long skuId,
+                                             @RequestParam Integer status) {
+        catalogSkuService.updateStatus(productId, skuId, status);
+        return ApiResponse.success(requestId());
+    }
+
+    /**
+     * 逻辑删除商品 SKU。
+     *
+     * @param productId 商品ID
+     * @param skuId SKU ID
+     * @return 空响应
+     * @author Henfon
+     * @date 2026-08-30
+     */
+    @DeleteMapping("/products/{productId}/skus/{skuId}")
+    @PreAuthorize("hasAuthority('catalog:product:query')")
+    public ApiResponse<Void> deleteSku(@PathVariable Long productId, @PathVariable Long skuId) {
+        catalogSkuService.delete(productId, skuId);
+        return ApiResponse.success(requestId());
+    }
+
+    /**
      * 删除商品。
      *
      * @param id 商品ID
@@ -112,6 +200,64 @@ public class CatalogAdminController {
     @PreAuthorize("hasAuthority('catalog:product:query')")
     public ApiResponse<List<CatalogCategory>> listCategories() {
         return ApiResponse.success(catalogCategoryService.listEnabled(), requestId());
+    }
+
+    /**
+     * 查询后台全部类目。
+     *
+     * @return 类目列表
+     * @author Henfon
+     * @date 2026-08-30
+     */
+    @GetMapping("/categories/manage")
+    @PreAuthorize("hasAuthority('catalog:category:query')")
+    public ApiResponse<List<CatalogCategory>> listManageCategories() {
+        return ApiResponse.success(catalogCategoryService.listAdmin(), requestId());
+    }
+
+    /**
+     * 保存后台类目。
+     *
+     * @param request 类目保存请求
+     * @return 类目ID
+     * @author Henfon
+     * @date 2026-08-30
+     */
+    @PostMapping("/categories")
+    @PreAuthorize("hasAuthority('catalog:category:query')")
+    public ApiResponse<Long> saveCategory(@Valid @RequestBody CatalogCategorySaveRequest request) {
+        return ApiResponse.success(catalogCategoryService.save(request), requestId());
+    }
+
+    /**
+     * 修改类目启停状态。
+     *
+     * @param id 类目ID
+     * @param status 目标状态
+     * @return 空响应
+     * @author Henfon
+     * @date 2026-08-30
+     */
+    @org.springframework.web.bind.annotation.PutMapping("/categories/{id}/status")
+    @PreAuthorize("hasAuthority('catalog:category:query')")
+    public ApiResponse<Void> updateCategoryStatus(@PathVariable Long id, @RequestParam Integer status) {
+        catalogCategoryService.updateStatus(id, status);
+        return ApiResponse.success(requestId());
+    }
+
+    /**
+     * 删除后台类目。
+     *
+     * @param id 类目ID
+     * @return 空响应
+     * @author Henfon
+     * @date 2026-08-30
+     */
+    @DeleteMapping("/categories/{id}")
+    @PreAuthorize("hasAuthority('catalog:category:query')")
+    public ApiResponse<Void> deleteCategory(@PathVariable Long id) {
+        catalogCategoryService.delete(id);
+        return ApiResponse.success(requestId());
     }
 
     /**

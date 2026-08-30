@@ -165,6 +165,23 @@ export interface BackendCatalogCategory {
   status: number;
 }
 
+export interface BackendCatalogSku {
+  id: number;
+  productId: number;
+  skuCode: string;
+  skuName: string;
+  attributesJson?: string;
+  price: number;
+  marketPrice?: number;
+  costPrice?: number;
+  stock: number;
+  safetyStock: number;
+  status: number;
+  createdAt?: string;
+  updatedAt?: string;
+  remark?: string;
+}
+
 export interface BackendContentBanner {
   id: number;
   bannerTitle: string;
@@ -239,6 +256,13 @@ export interface BackendInventoryStock {
   safetyStock: number;
   updatedAt?: string;
   remark?: string;
+}
+
+export interface BackendStorageUploadResult {
+  objectKey: string;
+  url: string;
+  size: number;
+  contentType: string;
 }
 
 export interface BackendTradeAfterSale {
@@ -400,6 +424,31 @@ export function listCatalogCategories(): Promise<BackendCatalogCategory[]> {
   return request<BackendCatalogCategory[]>('/api/admin/catalog/categories');
 }
 
+export function listManageCatalogCategories(): Promise<BackendCatalogCategory[]> {
+  return request<BackendCatalogCategory[]>('/api/admin/catalog/categories/manage');
+}
+
+export function saveCatalogCategory(payload: {
+  id?: number;
+  parentId?: number;
+  categoryName: string;
+  categoryCode: string;
+  sortNo?: number;
+  status: number;
+  iconUrl?: string;
+  remark?: string;
+}): Promise<number> {
+  return request<number>('/api/admin/catalog/categories', { method: 'POST', body: JSON.stringify(payload) });
+}
+
+export function updateCatalogCategoryStatus(id: number, status: number): Promise<void> {
+  return request<void>(`/api/admin/catalog/categories/${id}/status?status=${status}`, { method: 'PUT' });
+}
+
+export function deleteCatalogCategory(id: number): Promise<void> {
+  return request<void>(`/api/admin/catalog/categories/${id}`, { method: 'DELETE' });
+}
+
 export function saveCatalogProduct(product: {
   id?: number;
   categoryId?: number;
@@ -422,6 +471,60 @@ export function saveCatalogProduct(product: {
 
 export function deleteCatalogProduct(id: number): Promise<void> {
   return request<void>(`/api/admin/catalog/products/${id}`, { method: 'DELETE' });
+}
+
+export function updateCatalogProductStatus(id: number, status: number): Promise<void> {
+  return request<void>(`/api/admin/catalog/products/${id}/status?status=${status}`, { method: 'PUT' });
+}
+
+export function listCatalogSkus(productId: number): Promise<BackendCatalogSku[]> {
+  return request<BackendCatalogSku[]>(`/api/admin/catalog/products/${productId}/skus`);
+}
+
+export function saveCatalogSku(productId: number, sku: {
+  id?: number;
+  skuCode: string;
+  skuName: string;
+  attributesJson?: string;
+  price: number;
+  marketPrice?: number;
+  costPrice?: number;
+  stock: number;
+  safetyStock: number;
+  status: number;
+  remark?: string;
+}): Promise<number> {
+  return request<number>(`/api/admin/catalog/products/${productId}/skus`, { method: 'POST', body: JSON.stringify(sku) });
+}
+
+export function updateCatalogSkuStatus(productId: number, skuId: number, status: number): Promise<void> {
+  return request<void>(`/api/admin/catalog/products/${productId}/skus/${skuId}/status?status=${status}`, { method: 'PUT' });
+}
+
+export function deleteCatalogSku(productId: number, skuId: number): Promise<void> {
+  return request<void>(`/api/admin/catalog/products/${productId}/skus/${skuId}`, { method: 'DELETE' });
+}
+
+export function listInventoryWarnings(): Promise<BackendInventoryStock[]> {
+  return request<BackendInventoryStock[]>('/api/admin/inventory/stocks/warnings');
+}
+
+export async function uploadStorageFile(file: File): Promise<BackendStorageUploadResult> {
+  const formData = new FormData();
+  formData.append('file', file);
+  const headers = new Headers();
+  const accessToken = getAdminToken();
+  if (accessToken) headers.set('Authorization', `Bearer ${accessToken}`);
+  const response = await fetch(`${API_BASE_URL}/api/admin/storage/upload`, { method: 'POST', headers, body: formData });
+  const body = await response.json().catch(() => null) as ApiEnvelope<BackendStorageUploadResult> | null;
+  if (!response.ok || !body || body.code !== '0') {
+    throw new Error(body?.message || `上传失败（${response.status}）`);
+  }
+  return body.data;
+}
+
+export function deleteStorageFile(objectKey: string): Promise<void> {
+  return request<void>(`/api/admin/storage?objectKey=${encodeURIComponent(objectKey)}`, { method: 'DELETE' });
 }
 
 export function listContentBanners(params: { current?: number; size?: number; keyword?: string; status?: number } = {}): Promise<BackendPage<BackendContentBanner>> {

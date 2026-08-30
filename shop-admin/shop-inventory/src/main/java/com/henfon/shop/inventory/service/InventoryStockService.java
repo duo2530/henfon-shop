@@ -80,6 +80,20 @@ public class InventoryStockService {
     }
 
     /**
+     * 查询低于安全库存的台账，用于后台预警和补货。
+     *
+     * @return 低库存台账列表
+     * @author Henfon
+     * @date 2026-08-30
+     */
+    public List<InventoryStock> listWarnings() {
+        return stockMapper.selectList(new LambdaQueryWrapper<InventoryStock>()
+                .apply("available_stock <= safety_stock")
+                .orderByAsc(InventoryStock::getAvailableStock)
+                .orderByDesc(InventoryStock::getUpdatedAt));
+    }
+
+    /**
      * 为订单预占库存。
      *
      * @param orderId 订单ID

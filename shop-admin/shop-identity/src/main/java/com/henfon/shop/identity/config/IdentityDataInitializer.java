@@ -246,6 +246,16 @@ public class IdentityDataInitializer implements ApplicationRunner {
             }
             menus.add(menu);
         }
+        // 类目管理权限供后台类目维护接口校验，暂挂在电商运营目录下。
+        String[][] categoryButtons = {{"类目管理", "catalog:category:query"}};
+        for (String[] button : categoryButtons) {
+            SysMenu menu = ensureMenu(button[0], "BUTTON", button[1], null, 101);
+            if (!ecommerce.getId().equals(menu.getParentId())) {
+                menu.setParentId(ecommerce.getId());
+                sysMenuMapper.updateById(menu);
+            }
+            menus.add(menu);
+        }
         // 会员状态操作权限挂在会员菜单下，供管理端冻结/解冻按钮进行权限控制。
         String[][] memberButtons = {{"会员冻结/解冻", "member:user:status"}};
         for (String[] button : memberButtons) {

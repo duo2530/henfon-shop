@@ -5,13 +5,16 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.henfon.shop.catalog.dto.CatalogProductSaveRequest;
 import com.henfon.shop.catalog.entity.CatalogProduct;
+import com.henfon.shop.catalog.entity.CatalogSku;
 import com.henfon.shop.catalog.mapper.CatalogProductMapper;
+import com.henfon.shop.catalog.mapper.CatalogSkuMapper;
 import com.henfon.shop.common.exception.BusinessException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
+import java.util.List;
 
 /**
  * 商品目录应用服务。
@@ -23,6 +26,7 @@ import java.math.BigDecimal;
 public class CatalogProductService {
 
     private final CatalogProductMapper catalogProductMapper;
+    private final CatalogSkuMapper catalogSkuMapper;
 
     /**
      * 创建商品目录服务。
@@ -31,8 +35,9 @@ public class CatalogProductService {
      * @author Henfon
      * @date 2026-08-29
      */
-    public CatalogProductService(CatalogProductMapper catalogProductMapper) {
+    public CatalogProductService(CatalogProductMapper catalogProductMapper, CatalogSkuMapper catalogSkuMapper) {
         this.catalogProductMapper = catalogProductMapper;
+        this.catalogSkuMapper = catalogSkuMapper;
     }
 
     /**
@@ -114,6 +119,38 @@ public class CatalogProductService {
         // 使用逻辑删除保留商品审计记录。
         ensureProductExists(id);
         catalogProductMapper.deleteById(id);
+    }
+
+    /**
+     * 修改商品状态并校验上下架条件。
+     *
+     * @param id 商品ID
+     * @param status 目标状态：0草稿、1上架、2下架
+     * @author Henfon
+     * @date 2026-08-30
+     */
+    @Transactional
+    public void updateStatus(Long id, Integer status) {
+        if (status == null || (status != 0 && status != 1 && status != 2)) {
+            throw new BusinessException("CATALOG_PRODUCT_STATUS_INVALID", "商品状态必须为0、1或2");
+        }
+        ensureProductExists(id);
+        CatalogProduct product = catalogProductMapper.selectById(id);
+        if (status == 1) {
+            List<CatalogSku> enabledSkus = catalogSkuMapper.selectList(new LambdaQueryWrapper<CatalogSku>()
+                    .eq(CatalogSku::getProductId, id)
+                    .eq(CatalogSku::getStatus, 1));
+            if (enabledSkus.isEmpty()) {
+                throw new BusinessException("CATALOG_PRODUCT_SKU_REQUIRED", "商品至少需要一个启用的SKU才能上架");
+            }
+            if (enabledSkus.stream().allMatch(sku -> sku.getStock() == null || sku.getStock() <= 0)) {
+                throw new BusinessException("CATALOG_PRODUCT_STOCK_REQUIRED", "商品库存不足，无法上架");
+            }
+        }
+        product.setStatus(status);
+        if (catalogProductMapper.updateById(product) == 0) {
+            throw new BusinessException("CATALOG_PRODUCT_CONCURRENT", "商品已被其他操作修改，请刷新后重试");
+        }
     }
 
     /**

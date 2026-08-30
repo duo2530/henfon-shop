@@ -17,6 +17,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.List;
+
 /**
  * 后台库存管理接口。
  *
@@ -56,6 +58,19 @@ public class InventoryAdminController {
                                                    @RequestParam(defaultValue = "1") long current,
                                                    @RequestParam(defaultValue = "20") long size) {
         return ApiResponse.success(inventoryStockService.page(skuId, current, size), MDC.get("requestId"));
+    }
+
+    /**
+     * 查询安全库存预警。
+     *
+     * @return 低库存台账列表
+     * @author Henfon
+     * @date 2026-08-30
+     */
+    @GetMapping("/stocks/warnings")
+    @PreAuthorize("hasAuthority('inventory:stock:query')")
+    public ApiResponse<List<InventoryStock>> warnings() {
+        return ApiResponse.success(inventoryStockService.listWarnings(), MDC.get("requestId"));
     }
 
     /**

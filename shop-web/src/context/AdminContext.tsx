@@ -56,6 +56,7 @@ import {
   deleteSystemRole,
   deleteSystemDataRule,
   deleteCatalogProduct as deleteCatalogProductApi,
+  updateCatalogProductStatus,
   listCatalogCategories,
   listCatalogProducts,
   saveCatalogProduct as saveCatalogProductApi,
@@ -460,10 +461,10 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
   const toggleProductStatus = (id: string) => {
     const target = products.find((product) => product.id === id);
+    const nextStatus = target?.status === 'active' ? 'inactive' : 'active';
     setProducts((prev) =>
       prev.map((p) => {
         if (p.id === id) {
-          const nextStatus = p.status === 'active' ? 'inactive' : 'active';
           showToast(`商品状态已变更为「${nextStatus === 'active' ? '上架中' : '已下架'}」`, 'info');
           return { ...p, status: nextStatus };
         }
@@ -471,8 +472,11 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       })
     );
     if (target && Number.isFinite(Number(id))) {
-      void saveCatalogProductApi(productToCatalogRequest({ ...target, status: target.status === 'active' ? 'inactive' : 'active' }))
-        .catch(() => showToast('商品状态已更新本地状态，但服务端保存失败', 'warning'));
+      void updateCatalogProductStatus(Number(id), nextStatus === 'active' ? 1 : 2)
+        .catch(() => {
+          setProducts((prev) => prev.map((product) => product.id === id ? { ...product, status: target.status } : product));
+          showToast('商品状态更新失败，已恢复原状态', 'warning');
+        });
     }
   };
 
@@ -481,8 +485,14 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       prev.map((p) => (ids.includes(p.id) ? { ...p, status } : p))
     );
     showToast(`已批量${status === 'active' ? '上架' : '下架'} ${ids.length} 件商品`, 'success');
-    ids.map((id) => products.find((product) => product.id === id)).filter((product): product is Product => Boolean(product) && Number.isFinite(Number(product.id))).forEach((product) => {
-      void saveCatalogProductApi(productToCatalogRequest({ ...product, status })).catch(() => showToast(`商品「${product.name}」服务端状态更新失败`, 'warning'));
+    const updates = ids.map((id) => products.find((product) => product.id === id))
+      .filter((product): product is Product => Boolean(product) && Number.isFinite(Number(product.id)))
+      .map((product) => updateCatalogProductStatus(Number(product.id), status === 'active' ? 1 : 2));
+    void Promise.allSettled(updates).then((results) => {
+      if (results.some((result) => result.status === 'rejected')) {
+        void hydrateCatalogMetadata();
+        showToast('部分商品状态更新失败，已重新同步服务端数据', 'warning');
+      }
     });
   };
 
