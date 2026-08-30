@@ -388,9 +388,9 @@ export function updateTradeOrderRemark(orderId: number, sellerRemark: string): P
 }
 
 export function refundTradeOrder(orderId: number, refundAmount: number, reason: string): Promise<void> {
-  return request<void>(`/api/admin/trade/orders/${orderId}/refund`, {
-    method: 'PUT',
-    body: JSON.stringify({ refundAmount, reason })
+  return request<void>('/api/admin/payment/refunds', {
+    method: 'POST',
+    body: JSON.stringify({ orderId, amount: refundAmount, reason, idempotencyKey: `admin-refund-${orderId}-${refundAmount}` })
   });
 }
 

@@ -44,7 +44,7 @@ public class SecurityConfiguration {
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/admin/auth/login", "/actuator/health", "/error",
-                                "/api/wx/pay/notify").permitAll()
+                                "/api/wx/pay/notify", "/api/wx/pay/refund/notify").permitAll()
                         // 商品、内容和可领取优惠券面向访客开放；会员数据和交易接口必须携带会员 JWT。
                         .requestMatchers("/api/portal/auth/**", "/api/portal/catalog/**", "/api/portal/content/**",
                                 "/api/portal/marketing/coupons").permitAll()
