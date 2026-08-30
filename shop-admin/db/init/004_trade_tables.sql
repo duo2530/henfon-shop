@@ -8,7 +8,7 @@ CREATE TABLE IF NOT EXISTS trade_order (
     order_no VARCHAR(64) NOT NULL COMMENT '订单号',
     member_id BIGINT UNSIGNED DEFAULT NULL COMMENT '会员ID',
     member_name VARCHAR(128) DEFAULT NULL COMMENT '会员名称快照',
-    order_status TINYINT UNSIGNED NOT NULL DEFAULT 10 COMMENT '订单状态：10待付款，20待发货，30已发货，40已完成，50已取消，60退款中',
+    order_status TINYINT UNSIGNED NOT NULL DEFAULT 10 COMMENT '订单状态：10待付款，20待发货，30已发货，40已完成，50已取消，60退款中，70已退款',
     payment_status TINYINT UNSIGNED NOT NULL DEFAULT 0 COMMENT '支付状态：0未支付，1已支付，2已退款',
     payment_method VARCHAR(32) DEFAULT NULL COMMENT '支付方式',
     subtotal_amount DECIMAL(18,2) NOT NULL DEFAULT 0.00 COMMENT '商品金额',

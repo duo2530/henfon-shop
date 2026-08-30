@@ -79,6 +79,10 @@ public class PaymentRefundService {
             }
         }
         TradeOrder order = tradeOrderService.findById(request.orderId());
+        if (Integer.valueOf(TradeOrderStateMachine.STATUS_REFUNDED).equals(order.getOrderStatus())
+                || Integer.valueOf(2).equals(order.getPaymentStatus())) {
+            throw new BusinessException("PAYMENT_REFUND_ALREADY_COMPLETED", "订单已完成退款，不能重复申请");
+        }
         PaymentOrder paymentOrder = paymentOrderMapper.selectOne(new LambdaQueryWrapper<PaymentOrder>()
                 .eq(PaymentOrder::getOrderId, order.getId())
                 .eq(PaymentOrder::getStatus, PAYMENT_SUCCEEDED)
@@ -152,6 +156,20 @@ public class PaymentRefundService {
         if (request.success()) {
             refundOrder.setStatus(REFUND_SUCCEEDED);
             refundOrder.setRefundedAt(LocalDateTime.now());
+            // 只有累计退款金额达到支付金额后，订单才从退款中推进到已退款。
+            PaymentOrder paymentOrder = paymentOrderMapper.selectOne(new LambdaQueryWrapper<PaymentOrder>()
+                    .eq(PaymentOrder::getPaymentNo, refundOrder.getPaymentNo())
+                    .last("LIMIT 1 FOR UPDATE"));
+            BigDecimal totalRefunded = refundOrderMapper.selectList(new LambdaQueryWrapper<PaymentRefundOrder>()
+                            .eq(PaymentRefundOrder::getPaymentNo, refundOrder.getPaymentNo())
+                            .eq(PaymentRefundOrder::getStatus, REFUND_SUCCEEDED))
+                    .stream()
+                    .map(item -> item.getAmount() == null ? BigDecimal.ZERO : item.getAmount())
+                    .reduce(refundOrder.getAmount() == null ? BigDecimal.ZERO : refundOrder.getAmount(), BigDecimal::add);
+            if (paymentOrder != null && paymentOrder.getAmount() != null
+                    && totalRefunded.compareTo(paymentOrder.getAmount()) >= 0) {
+                tradeOrderService.markRefunded(refundOrder.getOrderId(), totalRefunded);
+            }
         } else {
             refundOrder.setStatus(REFUND_FAILED);
         }

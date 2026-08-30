@@ -80,6 +80,7 @@ export interface Address {
 }
 
 export interface Coupon {
+  id?: number;
   code: string;
   title: string;
   discountAmount: number;

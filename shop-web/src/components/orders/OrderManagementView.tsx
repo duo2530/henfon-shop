@@ -613,6 +613,13 @@ export const OrderManagementView: React.FC = () => {
                         待支付款项
                       </span>
                     );
+                  } else if (order.status === 'refunding') {
+                    statusBadges = (
+                      <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-purple-100 text-purple-800">
+                        <RotateCcw className="w-3 h-3 mr-1 animate-spin" />
+                        退款中 (等待渠道确认)
+                      </span>
+                    );
                   } else if (order.status === 'refunded' || order.refundStatus) {
                     statusBadges = (
                       <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-purple-100 text-purple-800">
@@ -780,7 +787,7 @@ export const OrderManagementView: React.FC = () => {
                             <FileText className="w-4 h-4" />
                           </button>
 
-                          {order.status !== 'cancelled' && order.status !== 'completed' && order.status !== 'refunded' && (
+                          {order.status !== 'cancelled' && order.status !== 'completed' && order.status !== 'refunded' && order.status !== 'refunding' && (
                             <button
                               onClick={() => cancelOrder(order.id)}
                               className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"

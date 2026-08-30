@@ -17,6 +17,7 @@ public final class RocketMqTopics {
     public static final String INVENTORY_RELEASED = "shop.inventory.released";
     public static final String ORDER_SHIPPED = "shop.order.shipped";
     public static final String REFUND_APPROVED = "shop.refund.approved";
+    public static final String REFUND_SUCCEEDED = "shop.refund.succeeded";
     public static final String PRODUCT_CHANGED = "shop.product.changed";
 
     private RocketMqTopics() {

@@ -65,4 +65,20 @@ class TradeOrderStateMachineTest {
                 TradeOrderStateMachine.STATUS_CANCELLED,
                 TradeOrderStateMachine.STATUS_SHIPPED));
     }
+
+    /**
+     * 校验退款中只能进入已退款，且已退款不可再次变更。
+     *
+     * @author Henfon
+     * @date 2026-08-30
+     */
+    @Test
+    void shouldAllowRefundCompletionOnlyOnce() {
+        assertDoesNotThrow(() -> TradeOrderStateMachine.requireTransition(
+                TradeOrderStateMachine.STATUS_REFUNDING,
+                TradeOrderStateMachine.STATUS_REFUNDED));
+        assertFalse(TradeOrderStateMachine.canTransition(
+                TradeOrderStateMachine.STATUS_REFUNDED,
+                TradeOrderStateMachine.STATUS_REFUNDING));
+    }
 }

@@ -4,12 +4,18 @@ import com.henfon.shop.common.api.ApiResponse;
 import com.henfon.shop.marketing.entity.MarketingCoupon;
 import com.henfon.shop.marketing.entity.MarketingMemberCoupon;
 import com.henfon.shop.marketing.service.MarketingPortalService;
+import com.henfon.shop.marketing.dto.MarketingCouponRedeemRequest;
+import com.henfon.shop.marketing.dto.MarketingCouponRollbackRequest;
 import com.henfon.shop.identity.security.MemberPrincipalResolver;
 import org.slf4j.MDC;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestBody;
+import jakarta.validation.Valid;
 import org.springframework.security.core.Authentication;
 
 import java.util.List;
@@ -63,5 +69,59 @@ public class MarketingPortalController {
                                                                    Authentication authentication) {
         Long currentMemberId = MemberPrincipalResolver.requireMemberId(authentication, memberId);
         return ApiResponse.success(service.memberCoupons(currentMemberId, status), MDC.get("requestId"));
+    }
+
+    /**
+     * 领取优惠券。
+     *
+     * @param couponId 优惠券ID
+     * @param memberId 请求会员ID，可为空
+     * @param authentication 当前认证信息
+     * @return 会员优惠券记录
+     * @author Henfon
+     * @date 2026-08-30
+     */
+    @PostMapping("/coupons/{couponId}/claim")
+    public ApiResponse<MarketingMemberCoupon> claim(@PathVariable Long couponId,
+                                                     @RequestParam(required = false) Long memberId,
+                                                     Authentication authentication) {
+        Long currentMemberId = MemberPrincipalResolver.requireMemberId(authentication, memberId);
+        return ApiResponse.success(service.claim(currentMemberId, couponId), MDC.get("requestId"));
+    }
+
+    /**
+     * 核销优惠券。
+     *
+     * @param request 核销请求
+     * @param memberId 请求会员ID，可为空
+     * @param authentication 当前认证信息
+     * @return 会员优惠券记录
+     * @author Henfon
+     * @date 2026-08-30
+     */
+    @PostMapping("/coupons/redeem")
+    public ApiResponse<MarketingMemberCoupon> redeem(@Valid @RequestBody MarketingCouponRedeemRequest request,
+                                                      @RequestParam(required = false) Long memberId,
+                                                      Authentication authentication) {
+        Long currentMemberId = MemberPrincipalResolver.requireMemberId(authentication, memberId);
+        return ApiResponse.success(service.redeem(currentMemberId, request), MDC.get("requestId"));
+    }
+
+    /**
+     * 回滚订单优惠券核销。
+     *
+     * @param request 回滚请求
+     * @param memberId 请求会员ID，可为空
+     * @param authentication 当前认证信息
+     * @return 回滚后的会员优惠券记录
+     * @author Henfon
+     * @date 2026-08-30
+     */
+    @PostMapping("/coupons/rollback")
+    public ApiResponse<MarketingMemberCoupon> rollback(@Valid @RequestBody MarketingCouponRollbackRequest request,
+                                                        @RequestParam(required = false) Long memberId,
+                                                        Authentication authentication) {
+        Long currentMemberId = MemberPrincipalResolver.requireMemberId(authentication, memberId);
+        return ApiResponse.success(service.rollback(currentMemberId, request.orderId()), MDC.get("requestId"));
     }
 }

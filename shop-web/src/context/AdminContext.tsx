@@ -209,7 +209,8 @@ function backendOrderStatusToFrontend(status: number): Order['status'] {
   if (status === 30) return 'shipped';
   if (status === 40) return 'completed';
   if (status === 50) return 'cancelled';
-  if (status === 60) return 'refunded';
+  if (status === 60) return 'refunding';
+  if (status === 70) return 'refunded';
   return 'pending_payment';
 }
 
@@ -227,7 +228,7 @@ function backendOrdersToFrontend(records: BackendTradeOrder[]): Order[] {
     createdAt: record.createdAt || '',
     customerName: record.memberName || record.receiverName,
     customerPhone: record.receiverPhone,
-    amount: Number(record.paidAmount ?? record.payableAmount ?? 0),
+    amount: Number(record.paidAmount || record.payableAmount || 0),
     paymentMethod: backendPaymentMethodToFrontend(record.paymentMethod),
     status: backendOrderStatusToFrontend(record.orderStatus),
     items: [],
@@ -239,7 +240,7 @@ function backendOrdersToFrontend(records: BackendTradeOrder[]): Order[] {
     sellerNote: record.sellerRemark || undefined,
     discountAmount: Number(record.discountAmount || 0),
     freightAmount: Number(record.freightAmount || 0),
-    refundStatus: record.orderStatus === 60 ? 'approved' : 'none'
+    refundStatus: record.orderStatus === 60 ? 'pending' : record.orderStatus === 70 ? 'approved' : 'none'
   }));
 }
 
@@ -659,16 +660,16 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         if (o.id === id) {
           return {
             ...o,
-            status: 'refunded',
+            status: 'refunding',
             refundAmount,
             refundReason,
-            refundStatus: 'approved'
+            refundStatus: 'pending'
           };
         }
         return o;
       })
     );
-    showToast(`退款审核通过，已原路退款 ¥${refundAmount.toFixed(2)}`, 'success');
+    showToast(`退款申请已提交，等待渠道确认 ¥${refundAmount.toFixed(2)}`, 'success');
     const numericId = Number(id);
     if (Number.isFinite(numericId)) {
       void refundTradeOrder(numericId, refundAmount, refundReason).catch(() => {

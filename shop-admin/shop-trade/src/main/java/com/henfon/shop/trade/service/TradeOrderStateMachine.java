@@ -19,6 +19,7 @@ public final class TradeOrderStateMachine {
     public static final int STATUS_COMPLETED = 40;
     public static final int STATUS_CANCELLED = 50;
     public static final int STATUS_REFUNDING = 60;
+    public static final int STATUS_REFUNDED = 70;
 
     private static final Map<Integer, Set<Integer>> TRANSITIONS = Map.of(
             STATUS_PENDING_PAYMENT, Set.of(STATUS_PENDING_SHIPMENT, STATUS_CANCELLED),
@@ -26,7 +27,8 @@ public final class TradeOrderStateMachine {
             STATUS_SHIPPED, Set.of(STATUS_COMPLETED, STATUS_REFUNDING),
             STATUS_COMPLETED, Set.of(STATUS_REFUNDING),
             STATUS_CANCELLED, Set.of(),
-            STATUS_REFUNDING, Set.of()
+            STATUS_REFUNDING, Set.of(STATUS_REFUNDED),
+            STATUS_REFUNDED, Set.of()
     );
 
     private TradeOrderStateMachine() {
@@ -80,6 +82,7 @@ public final class TradeOrderStateMachine {
             case STATUS_COMPLETED -> "已完成";
             case STATUS_CANCELLED -> "已取消";
             case STATUS_REFUNDING -> "退款中";
+            case STATUS_REFUNDED -> "已退款";
             default -> "未知(" + status + ")";
         };
     }

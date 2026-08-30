@@ -300,10 +300,34 @@ public class TradeOrderService {
         }
         TradeOrderStateMachine.requireTransition(order.getOrderStatus(), TradeOrderStateMachine.STATUS_REFUNDING);
         order.setOrderStatus(TradeOrderStateMachine.STATUS_REFUNDING);
-        order.setPaymentStatus(2);
         order.setRemark("后台退款：" + request.reason().trim() + "，金额：" + request.refundAmount());
         updateOrder(order);
         tradeEventOutboxService.recordOrderEvent(order, "REFUND_APPROVED", RocketMqTopics.REFUND_APPROVED);
+    }
+
+    /**
+     * 退款回调成功后将订单标记为已退款。
+     *
+     * @param orderId 订单ID
+     * @param refundAmount 退款金额
+     * @return 更新后的订单
+     * @author Henfon
+     * @date 2026-08-30
+     */
+    @Transactional
+    public TradeOrder markRefunded(Long orderId, BigDecimal refundAmount) {
+        TradeOrder order = requireOrder(orderId);
+        if (Integer.valueOf(2).equals(order.getPaymentStatus())
+                && Integer.valueOf(TradeOrderStateMachine.STATUS_REFUNDED).equals(order.getOrderStatus())) {
+            return order;
+        }
+        TradeOrderStateMachine.requireTransition(order.getOrderStatus(), TradeOrderStateMachine.STATUS_REFUNDED);
+        order.setOrderStatus(TradeOrderStateMachine.STATUS_REFUNDED);
+        order.setPaymentStatus(2);
+        order.setRemark("退款成功，金额：" + refundAmount);
+        updateOrder(order);
+        tradeEventOutboxService.recordOrderEvent(order, "REFUND_SUCCEEDED", RocketMqTopics.REFUND_SUCCEEDED);
+        return order;
     }
 
     /**
@@ -380,21 +404,22 @@ public class TradeOrderService {
         order.setOrderNo("AO" + IdWorker.getIdStr());
         order.setIdempotencyKey(idempotencyKey);
         order.setMemberId(request.memberId());
-        order.setOrderStatus(TradeOrderStateMachine.STATUS_PENDING_SHIPMENT);
-        order.setPaymentStatus(1);
+        // 下单阶段只完成库存预占，必须等待支付回调后再进入待发货和已支付状态。
+        order.setOrderStatus(TradeOrderStateMachine.STATUS_PENDING_PAYMENT);
+        order.setPaymentStatus(0);
         order.setPaymentMethod(request.paymentMethod());
         order.setSubtotalAmount(request.subtotalAmount());
         order.setDiscountAmount(request.discountAmount());
         order.setFreightAmount(request.freightAmount());
         order.setPayableAmount(request.payableAmount());
-        order.setPaidAmount(request.payableAmount());
+        order.setPaidAmount(BigDecimal.ZERO);
         order.setReceiverName(request.receiverName());
         order.setReceiverPhone(request.receiverPhone());
         order.setReceiverProvince(request.receiverProvince());
         order.setReceiverCity(request.receiverCity());
         order.setReceiverDistrict(request.receiverDistrict());
         order.setReceiverAddress(request.receiverAddress());
-        order.setPaidAt(java.time.LocalDateTime.now());
+        order.setPaidAt(null);
         try {
             tradeOrderMapper.insert(order);
         } catch (DuplicateKeyException exception) {

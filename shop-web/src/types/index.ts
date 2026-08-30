@@ -52,7 +52,7 @@ export interface Product {
   tags?: string[];
 }
 
-export type OrderStatus = 'pending_payment' | 'pending_shipment' | 'shipped' | 'completed' | 'cancelled' | 'refunded';
+export type OrderStatus = 'pending_payment' | 'pending_shipment' | 'shipped' | 'completed' | 'cancelled' | 'refunding' | 'refunded';
 
 export interface OrderItem {
   productId: string;

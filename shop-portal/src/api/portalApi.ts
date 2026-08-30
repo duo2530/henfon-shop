@@ -57,6 +57,7 @@ interface ProductPage {
 }
 
 interface MarketingCouponRecord {
+  id: number;
   couponCode: string;
   couponTitle: string;
   discountAmount: number;
@@ -267,6 +268,7 @@ export async function fetchPortalProductDetail(productId: string): Promise<Produ
 export async function fetchPortalCoupons(): Promise<Coupon[]> {
   const records = await request<MarketingCouponRecord[]>('/api/portal/marketing/coupons');
   return (records || []).map((coupon) => ({
+    id: coupon.id,
     code: coupon.couponCode,
     title: coupon.couponTitle,
     discountAmount: Number(coupon.discountAmount || 0),
@@ -276,6 +278,27 @@ export async function fetchPortalCoupons(): Promise<Coupon[]> {
     tag: coupon.tag,
     category: coupon.categoryCode || 'all',
   }));
+}
+
+/** 领取门户优惠券并返回会员优惠券记录。 */
+export async function claimPortalCoupon(couponId: number): Promise<unknown> {
+  return request(`/api/portal/marketing/coupons/${couponId}/claim`, { method: 'POST' });
+}
+
+/** 核销门户优惠券。 */
+export async function redeemPortalCoupon(couponId: number, orderId: number): Promise<unknown> {
+  return request('/api/portal/marketing/coupons/redeem', {
+    method: 'POST',
+    body: JSON.stringify({ couponId, orderId }),
+  });
+}
+
+/** 回滚订单取消后的优惠券核销。 */
+export async function rollbackPortalCoupon(orderId: number): Promise<unknown> {
+  return request('/api/portal/marketing/coupons/rollback', {
+    method: 'POST',
+    body: JSON.stringify({ orderId }),
+  });
 }
 
 export async function fetchPortalBanners(): Promise<PortalBanner[]> {
@@ -298,6 +321,7 @@ export interface PortalOrderRecord {
   subtotalAmount: number;
   discountAmount: number;
   freightAmount: number;
+  payableAmount: number;
   paidAmount: number;
   receiverName: string;
   receiverPhone: string;

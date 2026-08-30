@@ -26,12 +26,29 @@ interface CheckoutModalProps {
   onPlaceOrderSuccess: (newOrder: Order) => void;
   onApplyCoupon?: (couponCode: string) => boolean;
   onRemoveCoupon?: () => void;
-  onPersistOrder?: (order: Order) => Promise<void>;
+  onPersistOrder?: (order: Order) => Promise<CheckoutPersistenceResult | void>;
+  onPaymentFailure?: (message: string) => void;
   initialAddresses?: Address[];
   onPersistAddress?: (address: Address) => Promise<void>;
   onUpdateAddress?: (address: Address) => Promise<void>;
   onDeleteAddress?: (addressId: string) => Promise<void>;
   onSetDefaultAddress?: (addressId: string) => Promise<void>;
+}
+
+/**
+ * 门户结算持久化结果。
+ *
+ * @author Henfon
+ * @date 2026-08-30
+ * @description 描述后端订单和支付单创建结果，便于结算页区分真实联调与本地回退。
+ */
+export interface CheckoutPersistenceResult {
+  serverOrderId?: number;
+  serverOrderNo?: string;
+  paymentNo?: string;
+  paymentStatus?: number;
+  paymentCreated?: boolean;
+  message?: string;
 }
 
 export const CheckoutModal: React.FC<CheckoutModalProps> = ({
@@ -44,6 +61,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   onApplyCoupon,
   onRemoveCoupon,
   onPersistOrder,
+  onPaymentFailure,
   initialAddresses,
   onPersistAddress,
   onUpdateAddress,
@@ -185,84 +203,89 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   };
 
   const handlePayOrder = async () => {
-    if (!selectedAddress) return;
+    if (!selectedAddress || isSubmitting) return;
     setIsSubmitting(true);
 
-    setTimeout(async () => {
-      const orderNumber = `AO${Date.now()}`;
-      const trackingNumber = `SF${Math.floor(1000000000 + Math.random() * 9000000000)}`;
+    const orderNumber = `AO${Date.now()}`;
+    const trackingNumber = `SF${Math.floor(1000000000 + Math.random() * 9000000000)}`;
+    const orderItems = items.map((it) => ({
+      productId: it.productId,
+      skuId: it.skuId,
+      title: it.product.title,
+      image: it.product.images[0],
+      variantsSummary: Object.entries(it.selectedVariants)
+        .map(([k, v]) => `${k}:${v}`)
+        .join(' / '),
+      price: it.unitPrice,
+      quantity: it.quantity,
+    }));
 
-      const orderItems = items.map((it) => ({
-        productId: it.productId,
-        skuId: it.skuId,
-        title: it.product.title,
-        image: it.product.images[0],
-        variantsSummary: Object.entries(it.selectedVariants)
-          .map(([k, v]) => `${k}:${v}`)
-          .join(' / '),
-        price: it.unitPrice,
-        quantity: it.quantity,
-      }));
+    const paymentMethodNames: Record<string, string> = {
+      wechat: '微信支付',
+      alipay: '支付宝',
+      unionpay: '云闪付',
+      applepay: 'Apple Pay',
+    };
 
-      const paymentMethodNames: Record<string, string> = {
-        wechat: '微信支付',
-        alipay: '支付宝',
-        unionpay: '云闪付',
-        applepay: 'Apple Pay',
-      };
+    // 真实支付回调尚未完成前，订单保持待付款，避免前端提前展示已付款。
+    const newOrder: Order = {
+      id: `ord-${Date.now()}`,
+      orderNumber,
+      trackingNumber,
+      createdAt: new Date().toLocaleString('zh-CN', { hour12: false }),
+      status: 'placed',
+      statusLabel: '待付款',
+      items: orderItems,
+      subtotal: rawSubtotal,
+      discount: couponDiscount,
+      shippingFee,
+      totalPaid: totalPayable,
+      shippingAddress: selectedAddress,
+      paymentMethod: paymentMethodNames[paymentMethod] || '在线支付',
+      estimatedDelivery: '预计 1-2 日内顺丰送达',
+      trackingSteps: [
+        {
+          title: '订单提交成功',
+          time: '刚刚',
+          completed: true,
+          description: '订单已创建，等待完成支付。',
+        },
+        {
+          title: '支付成功，等待仓库拣货',
+          time: '待支付回调',
+          completed: false,
+          description: '支付完成后系统将自动下发配货指令。',
+        },
+        {
+          title: '顺丰速运揽收',
+          time: '待支付',
+          completed: false,
+          description: '支付成功后安排顺丰速运揽件。',
+        },
+        {
+          title: '干线运输与派送',
+          time: '待支付',
+          completed: false,
+          description: '支付成功后进入物流运输流程。',
+        },
+      ],
+    };
 
-      const newOrder: Order = {
-        id: `ord-${Date.now()}`,
-        orderNumber,
-        trackingNumber,
-        createdAt: new Date().toLocaleString('zh-CN', { hour12: false }),
-        status: 'paid',
-        statusLabel: '待发货 (已付款)',
-        items: orderItems,
-        subtotal: rawSubtotal,
-        discount: couponDiscount,
-        shippingFee,
-        totalPaid: totalPayable,
-        shippingAddress: selectedAddress,
-        paymentMethod: paymentMethodNames[paymentMethod] || '在线支付',
-        estimatedDelivery: '预计 1-2 日内顺丰送达',
-        trackingSteps: [
-          {
-            title: '订单提交成功',
-            time: '刚刚',
-            completed: true,
-            description: '您的订单已成功创建并完成资金托管。',
-          },
-          {
-            title: '已付款，等待仓库拣货',
-            time: '刚刚',
-            completed: true,
-            description: 'Henfon华东智能中央仓已收到配货指令。',
-          },
-          {
-            title: '顺丰速运揽收',
-            time: '预计今日 18:00',
-            completed: false,
-            description: '顺丰速运专车揽件并打印电子面单。',
-          },
-          {
-            title: '干线运输与派送',
-            time: '次日上午',
-            completed: false,
-            description: '顺丰航空件发往目的地中转站并安排派送。',
-          },
-        ],
-      };
-
-      try {
-        await onPersistOrder?.(newOrder);
-        setIsSubmitting(false);
-        onPlaceOrderSuccess(newOrder);
-      } catch (error) {
-        console.error('订单同步失败', error);
-        setIsSubmitting(false);
+    try {
+      const persistence = await onPersistOrder?.(newOrder);
+      if (persistence?.serverOrderId) newOrder.id = String(persistence.serverOrderId);
+      if (persistence?.serverOrderNo) newOrder.orderNumber = persistence.serverOrderNo;
+      if (!persistence?.paymentCreated) {
+        onPaymentFailure?.(persistence?.message || '支付单创建失败，订单已保留在本地，请稍后重试');
       }
-    }, 1200);
+      onPlaceOrderSuccess(newOrder);
+    } catch (error) {
+      console.error('订单或支付单同步失败', error);
+      onPaymentFailure?.(error instanceof Error ? error.message : '支付单创建失败，订单已保留在本地，请稍后重试');
+      onPlaceOrderSuccess(newOrder);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (

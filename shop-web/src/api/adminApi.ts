@@ -165,6 +165,23 @@ export interface BackendCatalogCategory {
   status: number;
 }
 
+export interface BackendContentBanner {
+  id: number;
+  bannerTitle: string;
+  bannerTag?: string;
+  subtitle?: string;
+  imageUrl: string;
+  linkType: string;
+  linkTarget?: string;
+  sortNo: number;
+  status: number;
+  startAt?: string;
+  endAt?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  remark?: string;
+}
+
 export interface BackendTradeOrder {
   id: number;
   orderNo: string;
@@ -366,6 +383,38 @@ export function saveCatalogProduct(product: {
 
 export function deleteCatalogProduct(id: number): Promise<void> {
   return request<void>(`/api/admin/catalog/products/${id}`, { method: 'DELETE' });
+}
+
+export function listContentBanners(params: { current?: number; size?: number; keyword?: string; status?: number } = {}): Promise<BackendPage<BackendContentBanner>> {
+  const query = new URLSearchParams({ current: String(params.current || 1), size: String(params.size || 200) });
+  if (params.keyword) query.set('keyword', params.keyword);
+  if (params.status !== undefined) query.set('status', String(params.status));
+  return request<BackendPage<BackendContentBanner>>(`/api/admin/content/banners?${query.toString()}`);
+}
+
+export function saveContentBanner(banner: {
+  id?: number;
+  bannerTitle: string;
+  bannerTag?: string;
+  subtitle?: string;
+  imageUrl: string;
+  linkType?: string;
+  linkTarget?: string;
+  sortNo?: number;
+  status?: number;
+  startAt?: string;
+  endAt?: string;
+  remark?: string;
+}): Promise<number> {
+  return request<number>('/api/admin/content/banners', { method: 'POST', body: JSON.stringify(banner) });
+}
+
+export function updateContentBannerStatus(id: number, status: number): Promise<void> {
+  return request<void>(`/api/admin/content/banners/${id}/status?status=${status}`, { method: 'PUT' });
+}
+
+export function deleteContentBanner(id: number): Promise<void> {
+  return request<void>(`/api/admin/content/banners/${id}`, { method: 'DELETE' });
 }
 
 export function listTradeOrders(params: { current?: number; size?: number; keyword?: string; orderStatus?: number } = {}): Promise<BackendPage<BackendTradeOrder>> {

@@ -4,7 +4,7 @@ import { HeroBanner } from './components/HeroBanner';
 import { ProductCard } from './components/ProductCard';
 import { ProductQuickView } from './components/ProductQuickView';
 import { CartDrawer } from './components/CartDrawer';
-import { CheckoutModal } from './components/CheckoutModal';
+import { CheckoutModal, CheckoutPersistenceResult } from './components/CheckoutModal';
 import { OrderSuccessModal } from './components/OrderSuccessModal';
 import { OrdersModal } from './components/OrdersModal';
 import { WishlistModal } from './components/WishlistModal';
@@ -17,7 +17,11 @@ import { ToastContainer, ToastMessage } from './components/Toast';
 import { PRODUCTS, AVAILABLE_COUPONS } from './data/products';
 import {
   addPortalCartItem,
+  claimPortalCoupon,
   createPortalOrder,
+  createPortalPayment,
+  redeemPortalCoupon,
+  rollbackPortalCoupon,
   clearPortalMemberToken,
   deletePortalCartItem,
   fetchPortalAddresses,
@@ -94,6 +98,8 @@ function mapPortalOrderStatus(orderStatus: number): { status: Order['status']; l
       return { status: 'cancelled', label: '已取消' };
     case 60:
       return { status: 'refunding', label: '退款中' };
+    case 70:
+      return { status: 'refunded', label: '已退款' };
     default:
       return { status: 'processing', label: '处理中' };
   }
@@ -392,7 +398,7 @@ export default function App() {
             subtotal: Number(order.subtotalAmount || 0),
             discount: Number(order.discountAmount || 0),
             shippingFee: Number(order.freightAmount || 0),
-            totalPaid: Number(order.paidAmount || 0),
+            totalPaid: Number(order.paidAmount || order.payableAmount || 0),
             shippingAddress: {
               id: `order-${order.id}`,
               receiverName: order.receiverName,
@@ -928,10 +934,22 @@ export default function App() {
   };
 
   // Coupon Handlers & Claim Operations
-  const handleClaimCoupon = (coupon: Coupon) => {
+  const handleClaimCoupon = async (coupon: Coupon) => {
     if (claimedCouponCodes.includes(coupon.code)) {
       showToast(`您已经领取过《${coupon.title}》啦`, 'info');
       return;
+    }
+
+    // 有真实优惠券 ID 时优先写入服务端，接口失败则不伪造本地领取成功状态。
+    const memberId = resolveMemberId(currentUser);
+    if (memberId && coupon.id) {
+      try {
+        await claimPortalCoupon(coupon.id);
+      } catch (error) {
+        console.warn('优惠券领取同步失败', error);
+        showToast(error instanceof Error ? error.message : '优惠券领取失败，请稍后重试', 'error');
+        return;
+      }
     }
 
     const nextCodes = [...claimedCouponCodes, coupon.code];
@@ -1032,18 +1050,30 @@ export default function App() {
     setCartItems((prev) => prev.filter((it) => !purchasedProductIds.has(it.productId) || !it.selected));
 
     setIsCheckoutOpen(false);
-    setCompletedOrder(newOrder);
-    showToast('🎉 订单支付成功，已进入配货流程！');
+    if (newOrder.status === 'paid') {
+      setCompletedOrder(newOrder);
+      showToast('🎉 订单支付成功，已进入配货流程！');
+    } else {
+      // 支付单创建成功但尚未收到渠道回调时，订单保持待付款，避免误导为已支付。
+      showToast('订单已创建，支付单已生成，请完成支付后等待回调确认', 'info');
+    }
   };
 
-  const handlePersistOrder = async (order: Order) => {
+  const handlePersistOrder = async (order: Order): Promise<CheckoutPersistenceResult> => {
     const memberId = resolveMemberId(currentUser);
-    if (!memberId) return;
+    if (!memberId) {
+      return {
+        paymentCreated: false,
+        message: '当前登录账号无法映射服务端会员，订单已保留在本地，请登录后重试支付',
+      };
+    }
     const province = order.shippingAddress.province;
     const city = order.shippingAddress.city;
     const district = order.shippingAddress.district;
+    let serverOrderId: number | undefined;
+    let serverOrderNo: string | undefined;
     try {
-      await createPortalOrder({
+      const serverOrder = await createPortalOrder({
         memberId,
         // 使用本地订单 ID 作为幂等键，网络重试时仍能定位同一笔订单。
         idempotencyKey: order.id,
@@ -1075,9 +1105,45 @@ export default function App() {
         freightAmount: order.shippingFee,
         payableAmount: order.totalPaid,
       });
+      serverOrderId = serverOrder.id;
+      serverOrderNo = serverOrder.orderNo;
+
+      // 支付渠道暂由基础支付单承接，后续接入微信/支付宝 SDK 时复用该支付单号。
+      const paymentChannels: Record<string, string> = {
+        微信支付: 'WECHAT',
+        支付宝: 'ALIPAY',
+        云闪付: 'UNIONPAY',
+        'Apple Pay': 'APPLEPAY',
+      };
+      const channel = paymentChannels[order.paymentMethod] || 'WECHAT';
+      // 订单创建成功后记录优惠券核销，核销失败不阻断支付单创建，便于后续人工补偿。
+      if (appliedCoupon?.id) {
+        try {
+          await redeemPortalCoupon(appliedCoupon.id, serverOrder.id);
+        } catch (error) {
+          console.warn('优惠券核销同步失败', error);
+          showToast('订单已创建，但优惠券核销待重试', 'error');
+        }
+      }
+      const payment = await createPortalPayment(memberId, serverOrder.id, channel);
+      return {
+        serverOrderId: serverOrder.id,
+        serverOrderNo: serverOrder.orderNo,
+        paymentNo: payment.paymentNo,
+        paymentStatus: payment.status,
+        paymentCreated: true,
+      };
     } catch (error) {
-      // 后端暂不可用时仍完成本地演示下单，待服务恢复后可再次同步。
-      console.warn('订单同步失败，已保留本地订单', error);
+      // 后端暂不可用时仍完成本地演示下单，同时明确提示支付单未创建成功。
+      console.warn('订单或支付单同步失败，已保留本地订单', error);
+      return {
+        serverOrderId,
+        serverOrderNo,
+        paymentCreated: false,
+        message: serverOrderId
+          ? '订单已创建，但支付单创建失败，请稍后重试支付'
+          : '订单服务暂不可用，订单已保留在本地，请稍后重试',
+      };
     }
   };
 
@@ -1090,6 +1156,8 @@ export default function App() {
     }
     try {
       await cancelPortalOrder(memberId, orderId, '会员主动取消');
+      // 取消订单后回滚已核销优惠券，接口本身按订单幂等处理。
+      await rollbackPortalCoupon(orderId).catch((error) => console.warn('优惠券回滚失败', error));
       setOrders((previous) => previous.map((item) => item.id === order.id
         ? { ...item, status: 'cancelled', statusLabel: '已取消' }
         : item));
@@ -1597,6 +1665,7 @@ export default function App() {
         onClose={() => setIsCheckoutOpen(false)}
         onPlaceOrderSuccess={handlePlaceOrderSuccess}
         onPersistOrder={handlePersistOrder}
+        onPaymentFailure={(message) => showToast(message, 'error')}
         initialAddresses={memberAddresses}
         onPersistAddress={handlePersistAddress}
         onUpdateAddress={handleUpdateAddress}
