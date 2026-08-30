@@ -16,6 +16,12 @@ spring:
     multipart:
       max-file-size: ${SHOP_UPLOAD_MAX_FILE_SIZE:20MB}
       max-request-size: ${SHOP_UPLOAD_MAX_REQUEST_SIZE:50MB}
+  task:
+    scheduling:
+      # 超时关单与 Outbox 投递并行执行，避免 RocketMQ 重试阻塞订单扫描。
+      pool:
+        size: ${SHOP_SCHEDULING_POOL_SIZE:2}
+      thread-name-prefix: shop-scheduler-
 
 # 数据库、Redis、RocketMQ、JWT 和 MinIO 等环境相关配置统一放在 application-{profile}.yml。
 mybatis-plus:

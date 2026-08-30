@@ -29,6 +29,12 @@ rocketmq:
     group: ${SHOP_TEST_ROCKETMQ_PRODUCER_GROUP:shop-admin-test-producer}
 
 shop:
+  trade:
+    order-payment-timeout-minutes: ${SHOP_TEST_ORDER_PAYMENT_TIMEOUT_MINUTES:30}
+    order-timeout-scan-ms: ${SHOP_TEST_ORDER_TIMEOUT_SCAN_MS:60000}
+    order-timeout-initial-delay-ms: ${SHOP_TEST_ORDER_TIMEOUT_INITIAL_DELAY_MS:15000}
+    outbox-scan-ms: ${SHOP_TEST_OUTBOX_SCAN_MS:5000}
+    outbox-initial-delay-ms: ${SHOP_TEST_OUTBOX_INITIAL_DELAY_MS:10000}
   payment:
     wechat:
       # ==================== 微信支付 V3 测试环境配置 ====================

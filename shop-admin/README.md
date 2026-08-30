@@ -82,7 +82,7 @@ java -jar shop-boot/target/shop-boot-0.0.1-SNAPSHOT.jar
 
 会员管理接口前缀：`/api/admin/member`，`GET /users` 支持关键字、等级、状态分页查询，`PUT /users/{id}/status?status=0|1` 用于冻结或解冻会员，操作需要 `member:user:query` 或 `member:user:status` 权限。
 
-商品目录接口前缀：`/api/admin/catalog`，支持商品分页查询、保存、逻辑删除和启用类目查询；交易订单基础接口前缀：`/api/admin/trade`，支持订单分页和订单明细查询；库存接口前缀：`/api/admin/inventory`，支持库存台账分页、初始化和增减调整，订单创建/取消/发货分别自动执行库存预占/释放/扣减。门户交易接口支持订单详情、物流轨迹、会员取消订单和确认收货，创建订单可传 `idempotencyKey` 防止重复提交，服务端会校验明细小计与应付金额一致性。商品目录、交易和库存表结构分别位于 `db/init/003_catalog_tables.sql`、`db/init/004_trade_tables.sql`、`db/init/006_inventory_tables.sql`、`db/init/007_trade_idempotency.sql`；会员地址默认唯一约束位于 `db/init/008_member_address_default.sql`。
+商品目录接口前缀：`/api/admin/catalog`，支持商品分页查询、保存、逻辑删除和启用类目查询；交易订单基础接口前缀：`/api/admin/trade`，支持订单分页和订单明细查询；库存接口前缀：`/api/admin/inventory`，支持库存台账分页、初始化和增减调整，订单创建/取消/发货分别自动执行库存预占/释放/扣减。门户交易接口支持订单详情、物流轨迹、会员取消订单和确认收货，创建订单可传 `idempotencyKey` 防止重复提交，服务端会校验明细小计与应付金额一致性。订单超时任务会自动关闭待付款订单并释放库存，订单状态事件通过 Outbox 定时投递 RocketMQ。商品目录、交易和库存表结构分别位于 `db/init/003_catalog_tables.sql`、`db/init/004_trade_tables.sql`、`db/init/006_inventory_tables.sql`、`db/init/007_trade_idempotency.sql`；会员地址默认唯一约束位于 `db/init/008_member_address_default.sql`，订单事件 Outbox 位于 `db/init/009_trade_event_outbox.sql`。
 
 数据库表结构位于 `db/init/002_identity_tables.sql`，可重复执行（使用 `IF NOT EXISTS`）。
 

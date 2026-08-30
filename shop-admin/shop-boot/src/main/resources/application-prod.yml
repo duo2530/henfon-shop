@@ -33,6 +33,12 @@ rocketmq:
     retry-times-when-send-failed: ${ROCKETMQ_RETRY_TIMES:3}
 
 shop:
+  trade:
+    order-payment-timeout-minutes: ${SHOP_ORDER_PAYMENT_TIMEOUT_MINUTES:30}
+    order-timeout-scan-ms: ${SHOP_ORDER_TIMEOUT_SCAN_MS:60000}
+    order-timeout-initial-delay-ms: ${SHOP_ORDER_TIMEOUT_INITIAL_DELAY_MS:15000}
+    outbox-scan-ms: ${SHOP_OUTBOX_SCAN_MS:5000}
+    outbox-initial-delay-ms: ${SHOP_OUTBOX_INITIAL_DELAY_MS:10000}
   payment:
     wechat:
       # ==================== 微信支付 V3 生产环境配置 ====================

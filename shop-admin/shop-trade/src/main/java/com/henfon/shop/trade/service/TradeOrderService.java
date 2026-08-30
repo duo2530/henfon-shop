@@ -18,6 +18,7 @@ import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.henfon.shop.common.exception.BusinessException;
 import com.henfon.shop.inventory.dto.InventoryReservationItem;
 import com.henfon.shop.inventory.service.InventoryStockService;
+import com.henfon.shop.integration.messaging.RocketMqTopics;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -48,6 +49,7 @@ public class TradeOrderService {
     private final TradeOrderItemMapper tradeOrderItemMapper;
     private final TradeOrderLogisticsMapper tradeOrderLogisticsMapper;
     private final InventoryStockService inventoryStockService;
+    private final TradeEventOutboxService tradeEventOutboxService;
 
     /**
      * 创建交易订单服务。
@@ -58,11 +60,13 @@ public class TradeOrderService {
      */
     public TradeOrderService(TradeOrderMapper tradeOrderMapper, TradeOrderItemMapper tradeOrderItemMapper,
                              TradeOrderLogisticsMapper tradeOrderLogisticsMapper,
-                             InventoryStockService inventoryStockService) {
+                             InventoryStockService inventoryStockService,
+                             TradeEventOutboxService tradeEventOutboxService) {
         this.tradeOrderMapper = tradeOrderMapper;
         this.tradeOrderItemMapper = tradeOrderItemMapper;
         this.tradeOrderLogisticsMapper = tradeOrderLogisticsMapper;
         this.inventoryStockService = inventoryStockService;
+        this.tradeEventOutboxService = tradeEventOutboxService;
     }
 
     /**
@@ -155,6 +159,7 @@ public class TradeOrderService {
         logistics.setEventDescription("商家已发货，等待物流揽收");
         logistics.setSortNo(0);
         tradeOrderLogisticsMapper.insert(logistics);
+        tradeEventOutboxService.recordOrderShipped(order);
     }
 
     /**
@@ -179,6 +184,7 @@ public class TradeOrderService {
         updateOrder(order);
         // 取消待付款或待发货订单时释放已预占库存，库存与订单状态保持一致。
         inventoryStockService.release(order.getId(), order.getOrderNo());
+        tradeEventOutboxService.recordOrderCancelled(order, false);
     }
 
     /**
@@ -204,6 +210,7 @@ public class TradeOrderService {
         updateOrder(order);
         // 买家取消同样释放订单创建时预占的库存。
         inventoryStockService.release(order.getId(), order.getOrderNo());
+        tradeEventOutboxService.recordOrderCancelled(order, false);
     }
 
     /**
@@ -223,6 +230,7 @@ public class TradeOrderService {
         order.setOrderStatus(STATUS_COMPLETED);
         order.setCompletedAt(LocalDateTime.now());
         updateOrder(order);
+        tradeEventOutboxService.recordOrderCompleted(order);
     }
 
     /**
@@ -267,6 +275,7 @@ public class TradeOrderService {
         order.setPaymentStatus(2);
         order.setRemark("后台退款：" + request.reason().trim() + "，金额：" + request.refundAmount());
         updateOrder(order);
+        tradeEventOutboxService.recordOrderEvent(order, "REFUND_APPROVED", RocketMqTopics.REFUND_APPROVED);
     }
 
     /**
@@ -391,7 +400,40 @@ public class TradeOrderService {
         inventoryStockService.reserve(order.getId(), order.getOrderNo(), request.items().stream()
                 .map(item -> new InventoryReservationItem(item.productId(), item.skuId(), item.quantity()))
                 .toList());
+        tradeEventOutboxService.recordOrderCreated(order);
         return order;
+    }
+
+    /**
+     * 关闭超时未支付订单并释放库存。
+     *
+     * @param timeoutMinutes 支付超时时间（分钟）
+     * @return 本次关闭的订单数量
+     * @author Henfon
+     * @date 2026-08-30
+     */
+    @Transactional
+    public int closeExpiredOrders(int timeoutMinutes) {
+        LocalDateTime cutoff = LocalDateTime.now().minusMinutes(Math.max(timeoutMinutes, 1));
+        List<TradeOrder> orders = tradeOrderMapper.selectList(new LambdaQueryWrapper<TradeOrder>()
+                .eq(TradeOrder::getOrderStatus, STATUS_PENDING_PAYMENT)
+                .eq(TradeOrder::getPaymentStatus, 0)
+                .le(TradeOrder::getCreatedAt, cutoff)
+                .orderByAsc(TradeOrder::getCreatedAt)
+                .last("LIMIT 100"));
+        int closedCount = 0;
+        for (TradeOrder order : orders) {
+            // 乐观锁更新失败说明订单已被支付或人工取消，本轮跳过并交给下一次扫描。
+            order.setOrderStatus(STATUS_CANCELLED);
+            order.setRemark("系统关闭：订单超过支付时限");
+            if (tradeOrderMapper.updateById(order) == 0) {
+                continue;
+            }
+            inventoryStockService.release(order.getId(), order.getOrderNo());
+            tradeEventOutboxService.recordOrderCancelled(order, true);
+            closedCount++;
+        }
+        return closedCount;
     }
 
     /**

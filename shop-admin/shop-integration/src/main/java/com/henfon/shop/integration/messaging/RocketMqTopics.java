@@ -9,6 +9,9 @@ package com.henfon.shop.integration.messaging;
 public final class RocketMqTopics {
 
     public static final String ORDER_CREATED = "shop.order.created";
+    public static final String ORDER_CANCELLED = "shop.order.cancelled";
+    public static final String ORDER_CLOSED_TIMEOUT = "shop.order.closed.timeout";
+    public static final String ORDER_COMPLETED = "shop.order.completed";
     public static final String PAYMENT_SUCCEEDED = "shop.payment.succeeded";
     public static final String INVENTORY_RESERVED = "shop.inventory.reserved";
     public static final String INVENTORY_RELEASED = "shop.inventory.released";
