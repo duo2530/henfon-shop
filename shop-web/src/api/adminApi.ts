@@ -302,6 +302,27 @@ export function updateMemberStatus(id: number, status: number): Promise<void> {
   return request<void>(`/api/admin/member/users/${id}/status?status=${status}`, { method: 'PUT' });
 }
 
+export function updateMemberProfile(id: number, payload: {
+  nickname?: string;
+  phone?: string;
+  email?: string;
+  memberLevel?: string;
+  avatarUrl?: string;
+  remark?: string;
+}): Promise<BackendMemberUser> {
+  return request<BackendMemberUser>(`/api/admin/member/users/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  });
+}
+
+export function adjustMemberAssets(id: number, pointsDelta: number, balanceDelta: number, remark?: string): Promise<BackendMemberUser> {
+  return request<BackendMemberUser>(`/api/admin/member/users/${id}/assets`, {
+    method: 'PUT',
+    body: JSON.stringify({ pointsDelta, balanceDelta, remark }),
+  });
+}
+
 export function listDepartments(): Promise<BackendDepartment[]> {
   return request<BackendDepartment[]>('/api/admin/system/depts');
 }

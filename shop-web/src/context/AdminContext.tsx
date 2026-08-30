@@ -32,6 +32,8 @@ import {
   getCurrentAdmin,
   listMemberUsers,
   updateMemberStatus,
+  updateMemberProfile,
+  adjustMemberAssets,
   listDepartments,
   listDataRules,
   listRoleMenuIds,
@@ -720,10 +722,29 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   };
 
   const updateUser = (id: string, updates: Partial<User>) => {
+    const previous = users.find((user) => user.id === id);
     setUsers((prev) =>
       prev.map((u) => (u.id === id ? { ...u, ...updates } : u))
     );
     showToast('会员资料更新成功', 'success');
+    const numericId = Number(id);
+    if (!previous || !Number.isFinite(numericId)) return;
+    void updateMemberProfile(numericId, {
+      nickname: updates.name,
+      phone: updates.phone,
+      email: updates.email,
+      memberLevel: updates.tier,
+      avatarUrl: updates.avatar,
+      remark: updates.notes,
+    }).then((record) => {
+      const synced = backendMembersToFrontend([record])[0];
+      setUsers((prev) => prev.map((user) => user.id === id
+        ? { ...user, ...synced, tags: user.tags, totalSpent: user.totalSpent, orderCount: user.orderCount }
+        : user));
+    }).catch((error) => {
+      setUsers((prev) => prev.map((user) => user.id === id ? previous : user));
+      showToast(error instanceof Error ? error.message : '会员资料保存失败，已回滚', 'warning');
+    });
   };
 
   const batchUpdateUserStatus = (ids: string[], status: UserStatus) => {
@@ -734,6 +755,7 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   };
 
   const adjustUserBalanceAndPoints = (id: string, pointsDelta: number, balanceDelta: number, note: string) => {
+    const previous = users.find((user) => user.id === id);
     setUsers((prev) =>
       prev.map((u) => {
         if (u.id === id) {
@@ -747,6 +769,17 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         return u;
       })
     );
+    const numericId = Number(id);
+    if (!previous || !Number.isFinite(numericId)) return;
+    void adjustMemberAssets(numericId, pointsDelta, balanceDelta, note).then((record) => {
+      const synced = backendMembersToFrontend([record])[0];
+      setUsers((prev) => prev.map((user) => user.id === id
+        ? { ...user, balance: synced.balance, points: synced.points }
+        : user));
+    }).catch((error) => {
+      setUsers((prev) => prev.map((user) => user.id === id ? previous : user));
+      showToast(error instanceof Error ? error.message : '会员调账失败，已回滚', 'warning');
+    });
   };
 
   const updateUserTags = (id: string, tags: string[]) => {

@@ -3,15 +3,19 @@ package com.henfon.shop.identity.controller;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.henfon.shop.common.api.ApiResponse;
 import com.henfon.shop.identity.entity.MemberUser;
+import com.henfon.shop.identity.dto.MemberAdminAdjustRequest;
+import com.henfon.shop.identity.dto.MemberAdminUpdateRequest;
 import com.henfon.shop.identity.service.MemberAdminService;
 import org.slf4j.MDC;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import jakarta.validation.Valid;
 
 /**
  * 后台会员管理接口。
@@ -75,5 +79,37 @@ public class MemberAdminController {
         // 服务层会校验会员归属、状态枚举和乐观锁版本。
         memberAdminService.updateStatus(id, status);
         return ApiResponse.success(MDC.get("requestId"));
+    }
+
+    /**
+     * 更新会员基础资料。
+     *
+     * @param id 会员ID
+     * @param request 更新请求
+     * @return 更新后的会员
+     * @author Henfon
+     * @date 2026-08-30
+     */
+    @PutMapping("/users/{id}")
+    @PreAuthorize("hasAuthority('member:user:status')")
+    public ApiResponse<MemberUser> update(@PathVariable Long id,
+                                          @Valid @RequestBody MemberAdminUpdateRequest request) {
+        return ApiResponse.success(memberAdminService.update(id, request), MDC.get("requestId"));
+    }
+
+    /**
+     * 调整会员余额和积分。
+     *
+     * @param id 会员ID
+     * @param request 调账请求
+     * @return 更新后的会员
+     * @author Henfon
+     * @date 2026-08-30
+     */
+    @PutMapping("/users/{id}/assets")
+    @PreAuthorize("hasAuthority('member:user:status')")
+    public ApiResponse<MemberUser> adjust(@PathVariable Long id,
+                                          @Valid @RequestBody MemberAdminAdjustRequest request) {
+        return ApiResponse.success(memberAdminService.adjust(id, request), MDC.get("requestId"));
     }
 }
