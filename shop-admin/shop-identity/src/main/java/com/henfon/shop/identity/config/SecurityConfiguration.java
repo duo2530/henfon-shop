@@ -44,9 +44,11 @@ public class SecurityConfiguration {
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/admin/auth/login", "/actuator/health", "/error").permitAll()
-                        // 门户商品、内容和营销查询面向未登录访客开放；会员写操作后续接入会员 JWT。
-                        .requestMatchers("/api/portal/catalog/**", "/api/portal/content/**", "/api/portal/marketing/**",
-                                "/api/portal/member/**", "/api/portal/trade/**").permitAll()
+                        // 商品、内容和可领取优惠券面向访客开放；会员数据和交易接口必须携带会员 JWT。
+                        .requestMatchers("/api/portal/auth/**", "/api/portal/catalog/**", "/api/portal/content/**",
+                                "/api/portal/marketing/coupons").permitAll()
+                        .requestMatchers("/api/portal/member/**", "/api/portal/trade/**",
+                                "/api/portal/marketing/member-coupons").authenticated()
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .anyRequest().authenticated())
                 .exceptionHandling(exceptions -> exceptions

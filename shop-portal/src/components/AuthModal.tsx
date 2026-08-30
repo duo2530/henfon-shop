@@ -19,6 +19,7 @@ import {
   HelpCircle,
 } from 'lucide-react';
 import { UserProfile, MemberLevel } from '../types/ecommerce';
+import { loginPortalMember, registerPortalMember, MemberAuthResponse } from '../api/portalApi';
 
 export type AuthMode = 'login-pwd' | 'login-sms' | 'register' | 'forgot-pwd';
 
@@ -186,7 +187,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   };
 
   // Submit Handler
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
 
@@ -196,12 +197,21 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       return;
     }
 
-    setIsLoading(true);
+    const mapMember = (member: MemberAuthResponse): UserProfile => ({
+      id: String(member.memberId),
+      username: member.username,
+      nickname: member.nickname,
+      email: member.email || '',
+      phone: member.phone || '',
+      avatar: member.avatarUrl || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
+      memberLevel: (member.memberLevel === 'GOLD' ? '黄金VIP' : member.memberLevel === 'BLACK_GOLD' ? '黑金SVIP' : '普通会员') as MemberLevel,
+      points: Number(member.points || 0),
+      balance: Number(member.balance || 0),
+      couponsCount: 0,
+      joinedDate: new Date().toISOString().split('T')[0],
+    });
 
-    setTimeout(() => {
-      setIsLoading(false);
-
-      if (mode === 'login-pwd') {
+    if (mode === 'login-pwd') {
         if (!accountInput) {
           setErrorMsg('请输入账号 / 邮箱 / 手机号');
           return;
@@ -210,35 +220,61 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           setErrorMsg('请输入登录密码');
           return;
         }
+        setIsLoading(true);
+        try {
+          const targetUser = mapMember(await loginPortalMember(accountInput.trim(), passwordInput));
+          onLoginSuccess(targetUser, `登录成功！欢迎回来，${targetUser.nickname}`);
+          onClose();
+        } catch (error) {
+          setErrorMsg(error instanceof Error ? error.message : '登录失败，请稍后重试');
+        } finally {
+          setIsLoading(false);
+        }
+        return;
+      }
 
-        // Check if matching preset user
-        const matched = PRESET_TEST_USERS.find(
-          (u) =>
-            u.user.username === accountInput ||
-            u.user.email === accountInput ||
-            u.user.phone === accountInput
-        );
+      if (mode === 'register') {
+        if (!nicknameInput) {
+          setErrorMsg('请输入用户昵称');
+          return;
+        }
+        if (!accountInput) {
+          setErrorMsg('请输入注册邮箱或手机号');
+          return;
+        }
+        if (passwordInput.length < 6) {
+          setErrorMsg('密码长度不能少于 6 位字符');
+          return;
+        }
+        if (passwordInput !== confirmPasswordInput) {
+          setErrorMsg('两次输入的密码不一致');
+          return;
+        }
+        setIsLoading(true);
+        try {
+          const account = accountInput.trim();
+          const targetUser = mapMember(await registerPortalMember({
+            username: account,
+            password: passwordInput,
+            nickname: nicknameInput.trim(),
+            email: account.includes('@') ? account : undefined,
+            phone: account.includes('@') ? undefined : account,
+          }));
+          onLoginSuccess(targetUser, `注册成功！欢迎回来，${targetUser.nickname}`);
+          onClose();
+        } catch (error) {
+          setErrorMsg(error instanceof Error ? error.message : '注册失败，请稍后重试');
+        } finally {
+          setIsLoading(false);
+        }
+        return;
+      }
 
-        const targetUser: UserProfile = matched
-          ? matched.user
-          : {
-              id: `usr-${Date.now()}`,
-              username: accountInput,
-              nickname: accountInput.includes('@') ? accountInput.split('@')[0] : accountInput,
-              email: accountInput.includes('@') ? accountInput : `${accountInput}@henfon.com`,
-              phone: '138****0000',
-              avatar:
-                'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
-              memberLevel: '黄金VIP',
-              points: 1500,
-              balance: 100.0,
-              couponsCount: 3,
-              joinedDate: new Date().toISOString().split('T')[0],
-            };
+    setIsLoading(true);
+    setTimeout(() => {
+      setIsLoading(false);
 
-        onLoginSuccess(targetUser, `登录成功！欢迎回来，${targetUser.nickname}`);
-        onClose();
-      } else if (mode === 'login-sms') {
+      if (mode === 'login-sms') {
         if (!phoneInput) {
           setErrorMsg('请输入手机号');
           return;
@@ -264,44 +300,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         };
 
         onLoginSuccess(newUser, '手机快捷验证成功！已为您登录账号');
-        onClose();
-      } else if (mode === 'register') {
-        if (!nicknameInput) {
-          setErrorMsg('请输入用户昵称');
-          return;
-        }
-        if (!accountInput) {
-          setErrorMsg('请输入注册邮箱或手机号');
-          return;
-        }
-        if (passwordInput.length < 6) {
-          setErrorMsg('密码长度不能少于 6 位字符');
-          return;
-        }
-        if (passwordInput !== confirmPasswordInput) {
-          setErrorMsg('两次输入的密码不一致');
-          return;
-        }
-
-        const registeredUser: UserProfile = {
-          id: `usr-reg-${Date.now()}`,
-          username: nicknameInput.toLowerCase().replace(/\s+/g, '_'),
-          nickname: nicknameInput,
-          email: accountInput.includes('@') ? accountInput : `${accountInput}@henfon.com`,
-          phone: accountInput.includes('@') ? '未绑定手机' : accountInput,
-          avatar:
-            'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
-          memberLevel: '黄金VIP', // Give bonus VIP level to new registrants
-          points: 1000, // 500 bonus points
-          balance: 100.0, // ¥100 new user package
-          couponsCount: 5,
-          joinedDate: new Date().toISOString().split('T')[0],
-        };
-
-        onLoginSuccess(
-          registeredUser,
-          '恭喜注册成功！已为您派发新人专属 ¥100 优惠券包与 1000 积分！'
-        );
         onClose();
       } else if (mode === 'forgot-pwd') {
         if (!accountInput) {

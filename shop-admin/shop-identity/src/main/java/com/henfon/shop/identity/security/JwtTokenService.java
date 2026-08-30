@@ -1,6 +1,7 @@
 package com.henfon.shop.identity.security;
 
 import com.henfon.shop.identity.entity.SysUser;
+import com.henfon.shop.identity.entity.MemberUser;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
@@ -59,7 +60,32 @@ public class JwtTokenService {
                 .subject(String.valueOf(user.getId()))
                 .claim("username", user.getUsername())
                 .claim("tenantId", user.getTenantId())
+                .claim("userType", "ADMIN")
                 .claim("permissions", permissions == null ? List.of() : List.copyOf(permissions))
+                .issuedAt(Date.from(issuedAt))
+                .expiration(Date.from(expiresAt))
+                .signWith(signingKey)
+                .compact();
+    }
+
+    /**
+     * 为门户会员签发访问令牌。
+     *
+     * @param member 会员实体
+     * @return JWT 字符串
+     * @author Henfon
+     * @date 2026-08-30
+     */
+    public String generate(MemberUser member) {
+        Instant issuedAt = Instant.now();
+        Instant expiresAt = issuedAt.plusSeconds(properties.getExpirationSeconds());
+        return Jwts.builder()
+                .issuer(properties.getIssuer())
+                .subject(String.valueOf(member.getId()))
+                .claim("username", member.getUsername())
+                .claim("tenantId", member.getTenantId())
+                .claim("userType", "MEMBER")
+                .claim("permissions", List.of())
                 .issuedAt(Date.from(issuedAt))
                 .expiration(Date.from(expiresAt))
                 .signWith(signingKey)
@@ -86,9 +112,11 @@ public class JwtTokenService {
                 ? values.stream().map(String::valueOf).toList()
                 : List.of();
         Number tenantId = claims.get("tenantId", Number.class);
+        Object userTypeClaim = claims.get("userType");
         return new AuthenticatedUser(Long.valueOf(claims.getSubject()),
                 tenantId == null ? 0L : tenantId.longValue(),
-                claims.get("username", String.class), permissions);
+                claims.get("username", String.class), permissions,
+                userTypeClaim == null ? "ADMIN" : String.valueOf(userTypeClaim));
     }
 
     /**

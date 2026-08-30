@@ -66,6 +66,12 @@ java -jar shop-boot/target/shop-boot-0.0.1-SNAPSHOT.jar
 - `POST /api/admin/auth/login`：管理员登录，JSON 请求体 `{ "username": "admin", "password": "123456" }`
 - `GET /api/admin/auth/me`：携带 `Authorization: Bearer <token>` 获取当前用户和权限
 
+门户会员认证接口：
+
+- `POST /api/portal/auth/register`：账号密码注册，JSON 请求体 `{ "username": "alice", "password": "123456", "nickname": "Alice" }`
+- `POST /api/portal/auth/login`：用户名、手机号或邮箱登录，JSON 请求体 `{ "account": "alice", "password": "123456" }`
+- 登录返回的 `accessToken` 应在后续门户请求中通过 `Authorization: Bearer <token>` 携带；会员、购物车、订单和会员优惠券接口会校验 JWT 主体，不再信任客户端伪造的 `memberId`。
+
 首次启动会自动初始化平台根部门、超级管理员角色、系统菜单权限和开发环境管理员账号：`admin / 123456`。生产环境必须立即修改密码并覆盖 `SHOP_JWT_SECRET`。
 
 身份权限接口前缀：`/api/admin/system`，当前已提供系统用户分页/新增/修改/删除、部门、角色、菜单、数据规则查询与保存，以及用户角色、角色菜单、角色数据规则关系替换接口。接口已通过 `@PreAuthorize` 按菜单权限编码进行校验。

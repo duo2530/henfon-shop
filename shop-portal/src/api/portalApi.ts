@@ -1,11 +1,26 @@
 import { Coupon, Product } from '../types/ecommerce';
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080').replace(/\/$/, '');
+const MEMBER_TOKEN_KEY = 'henfon_shop_member_token';
 
 interface ApiResponse<T> {
   code: string;
   message: string;
   data: T;
+}
+
+export interface MemberAuthResponse {
+  accessToken: string;
+  expiresInSeconds: number;
+  memberId: number;
+  username: string;
+  nickname: string;
+  memberLevel: string;
+  points: number;
+  balance: number;
+  phone?: string;
+  email?: string;
+  avatarUrl?: string;
 }
 
 interface CatalogProductRecord {
@@ -50,9 +65,14 @@ export interface PortalBanner {
 }
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+  const token = localStorage.getItem(MEMBER_TOKEN_KEY);
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...options,
-    headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(options.headers || {}),
+    },
   });
   if (!response.ok) {
     throw new Error(`门户接口请求失败：${response.status}`);
@@ -104,6 +124,34 @@ export async function fetchPortalProducts(keyword?: string): Promise<Product[]> 
   const query = keyword ? `?keyword=${encodeURIComponent(keyword)}` : '';
   const page = await request<ProductPage>(`/api/portal/catalog/products${query}`);
   return (page.records || []).map(mapProduct);
+}
+
+export async function loginPortalMember(account: string, password: string): Promise<MemberAuthResponse> {
+  const response = await request<MemberAuthResponse>('/api/portal/auth/login', {
+    method: 'POST',
+    body: JSON.stringify({ account, password }),
+  });
+  localStorage.setItem(MEMBER_TOKEN_KEY, response.accessToken);
+  return response;
+}
+
+export async function registerPortalMember(payload: {
+  username: string;
+  password: string;
+  nickname: string;
+  phone?: string;
+  email?: string;
+}): Promise<MemberAuthResponse> {
+  const response = await request<MemberAuthResponse>('/api/portal/auth/register', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+  localStorage.setItem(MEMBER_TOKEN_KEY, response.accessToken);
+  return response;
+}
+
+export function clearPortalMemberToken(): void {
+  localStorage.removeItem(MEMBER_TOKEN_KEY);
 }
 
 export async function fetchPortalProductDetail(productId: string): Promise<Product | null> {

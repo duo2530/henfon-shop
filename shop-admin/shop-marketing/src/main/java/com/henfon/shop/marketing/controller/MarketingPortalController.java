@@ -4,11 +4,13 @@ import com.henfon.shop.common.api.ApiResponse;
 import com.henfon.shop.marketing.entity.MarketingCoupon;
 import com.henfon.shop.marketing.entity.MarketingMemberCoupon;
 import com.henfon.shop.marketing.service.MarketingPortalService;
+import com.henfon.shop.identity.security.MemberPrincipalResolver;
 import org.slf4j.MDC;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.security.core.Authentication;
 
 import java.util.List;
 
@@ -56,8 +58,10 @@ public class MarketingPortalController {
      * @date 2026-08-29
      */
     @GetMapping("/member-coupons")
-    public ApiResponse<List<MarketingMemberCoupon>> memberCoupons(@RequestParam Long memberId,
-                                                                   @RequestParam(required = false) Integer status) {
-        return ApiResponse.success(service.memberCoupons(memberId, status), MDC.get("requestId"));
+    public ApiResponse<List<MarketingMemberCoupon>> memberCoupons(@RequestParam(required = false) Long memberId,
+                                                                   @RequestParam(required = false) Integer status,
+                                                                   Authentication authentication) {
+        Long currentMemberId = MemberPrincipalResolver.requireMemberId(authentication, memberId);
+        return ApiResponse.success(service.memberCoupons(currentMemberId, status), MDC.get("requestId"));
     }
 }

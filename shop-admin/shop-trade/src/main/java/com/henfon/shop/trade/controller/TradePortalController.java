@@ -8,6 +8,7 @@ import com.henfon.shop.trade.mapper.TradeOrderMapper;
 import com.henfon.shop.trade.service.TradeOrderService;
 import com.henfon.shop.trade.dto.TradeOrderCreateRequest;
 import com.henfon.shop.trade.dto.TradeOrderCancelRequest;
+import com.henfon.shop.identity.security.MemberPrincipalResolver;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -18,6 +19,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.security.core.Authentication;
 
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -57,9 +59,11 @@ public class TradePortalController {
      * @date 2026-08-29
      */
     @GetMapping("/orders")
-    public ApiResponse<List<TradeOrder>> orders(@RequestParam Long memberId) {
+    public ApiResponse<List<TradeOrder>> orders(@RequestParam(required = false) Long memberId,
+                                                Authentication authentication) {
+        Long currentMemberId = MemberPrincipalResolver.requireMemberId(authentication, memberId);
         return ApiResponse.success(orderMapper.selectList(new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<TradeOrder>()
-                .eq(TradeOrder::getMemberId, memberId).orderByDesc(TradeOrder::getCreatedAt)), MDC.get("requestId"));
+                .eq(TradeOrder::getMemberId, currentMemberId).orderByDesc(TradeOrder::getCreatedAt)), MDC.get("requestId"));
     }
 
     /**
@@ -71,10 +75,14 @@ public class TradePortalController {
      * @date 2026-08-29
      */
     @GetMapping("/orders/{orderId}")
-    public ApiResponse<Map<String, Object>> order(@PathVariable Long orderId) {
+    public ApiResponse<Map<String, Object>> order(@PathVariable Long orderId, Authentication authentication) {
+        Long memberId = MemberPrincipalResolver.requireMemberId(authentication, null);
         TradeOrder order = orderMapper.selectById(orderId);
         if (order == null) {
             return ApiResponse.failure("TRADE_ORDER_NOT_FOUND", "订单不存在", MDC.get("requestId"));
+        }
+        if (!memberId.equals(order.getMemberId())) {
+            return ApiResponse.failure("TRADE_ORDER_FORBIDDEN", "无权查看该订单", MDC.get("requestId"));
         }
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("order", order);
@@ -92,8 +100,14 @@ public class TradePortalController {
      * @date 2026-08-29
      */
     @PostMapping("/orders")
-    public ApiResponse<TradeOrder> create(@Valid @RequestBody TradeOrderCreateRequest request) {
-        return ApiResponse.success(orderService.create(request), MDC.get("requestId"));
+    public ApiResponse<TradeOrder> create(@Valid @RequestBody TradeOrderCreateRequest request,
+                                          Authentication authentication) {
+        Long memberId = MemberPrincipalResolver.requireMemberId(authentication, request.memberId());
+        TradeOrderCreateRequest normalized = new TradeOrderCreateRequest(memberId, request.items(),
+                request.receiverName(), request.receiverPhone(), request.receiverProvince(), request.receiverCity(),
+                request.receiverDistrict(), request.receiverAddress(), request.paymentMethod(), request.subtotalAmount(),
+                request.discountAmount(), request.freightAmount(), request.payableAmount());
+        return ApiResponse.success(orderService.create(normalized), MDC.get("requestId"));
     }
 
     /**
@@ -107,9 +121,11 @@ public class TradePortalController {
      * @date 2026-08-30
      */
     @PutMapping("/orders/{orderId}/cancel")
-    public ApiResponse<Void> cancel(@PathVariable Long orderId, @RequestParam Long memberId,
-                                    @Valid @RequestBody TradeOrderCancelRequest request) {
-        orderService.cancelByMember(memberId, orderId, request.reason());
+    public ApiResponse<Void> cancel(@PathVariable Long orderId, @RequestParam(required = false) Long memberId,
+                                    @Valid @RequestBody TradeOrderCancelRequest request,
+                                    Authentication authentication) {
+        orderService.cancelByMember(MemberPrincipalResolver.requireMemberId(authentication, memberId), orderId,
+                request.reason());
         return ApiResponse.success(MDC.get("requestId"));
     }
 
@@ -123,8 +139,9 @@ public class TradePortalController {
      * @date 2026-08-30
      */
     @PutMapping("/orders/{orderId}/confirm")
-    public ApiResponse<Void> confirmReceive(@PathVariable Long orderId, @RequestParam Long memberId) {
-        orderService.confirmReceive(memberId, orderId);
+    public ApiResponse<Void> confirmReceive(@PathVariable Long orderId, @RequestParam(required = false) Long memberId,
+                                            Authentication authentication) {
+        orderService.confirmReceive(MemberPrincipalResolver.requireMemberId(authentication, memberId), orderId);
         return ApiResponse.success(MDC.get("requestId"));
     }
 }

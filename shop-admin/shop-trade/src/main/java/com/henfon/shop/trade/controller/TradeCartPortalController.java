@@ -5,6 +5,7 @@ import com.henfon.shop.trade.dto.TradeCartItemRequest;
 import com.henfon.shop.trade.dto.TradeCartItemUpdateRequest;
 import com.henfon.shop.trade.entity.TradeCartItem;
 import com.henfon.shop.trade.service.TradeCartService;
+import com.henfon.shop.identity.security.MemberPrincipalResolver;
 import jakarta.validation.Valid;
 import org.slf4j.MDC;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -16,6 +17,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.security.core.Authentication;
 
 import java.util.List;
 
@@ -50,8 +52,10 @@ public class TradeCartPortalController {
      * @date 2026-08-29
      */
     @GetMapping
-    public ApiResponse<List<TradeCartItem>> list(@RequestParam Long memberId) {
-        return ApiResponse.success(service.list(memberId), MDC.get("requestId"));
+    public ApiResponse<List<TradeCartItem>> list(@RequestParam(required = false) Long memberId,
+                                                 Authentication authentication) {
+        return ApiResponse.success(service.list(MemberPrincipalResolver.requireMemberId(authentication, memberId)),
+                MDC.get("requestId"));
     }
 
     /**
@@ -63,8 +67,12 @@ public class TradeCartPortalController {
      * @date 2026-08-29
      */
     @PostMapping("/items")
-    public ApiResponse<Long> add(@Valid @RequestBody TradeCartItemRequest request) {
-        return ApiResponse.success(service.add(request), MDC.get("requestId"));
+    public ApiResponse<Long> add(@Valid @RequestBody TradeCartItemRequest request,
+                                 Authentication authentication) {
+        Long memberId = MemberPrincipalResolver.requireMemberId(authentication, request.memberId());
+        TradeCartItemRequest normalized = new TradeCartItemRequest(memberId, request.productId(), request.skuId(),
+                request.quantity(), request.selected());
+        return ApiResponse.success(service.add(normalized), MDC.get("requestId"));
     }
 
     /**
@@ -76,8 +84,8 @@ public class TradeCartPortalController {
      * @date 2026-08-29
      */
     @DeleteMapping("/items/{id}")
-    public ApiResponse<Void> delete(@PathVariable Long id) {
-        service.delete(id);
+    public ApiResponse<Void> delete(@PathVariable Long id, Authentication authentication) {
+        service.delete(MemberPrincipalResolver.requireMemberId(authentication, null), id);
         return ApiResponse.success(MDC.get("requestId"));
     }
 
@@ -91,8 +99,9 @@ public class TradeCartPortalController {
      * @date 2026-08-29
      */
     @PutMapping("/items/{id}")
-    public ApiResponse<Void> update(@PathVariable Long id, @Valid @RequestBody TradeCartItemUpdateRequest request) {
-        service.update(id, request);
+    public ApiResponse<Void> update(@PathVariable Long id, @Valid @RequestBody TradeCartItemUpdateRequest request,
+                                    Authentication authentication) {
+        service.update(MemberPrincipalResolver.requireMemberId(authentication, null), id, request);
         return ApiResponse.success(MDC.get("requestId"));
     }
 }

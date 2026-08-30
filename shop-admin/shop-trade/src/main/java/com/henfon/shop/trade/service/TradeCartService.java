@@ -5,6 +5,7 @@ import com.henfon.shop.trade.dto.TradeCartItemRequest;
 import com.henfon.shop.trade.dto.TradeCartItemUpdateRequest;
 import com.henfon.shop.trade.entity.TradeCartItem;
 import com.henfon.shop.trade.mapper.TradeCartItemMapper;
+import com.henfon.shop.common.exception.BusinessException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -88,8 +89,9 @@ public class TradeCartService {
      * @date 2026-08-29
      */
     @Transactional
-    public void delete(Long id) {
-        mapper.deleteById(id);
+    public void delete(Long memberId, Long id) {
+        TradeCartItem item = requireMemberItem(memberId, id);
+        mapper.deleteById(item.getId());
     }
 
     /**
@@ -101,11 +103,8 @@ public class TradeCartService {
      * @date 2026-08-29
      */
     @Transactional
-    public void update(Long id, TradeCartItemUpdateRequest request) {
-        TradeCartItem item = mapper.selectById(id);
-        if (item == null) {
-            return;
-        }
+    public void update(Long memberId, Long id, TradeCartItemUpdateRequest request) {
+        TradeCartItem item = requireMemberItem(memberId, id);
         if (request.quantity() != null) {
             item.setQuantity(request.quantity());
         }
@@ -113,5 +112,24 @@ public class TradeCartService {
             item.setSelected(request.selected());
         }
         mapper.updateById(item);
+    }
+
+    /**
+     * 查询并校验购物车明细归属。
+     *
+     * @param memberId 会员ID
+     * @param id 明细ID
+     * @return 购物车明细
+     * @author Henfon
+     * @date 2026-08-30
+     */
+    private TradeCartItem requireMemberItem(Long memberId, Long id) {
+        TradeCartItem item = mapper.selectOne(new LambdaQueryWrapper<TradeCartItem>()
+                .eq(TradeCartItem::getId, id)
+                .eq(TradeCartItem::getMemberId, memberId));
+        if (item == null) {
+            throw new BusinessException("TRADE_CART_ITEM_NOT_FOUND", "购物车明细不存在或不属于当前会员");
+        }
+        return item;
     }
 }

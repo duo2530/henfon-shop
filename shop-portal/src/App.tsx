@@ -18,6 +18,7 @@ import { PRODUCTS, AVAILABLE_COUPONS } from './data/products';
 import {
   addPortalCartItem,
   createPortalOrder,
+  clearPortalMemberToken,
   deletePortalCartItem,
   fetchPortalAddresses,
   fetchPortalBanners,
@@ -427,6 +428,7 @@ export default function App() {
 
   const handleLogout = () => {
     setCurrentUser(null);
+    clearPortalMemberToken();
     showToast('您已成功退出登录', 'info');
   };
 

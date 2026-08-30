@@ -7,6 +7,7 @@ import com.henfon.shop.identity.entity.MemberCompareHistory;
 import com.henfon.shop.identity.entity.MemberFavorite;
 import com.henfon.shop.identity.entity.MemberUser;
 import com.henfon.shop.identity.service.MemberPortalService;
+import com.henfon.shop.identity.security.MemberPrincipalResolver;
 import jakarta.validation.Valid;
 import org.slf4j.MDC;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -18,6 +19,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.security.core.Authentication;
 
 import java.util.List;
 
@@ -52,8 +54,10 @@ public class MemberPortalController {
      * @date 2026-08-29
      */
     @GetMapping("/profile")
-    public ApiResponse<MemberUser> profile(@RequestParam Long memberId) {
-        return ApiResponse.success(service.profile(memberId), MDC.get("requestId"));
+    public ApiResponse<MemberUser> profile(@RequestParam(required = false) Long memberId,
+                                          Authentication authentication) {
+        return ApiResponse.success(service.profile(MemberPrincipalResolver.requireMemberId(authentication, memberId)),
+                MDC.get("requestId"));
     }
 
     /**
@@ -65,8 +69,10 @@ public class MemberPortalController {
      * @date 2026-08-29
      */
     @GetMapping("/addresses")
-    public ApiResponse<List<MemberAddress>> addresses(@RequestParam Long memberId) {
-        return ApiResponse.success(service.addresses(memberId), MDC.get("requestId"));
+    public ApiResponse<List<MemberAddress>> addresses(@RequestParam(required = false) Long memberId,
+                                                     Authentication authentication) {
+        return ApiResponse.success(service.addresses(MemberPrincipalResolver.requireMemberId(authentication, memberId)),
+                MDC.get("requestId"));
     }
 
     /**
@@ -78,8 +84,10 @@ public class MemberPortalController {
      * @date 2026-08-29
      */
     @PostMapping("/addresses")
-    public ApiResponse<Long> saveAddress(@Valid @RequestBody MemberAddressRequest request) {
-        return ApiResponse.success(service.saveAddress(request), MDC.get("requestId"));
+    public ApiResponse<Long> saveAddress(@Valid @RequestBody MemberAddressRequest request,
+                                         Authentication authentication) {
+        Long memberId = MemberPrincipalResolver.requireMemberId(authentication, request.memberId());
+        return ApiResponse.success(service.saveAddress(normalizeAddressRequest(request, memberId)), MDC.get("requestId"));
     }
 
     /**
@@ -93,8 +101,10 @@ public class MemberPortalController {
      */
     @PutMapping("/addresses/{addressId}")
     public ApiResponse<Void> updateAddress(@PathVariable Long addressId,
-                                            @Valid @RequestBody MemberAddressRequest request) {
-        service.updateAddress(addressId, request);
+                                            @Valid @RequestBody MemberAddressRequest request,
+                                            Authentication authentication) {
+        Long memberId = MemberPrincipalResolver.requireMemberId(authentication, request.memberId());
+        service.updateAddress(addressId, normalizeAddressRequest(request, memberId));
         return ApiResponse.success(MDC.get("requestId"));
     }
 
@@ -109,7 +119,9 @@ public class MemberPortalController {
      */
     @DeleteMapping("/addresses/{addressId}")
     public ApiResponse<Void> deleteAddress(@PathVariable Long addressId,
-                                            @RequestParam Long memberId) {
+                                            @RequestParam(required = false) Long memberId,
+                                            Authentication authentication) {
+        memberId = MemberPrincipalResolver.requireMemberId(authentication, memberId);
         service.deleteAddress(memberId, addressId);
         return ApiResponse.success(MDC.get("requestId"));
     }
@@ -125,7 +137,9 @@ public class MemberPortalController {
      */
     @PutMapping("/addresses/{addressId}/default")
     public ApiResponse<Void> setDefaultAddress(@PathVariable Long addressId,
-                                                @RequestParam Long memberId) {
+                                                @RequestParam(required = false) Long memberId,
+                                                Authentication authentication) {
+        memberId = MemberPrincipalResolver.requireMemberId(authentication, memberId);
         service.setDefaultAddress(memberId, addressId);
         return ApiResponse.success(MDC.get("requestId"));
     }
@@ -139,8 +153,10 @@ public class MemberPortalController {
      * @date 2026-08-29
      */
     @GetMapping("/favorites")
-    public ApiResponse<List<MemberFavorite>> favorites(@RequestParam Long memberId) {
-        return ApiResponse.success(service.favorites(memberId), MDC.get("requestId"));
+    public ApiResponse<List<MemberFavorite>> favorites(@RequestParam(required = false) Long memberId,
+                                                      Authentication authentication) {
+        return ApiResponse.success(service.favorites(MemberPrincipalResolver.requireMemberId(authentication, memberId)),
+                MDC.get("requestId"));
     }
 
     /**
@@ -153,7 +169,10 @@ public class MemberPortalController {
      * @date 2026-08-29
      */
     @PostMapping("/favorites/{productId}/toggle")
-    public ApiResponse<Boolean> toggleFavorite(@PathVariable Long productId, @RequestParam Long memberId) {
+    public ApiResponse<Boolean> toggleFavorite(@PathVariable Long productId,
+                                               @RequestParam(required = false) Long memberId,
+                                               Authentication authentication) {
+        memberId = MemberPrincipalResolver.requireMemberId(authentication, memberId);
         return ApiResponse.success(service.toggleFavorite(memberId, productId), MDC.get("requestId"));
     }
 
@@ -167,7 +186,10 @@ public class MemberPortalController {
      * @date 2026-08-29
      */
     @PostMapping("/compare/history")
-    public ApiResponse<Long> saveCompare(@RequestParam Long memberId, @RequestBody List<Long> productIds) {
+    public ApiResponse<Long> saveCompare(@RequestParam(required = false) Long memberId,
+                                         @RequestBody List<Long> productIds,
+                                         Authentication authentication) {
+        memberId = MemberPrincipalResolver.requireMemberId(authentication, memberId);
         return ApiResponse.success(service.saveCompare(memberId, productIds), MDC.get("requestId"));
     }
 
@@ -181,8 +203,25 @@ public class MemberPortalController {
      * @date 2026-08-29
      */
     @GetMapping("/compare/history")
-    public ApiResponse<List<MemberCompareHistory>> compareHistory(@RequestParam Long memberId,
-                                                                   @RequestParam(defaultValue = "20") int limit) {
+    public ApiResponse<List<MemberCompareHistory>> compareHistory(@RequestParam(required = false) Long memberId,
+                                                                   @RequestParam(defaultValue = "20") int limit,
+                                                                   Authentication authentication) {
+        memberId = MemberPrincipalResolver.requireMemberId(authentication, memberId);
         return ApiResponse.success(service.compareHistory(memberId, limit), MDC.get("requestId"));
+    }
+
+    /**
+     * 使用认证主体重建地址请求，忽略客户端伪造的会员ID。
+     *
+     * @param request 原始地址请求
+     * @param memberId 认证会员ID
+     * @return 归属已校正的地址请求
+     * @author Henfon
+     * @date 2026-08-30
+     */
+    private MemberAddressRequest normalizeAddressRequest(MemberAddressRequest request, Long memberId) {
+        return new MemberAddressRequest(request.id(), memberId, request.receiverName(), request.receiverPhone(),
+                request.province(), request.city(), request.district(), request.detailAddress(),
+                request.addressTag(), request.isDefault());
     }
 }

@@ -13,5 +13,19 @@ import java.util.List;
  * @date 2026-08-29
  */
 public record AuthenticatedUser(Long userId, Long tenantId, String username,
-                                List<String> permissions) {
+                                List<String> permissions, String userType) {
+
+    /**
+     * 创建管理员主体的兼容构造方法。
+     *
+     * @param userId 用户ID
+     * @param tenantId 租户ID
+     * @param username 用户名
+     * @param permissions 权限编码
+     * @author Henfon
+     * @date 2026-08-30
+     */
+    public AuthenticatedUser(Long userId, Long tenantId, String username, List<String> permissions) {
+        this(userId, tenantId, username, permissions, "ADMIN");
+    }
 }
