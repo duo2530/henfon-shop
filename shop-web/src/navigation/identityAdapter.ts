@@ -1,5 +1,5 @@
-import { BackendDataRule, BackendDepartment, BackendMenu, BackendRole, BackendSystemUser } from '../api/adminApi';
-import { DataRule, Department, MenuItem, Role, SystemUser } from '../types';
+import { BackendDataRule, BackendDepartment, BackendMemberUser, BackendMenu, BackendRole, BackendSystemUser } from '../api/adminApi';
+import { DataRule, Department, MenuItem, Role, SystemUser, User } from '../types';
 import { backendMenusToTree } from './menuAdapter';
 
 export interface PermissionNode {
@@ -107,6 +107,29 @@ export function backendUsersToFrontend(source: BackendSystemUser[], deptNames: M
     lastLoginTime: user.lastLoginAt?.replace('T', ' ') || '-',
     lastLoginIp: user.lastLoginIp || '-',
     dataScope: 'self'
+  }));
+}
+
+export function backendMembersToFrontend(source: BackendMemberUser[]): User[] {
+  return source.map((member) => ({
+    id: String(member.id),
+    userCode: member.memberNo,
+    name: member.nickname || member.username,
+    phone: member.phone || '-',
+    avatar: member.avatarUrl,
+    email: member.email || '-',
+    registeredAt: member.registeredAt?.replace('T', ' ') || '-',
+    totalSpent: 0,
+    orderCount: 0,
+    status: member.status === 1 ? 'active' : 'suspended',
+    tier: (['regular', 'silver', 'gold', 'platinum'].includes(member.memberLevel.toLowerCase())
+      ? member.memberLevel.toLowerCase() : 'regular') as User['tier'],
+    lastActive: member.lastLoginAt?.replace('T', ' ') || '-',
+    balance: Number(member.balance || 0),
+    points: Number(member.points || 0),
+    tags: [],
+    notes: member.remark || '',
+    growthValue: 0
   }));
 }
 

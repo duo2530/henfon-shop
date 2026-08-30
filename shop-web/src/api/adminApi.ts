@@ -46,6 +46,23 @@ export interface BackendSystemUser {
   remark?: string;
 }
 
+export interface BackendMemberUser {
+  id: number;
+  memberNo: string;
+  username: string;
+  nickname: string;
+  phone?: string;
+  email?: string;
+  avatarUrl?: string;
+  memberLevel: string;
+  points: number;
+  balance: number;
+  status: number;
+  registeredAt?: string;
+  lastLoginAt?: string;
+  remark?: string;
+}
+
 export interface BackendDepartment {
   id: number;
   parentId?: number;
@@ -221,6 +238,18 @@ export async function listSystemUsers(params: { current?: number; size?: number;
   const query = new URLSearchParams({ current: String(params.current || 1), size: String(params.size || 100) });
   if (params.keyword) query.set('keyword', params.keyword);
   return request<BackendPage<BackendSystemUser>>(`/api/admin/system/users?${query.toString()}`);
+}
+
+export async function listMemberUsers(params: { current?: number; size?: number; keyword?: string; memberLevel?: string; status?: number } = {}): Promise<BackendPage<BackendMemberUser>> {
+  const query = new URLSearchParams({ current: String(params.current || 1), size: String(params.size || 100) });
+  if (params.keyword) query.set('keyword', params.keyword);
+  if (params.memberLevel) query.set('memberLevel', params.memberLevel);
+  if (params.status !== undefined) query.set('status', String(params.status));
+  return request<BackendPage<BackendMemberUser>>(`/api/admin/member/users?${query.toString()}`);
+}
+
+export function updateMemberStatus(id: number, status: number): Promise<void> {
+  return request<void>(`/api/admin/member/users/${id}/status?status=${status}`, { method: 'PUT' });
 }
 
 export function listDepartments(): Promise<BackendDepartment[]> {

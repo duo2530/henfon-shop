@@ -70,13 +70,17 @@ java -jar shop-boot/target/shop-boot-0.0.1-SNAPSHOT.jar
 
 - `POST /api/portal/auth/register`：账号密码注册，JSON 请求体 `{ "username": "alice", "password": "123456", "nickname": "Alice" }`
 - `POST /api/portal/auth/login`：用户名、手机号或邮箱登录，JSON 请求体 `{ "account": "alice", "password": "123456" }`
-- 登录返回的 `accessToken` 应在后续门户请求中通过 `Authorization: Bearer <token>` 携带；会员、购物车、订单和会员优惠券接口会校验 JWT 主体，不再信任客户端伪造的 `memberId`。
+- `POST /api/portal/auth/refresh`：使用登录返回的 `refreshToken` 换取新的访问令牌，刷新令牌轮换后旧令牌立即失效。
+- `POST /api/portal/auth/logout`：退出并失效当前访问令牌，可在请求体中传入 `{ "refreshToken": "..." }` 删除刷新令牌。
+- 登录返回的 `accessToken` 应在后续门户请求中通过 `Authorization: Bearer <token>` 携带；会员、购物车、订单和会员优惠券接口会校验 JWT 主体，不再信任客户端伪造的 `memberId`。Refresh Token 和访问令牌黑名单依赖 Redis，请确保 Redis 已启动并正确配置。
 
 首次启动会自动初始化平台根部门、超级管理员角色、系统菜单权限和开发环境管理员账号：`admin / 123456`。生产环境必须立即修改密码并覆盖 `SHOP_JWT_SECRET`。
 
 身份权限接口前缀：`/api/admin/system`，当前已提供系统用户分页/新增/修改/删除、部门、角色、菜单、数据规则查询与保存，以及用户角色、角色菜单、角色数据规则关系替换接口。接口已通过 `@PreAuthorize` 按菜单权限编码进行校验。
 
 管理端前端通过 `/api/admin/auth/menus` 获取当前用户可见菜单，通过 `/api/admin/system/menus` 获取菜单配置树；角色、系统用户和数据权限页面的保存操作会回写对应身份权限接口，不依赖前端写死的菜单数据。
+
+会员管理接口前缀：`/api/admin/member`，`GET /users` 支持关键字、等级、状态分页查询，`PUT /users/{id}/status?status=0|1` 用于冻结或解冻会员，操作需要 `member:user:query` 或 `member:user:status` 权限。
 
 商品目录接口前缀：`/api/admin/catalog`，支持商品分页查询、保存、逻辑删除和启用类目查询；交易订单基础接口前缀：`/api/admin/trade`，支持订单分页和订单明细查询；库存接口前缀：`/api/admin/inventory`，支持库存台账分页、初始化和增减调整，订单创建/取消/发货分别自动执行库存预占/释放/扣减。门户交易接口支持会员取消订单和确认收货。商品目录、交易和库存表结构分别位于 `db/init/003_catalog_tables.sql`、`db/init/004_trade_tables.sql`、`db/init/006_inventory_tables.sql`。
 

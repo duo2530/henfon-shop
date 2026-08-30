@@ -13,6 +13,7 @@ import java.time.Instant;
 import java.util.Collection;
 import java.util.Date;
 import java.util.List;
+import java.util.UUID;
 
 /**
  * JWT 令牌生成与解析服务。
@@ -55,12 +56,15 @@ public class JwtTokenService {
     public String generate(SysUser user, Collection<String> permissions) {
         Instant issuedAt = Instant.now();
         Instant expiresAt = issuedAt.plusSeconds(properties.getExpirationSeconds());
+        // 为每次签发生成独立 jti，支持管理员和会员访问令牌主动失效。
+        String tokenId = UUID.randomUUID().toString();
         return Jwts.builder()
                 .issuer(properties.getIssuer())
                 .subject(String.valueOf(user.getId()))
                 .claim("username", user.getUsername())
                 .claim("tenantId", user.getTenantId())
                 .claim("userType", "ADMIN")
+                .id(tokenId)
                 .claim("permissions", permissions == null ? List.of() : List.copyOf(permissions))
                 .issuedAt(Date.from(issuedAt))
                 .expiration(Date.from(expiresAt))
@@ -79,6 +83,8 @@ public class JwtTokenService {
     public String generate(MemberUser member) {
         Instant issuedAt = Instant.now();
         Instant expiresAt = issuedAt.plusSeconds(properties.getExpirationSeconds());
+        // 会员令牌携带用户类型，供门户接口拒绝管理员令牌越权访问。
+        String tokenId = UUID.randomUUID().toString();
         return Jwts.builder()
                 .issuer(properties.getIssuer())
                 .subject(String.valueOf(member.getId()))
@@ -86,6 +92,7 @@ public class JwtTokenService {
                 .claim("tenantId", member.getTenantId())
                 .claim("userType", "MEMBER")
                 .claim("permissions", List.of())
+                .id(tokenId)
                 .issuedAt(Date.from(issuedAt))
                 .expiration(Date.from(expiresAt))
                 .signWith(signingKey)
@@ -116,7 +123,7 @@ public class JwtTokenService {
         return new AuthenticatedUser(Long.valueOf(claims.getSubject()),
                 tenantId == null ? 0L : tenantId.longValue(),
                 claims.get("username", String.class), permissions,
-                userTypeClaim == null ? "ADMIN" : String.valueOf(userTypeClaim));
+                userTypeClaim == null ? "ADMIN" : String.valueOf(userTypeClaim), claims.getId());
     }
 
     /**

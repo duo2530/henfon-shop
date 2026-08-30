@@ -2,6 +2,7 @@ import { Coupon, Product } from '../types/ecommerce';
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080').replace(/\/$/, '');
 const MEMBER_TOKEN_KEY = 'henfon_shop_member_token';
+const MEMBER_REFRESH_TOKEN_KEY = 'henfon_shop_member_refresh_token';
 
 interface ApiResponse<T> {
   code: string;
@@ -12,6 +13,7 @@ interface ApiResponse<T> {
 export interface MemberAuthResponse {
   accessToken: string;
   expiresInSeconds: number;
+  refreshToken: string;
   memberId: number;
   username: string;
   nickname: string;
@@ -131,7 +133,7 @@ export async function loginPortalMember(account: string, password: string): Prom
     method: 'POST',
     body: JSON.stringify({ account, password }),
   });
-  localStorage.setItem(MEMBER_TOKEN_KEY, response.accessToken);
+  saveMemberTokens(response);
   return response;
 }
 
@@ -146,12 +148,38 @@ export async function registerPortalMember(payload: {
     method: 'POST',
     body: JSON.stringify(payload),
   });
-  localStorage.setItem(MEMBER_TOKEN_KEY, response.accessToken);
+  saveMemberTokens(response);
   return response;
+}
+
+function saveMemberTokens(response: MemberAuthResponse): void {
+  localStorage.setItem(MEMBER_TOKEN_KEY, response.accessToken);
+  if (response.refreshToken) {
+    localStorage.setItem(MEMBER_REFRESH_TOKEN_KEY, response.refreshToken);
+  }
+}
+
+export async function refreshPortalMember(refreshToken?: string): Promise<MemberAuthResponse> {
+  const token = refreshToken || localStorage.getItem(MEMBER_REFRESH_TOKEN_KEY) || '';
+  const response = await request<MemberAuthResponse>('/api/portal/auth/refresh', {
+    method: 'POST',
+    body: JSON.stringify({ refreshToken: token }),
+  });
+  saveMemberTokens(response);
+  return response;
+}
+
+export async function logoutPortalMember(refreshToken?: string): Promise<void> {
+  const token = refreshToken || localStorage.getItem(MEMBER_REFRESH_TOKEN_KEY);
+  await request<void>('/api/portal/auth/logout', {
+    method: 'POST',
+    body: JSON.stringify(token ? { refreshToken: token } : {}),
+  });
 }
 
 export function clearPortalMemberToken(): void {
   localStorage.removeItem(MEMBER_TOKEN_KEY);
+  localStorage.removeItem(MEMBER_REFRESH_TOKEN_KEY);
 }
 
 export async function fetchPortalProductDetail(productId: string): Promise<Product | null> {

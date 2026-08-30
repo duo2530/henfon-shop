@@ -24,16 +24,19 @@ import java.io.IOException;
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtTokenService jwtTokenService;
+    private final MemberTokenStore memberTokenStore;
 
     /**
      * 创建 JWT 鉴权过滤器。
      *
      * @param jwtTokenService JWT 服务
+     * @param memberTokenStore 会员令牌状态存储
      * @author Henfon
      * @date 2026-08-29
      */
-    public JwtAuthenticationFilter(JwtTokenService jwtTokenService) {
+    public JwtAuthenticationFilter(JwtTokenService jwtTokenService, MemberTokenStore memberTokenStore) {
         this.jwtTokenService = jwtTokenService;
+        this.memberTokenStore = memberTokenStore;
     }
 
     /**
@@ -55,6 +58,12 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             String token = header.substring(7).trim();
             try {
                 AuthenticatedUser user = jwtTokenService.parse(token);
+                // 黑名单命中时保持匿名身份，由后续安全规则返回未授权。
+                if (memberTokenStore.isAccessTokenRevoked(user.tokenId())) {
+                    SecurityContextHolder.clearContext();
+                    filterChain.doFilter(request, response);
+                    return;
+                }
                 var authorities = user.permissions().stream()
                         .map(SimpleGrantedAuthority::new)
                         .toList();

@@ -7,6 +7,7 @@ import java.math.BigDecimal;
  *
  * @param accessToken 访问令牌
  * @param expiresInSeconds 令牌有效期
+ * @param refreshToken 刷新令牌
  * @param memberId 会员ID
  * @param username 登录用户名
  * @param nickname 会员昵称
@@ -19,7 +20,7 @@ import java.math.BigDecimal;
  * @author Henfon
  * @date 2026-08-30
  */
-public record MemberLoginResponse(String accessToken, long expiresInSeconds, Long memberId,
+public record MemberLoginResponse(String accessToken, long expiresInSeconds, String refreshToken, Long memberId,
                                   String username, String nickname, String memberLevel,
                                   Long points, BigDecimal balance, String phone, String email, String avatarUrl) {
 }

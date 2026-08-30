@@ -208,8 +208,9 @@ public class IdentityDataInitializer implements ApplicationRunner {
                 ecommerce.getId(), "ProductManagementView", "Package"));
         menus.add(ensureMenu("订单履约", "MENU", "trade:order:query", "/ecommerce/orders", 2,
                 ecommerce.getId(), "OrderManagementView", "ShoppingCart"));
-        menus.add(ensureMenu("商城会员", "MENU", "member:user:query", "/ecommerce/customers", 3,
-                ecommerce.getId(), "UserManagementView", "UserCheck"));
+        SysMenu member = ensureMenu("商城会员", "MENU", "member:user:query", "/ecommerce/customers", 3,
+                ecommerce.getId(), "UserManagementView", "UserCheck");
+        menus.add(member);
         menus.add(ensureMenu("优惠券中心", "MENU", "marketing:coupon:query", "/marketing/coupons", 1,
                 marketing.getId(), "CouponManagementView", "Ticket"));
         menus.add(ensureMenu("秒杀与拼团", "MENU", "marketing:flash:query", "/marketing/flash-sales", 2,
@@ -240,6 +241,16 @@ public class IdentityDataInitializer implements ApplicationRunner {
             SysMenu menu = ensureMenu(button[0], "BUTTON", button[1], null, 100);
             if (!ecommerce.getId().equals(menu.getParentId())) {
                 menu.setParentId(ecommerce.getId());
+                sysMenuMapper.updateById(menu);
+            }
+            menus.add(menu);
+        }
+        // 会员状态操作权限挂在会员菜单下，供管理端冻结/解冻按钮进行权限控制。
+        String[][] memberButtons = {{"会员冻结/解冻", "member:user:status"}};
+        for (String[] button : memberButtons) {
+            SysMenu menu = ensureMenu(button[0], "BUTTON", button[1], null, 100);
+            if (!member.getId().equals(menu.getParentId())) {
+                menu.setParentId(member.getId());
                 sysMenuMapper.updateById(menu);
             }
             menus.add(menu);

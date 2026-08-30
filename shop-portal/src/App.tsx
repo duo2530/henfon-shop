@@ -28,6 +28,7 @@ import {
   fetchPortalOrders,
   fetchPortalProductDetail,
   fetchPortalProducts,
+  logoutPortalMember,
   savePortalAddress,
   updatePortalAddress,
   deletePortalAddress,
@@ -427,9 +428,14 @@ export default function App() {
   };
 
   const handleLogout = () => {
-    setCurrentUser(null);
-    clearPortalMemberToken();
-    showToast('您已成功退出登录', 'info');
+    // 服务端优先吊销当前令牌；即使接口不可用也清理本地会话，避免继续携带旧令牌。
+    void logoutPortalMember()
+      .catch((error) => console.warn('门户退出接口暂不可用，已清理本地会话', error))
+      .finally(() => {
+        setCurrentUser(null);
+        clearPortalMemberToken();
+        showToast('您已成功退出登录', 'info');
+      });
   };
 
   const handleUpdateUser = (updatedUser: UserProfile) => {

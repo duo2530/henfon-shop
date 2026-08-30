@@ -30,6 +30,8 @@ import {
   getAdminMenus,
   getAdminToken,
   getCurrentAdmin,
+  listMemberUsers,
+  updateMemberStatus,
   listDepartments,
   listDataRules,
   listRoleMenuIds,
@@ -62,7 +64,7 @@ import {
   refundTradeOrder
 } from '../api/adminApi';
 import { backendMenusToTree, containsMenuTab, firstMenuTab } from '../navigation/menuAdapter';
-import { backendDataRulesToFrontend, backendDepartmentsToFrontend, backendMenusToFrontend, backendRolesToFrontend, backendUsersToFrontend } from '../navigation/identityAdapter';
+import { backendDataRulesToFrontend, backendDepartmentsToFrontend, backendMembersToFrontend, backendMenusToFrontend, backendRolesToFrontend, backendUsersToFrontend } from '../navigation/identityAdapter';
 import { backendCategoriesToMap, backendCategoriesToOptions, backendProductsToFrontend } from '../navigation/catalogAdapter';
 
 interface Toast {
@@ -263,8 +265,9 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   const [dataRules, setDataRules] = useState<DataRule[]>(initialDataRules);
 
   const hydrateIdentityMetadata = async (authorizedMenus: BackendMenu[]) => {
-    const [usersResult, deptsResult, rolesResult, menusResult, rulesResult] = await Promise.allSettled([
+    const [usersResult, memberResult, deptsResult, rolesResult, menusResult, rulesResult] = await Promise.allSettled([
       listSystemUsers(),
+      listMemberUsers(),
       listDepartments(),
       listSystemRoles(),
       listSystemMenus(),
@@ -329,6 +332,10 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         userCountByRole.set(roleId, (userCountByRole.get(roleId) || 0) + 1);
       }));
       setRoles((previous) => previous.map((role) => ({ ...role, userCount: userCountByRole.get(role.id) || 0 })));
+    }
+    if (memberResult.status === 'fulfilled') {
+      // 会员接口成功后以服务端事实替换本地演示数据，接口失败则保留演示数据。
+      setUsers(backendMembersToFrontend(memberResult.value.records));
     }
   };
 
@@ -692,6 +699,7 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   };
 
   const updateUserStatus = (id: string, status: User['status']) => {
+    const previousStatus = users.find((user) => user.id === id)?.status;
     setUsers((prev) =>
       prev.map((u) => {
         if (u.id === id) {
@@ -701,6 +709,13 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         return u;
       })
     );
+    const numericId = Number(id);
+    if (Number.isFinite(numericId) && previousStatus && previousStatus !== status) {
+      void updateMemberStatus(numericId, status === 'active' ? 1 : 0).catch(() => {
+        setUsers((prev) => prev.map((user) => user.id === id ? { ...user, status: previousStatus } : user));
+        showToast('会员状态已回滚，服务端保存失败', 'warning');
+      });
+    }
   };
 
   const updateUser = (id: string, updates: Partial<User>) => {
