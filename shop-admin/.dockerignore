@@ -1,0 +1,7 @@
+.git
+.idea
+**/target
+**/.tmp-*
+src/test
+application-dev.yml
+*.iml
