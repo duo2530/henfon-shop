@@ -50,6 +50,21 @@ export interface OrderTrackingProps {
   className?: string;
 }
 
+/** 对订单展示中的手机号做脱敏，避免物流页面暴露完整联系方式。 */
+function maskPhone(phone?: string): string {
+  if (!phone) return '-';
+  const normalized = phone.replace(/\s+/g, '');
+  return normalized.length >= 7 ? `${normalized.slice(0, 3)}****${normalized.slice(-4)}` : normalized;
+}
+
+/** 对订单展示中的详细地址做脱敏，仅保留定位所需的省市区信息。 */
+function maskDetailAddress(detail?: string): string {
+  if (!detail) return '';
+  const normalized = detail.trim();
+  if (normalized.length <= 6) return '******';
+  return `${normalized.slice(0, 2)}******${normalized.slice(-2)}`;
+}
+
 // Canonical definition of 5 tracking milestone steps
 interface MilestoneConfig {
   key: ShipmentStage;
@@ -503,7 +518,7 @@ export const OrderTracking: React.FC<OrderTrackingProps> = ({
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
                       <span className="font-bold text-zinc-900">{address.receiverName}</span>
-                      <span className="text-zinc-500 font-mono">{address.phone}</span>
+                      <span className="text-zinc-500 font-mono" title="联系方式已脱敏">{maskPhone(address.phone)}</span>
                       {address.tag && (
                         <span className="text-[10px] px-1.5 rounded bg-zinc-200 text-zinc-700">
                           {address.tag}
@@ -511,7 +526,7 @@ export const OrderTracking: React.FC<OrderTrackingProps> = ({
                       )}
                     </div>
                     <p className="text-[11px] text-zinc-500 mt-0.5 leading-relaxed truncate sm:whitespace-normal">
-                      {address.province} {address.city} {address.district} {address.detail}
+                      {address.province} {address.city} {address.district} {maskDetailAddress(address.detail)}
                     </p>
                   </div>
                 </div>

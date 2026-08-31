@@ -28,6 +28,8 @@ export const ProductCard: React.FC<ProductCardProps> = ({
   const discountPercent = Math.round(
     ((product.originalPrice - product.price) / product.originalPrice) * 100
   );
+  const stockState = product.stock <= 0 ? 'out' : product.stock <= 10 ? 'low' : 'in';
+  const stockLabel = stockState === 'out' ? '暂时缺货' : stockState === 'low' ? `仅剩 ${product.stock} 件` : '有库存';
 
   if (viewMode === 'list') {
     return (
@@ -99,6 +101,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
               <span className="text-zinc-400">({product.reviewCount}条评价)</span>
             </div>
             <span>已售 {product.salesCount}+</span>
+            <span className={stockState === 'out' ? 'text-rose-600 font-medium' : stockState === 'low' ? 'text-amber-600 font-medium' : 'text-emerald-600 font-medium'}>{stockLabel}</span>
             <span className="text-emerald-600 font-medium">顺丰包邮</span>
           </div>
 
@@ -155,7 +158,8 @@ export const ProductCard: React.FC<ProductCardProps> = ({
 
               <button
                 onClick={() => onAddToCart(product)}
-                className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-zinc-900 text-white hover:bg-zinc-800 text-xs font-semibold transition shadow-xs"
+                disabled={stockState === 'out'}
+                className={`inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-semibold transition shadow-xs ${stockState === 'out' ? 'bg-zinc-200 text-zinc-400 cursor-not-allowed' : 'bg-zinc-900 text-white hover:bg-zinc-800'}`}
               >
                 <ShoppingBag className="w-3.5 h-3.5" />
                 加入购物车
@@ -296,6 +300,9 @@ export const ProductCard: React.FC<ProductCardProps> = ({
             </div>
             <span className="text-[11px] text-zinc-400">已售 {product.salesCount}+</span>
           </div>
+          <div className={`text-[11px] mb-3 ${stockState === 'out' ? 'text-rose-600' : stockState === 'low' ? 'text-amber-600' : 'text-emerald-600'}`}>
+            {stockLabel}
+          </div>
 
           {/* Pricing & Add to Cart */}
           <div className="flex items-center justify-between gap-2">
@@ -313,7 +320,8 @@ export const ProductCard: React.FC<ProductCardProps> = ({
 
             <button
               onClick={() => onAddToCart(product)}
-              className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-zinc-900 text-white hover:bg-zinc-800 text-xs font-semibold transition active:scale-95 shadow-xs"
+              disabled={stockState === 'out'}
+              className={`inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold transition active:scale-95 shadow-xs ${stockState === 'out' ? 'bg-zinc-200 text-zinc-400 cursor-not-allowed' : 'bg-zinc-900 text-white hover:bg-zinc-800'}`}
               title="加入购物车"
             >
               <ShoppingBag className="w-3.5 h-3.5" />
