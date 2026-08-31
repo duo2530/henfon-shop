@@ -118,6 +118,9 @@ export type OrderStatus =
 export interface Order {
   id: string;
   orderNumber: string;
+  paymentNo?: string;
+  paymentStatus?: number;
+  paymentState?: 'pending' | 'processing' | 'succeeded' | 'failed' | 'expired';
   trackingNumber: string;
   carrier?: string;
   createdAt: string;

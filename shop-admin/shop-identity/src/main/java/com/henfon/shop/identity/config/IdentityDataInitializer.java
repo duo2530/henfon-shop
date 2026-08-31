@@ -303,6 +303,19 @@ public class IdentityDataInitializer implements ApplicationRunner {
             }
             menus.add(menu);
         }
+        // 供应商基础管理权限挂在仓储目录下，控制供应商查询、保存、启停和删除操作。
+        String[][] supplierButtons = {
+                {"供应商查询", "inventory:supplier:query"}, {"供应商保存", "inventory:supplier:save"},
+                {"供应商启停", "inventory:supplier:status"}, {"供应商删除", "inventory:supplier:delete"}
+        };
+        for (String[] button : supplierButtons) {
+            SysMenu menu = ensureMenu(button[0], "BUTTON", button[1], null, 103);
+            if (!inventory.getId().equals(menu.getParentId())) {
+                menu.setParentId(inventory.getId());
+                sysMenuMapper.updateById(menu);
+            }
+            menus.add(menu);
+        }
         // 发票查询和状态维护权限挂在财务目录下，供后台开票流程使用。
         String[][] invoiceButtons = {
                 {"发票查询", "payment:invoice:query"}, {"发票状态维护", "payment:invoice:status"}

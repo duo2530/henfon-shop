@@ -104,23 +104,51 @@ export interface PortalReviewPage {
 }
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const token = localStorage.getItem(MEMBER_TOKEN_KEY);
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(options.headers || {}),
-    },
-  });
-  if (!response.ok) {
-    throw new Error(`门户接口请求失败：${response.status}`);
+  const method = (options.method || 'GET').toUpperCase();
+  const retryable = method === 'GET' || method === 'HEAD';
+  const maxAttempts = retryable ? 3 : 1;
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    try {
+      const token = localStorage.getItem(MEMBER_TOKEN_KEY);
+      const response = await fetch(`${API_BASE_URL}${path}`, {
+        ...options,
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          ...(options.headers || {}),
+        },
+      });
+      // 仅对幂等查询的 5xx 响应重试，写请求始终由调用方显式处理。
+      if (response.status >= 500 && retryable && attempt < maxAttempts - 1) {
+        await delay(300 * 2 ** attempt);
+        continue;
+      }
+      if (!response.ok) {
+        throw new Error(`门户接口请求失败：${response.status}`);
+      }
+      const result = (await response.json()) as ApiResponse<T>;
+      if (result.code !== '0') {
+        throw new Error(result.message || '门户接口返回失败');
+      }
+      return result.data;
+    } catch (error) {
+      lastError = error;
+      const transientError = error instanceof TypeError;
+      if (!retryable || !transientError || attempt >= maxAttempts - 1) break;
+      await delay(300 * 2 ** attempt);
+    }
   }
-  const result = (await response.json()) as ApiResponse<T>;
-  if (result.code !== '0') {
-    throw new Error(result.message || '门户接口返回失败');
+
+  if (!navigator.onLine) {
+    throw new Error('当前网络不可用，请检查网络连接后重试');
   }
-  return result.data;
+  throw lastError instanceof Error ? lastError : new Error('门户接口请求失败，请稍后重试');
+}
+
+function delay(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
 }
 
 function mapCategory(categoryName?: string): Product['category'] {

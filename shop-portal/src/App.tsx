@@ -20,6 +20,8 @@ import {
   claimPortalCoupon,
   createPortalOrder,
   createPortalPayment,
+  fetchPortalPayment,
+  closePortalPayment,
   redeemPortalCoupon,
   rollbackPortalCoupon,
   clearPortalMemberToken,
@@ -78,6 +80,8 @@ import {
   Heart,
   Scale,
 } from 'lucide-react';
+
+const DEMO_MODE = import.meta.env.VITE_DEMO_MODE === 'true';
 
 function resolveMemberId(user: UserProfile | null): number | null {
   if (!user) return null;
@@ -139,10 +143,25 @@ function mapPortalLogistics(logistics: PortalOrderLogisticsRecord[]): Order['tra
   }));
 }
 
+type PaymentPollingTask = {
+  memberId: number;
+  paymentNo: string;
+  order: Order;
+  expiresAt: number;
+};
+
+function mapPaymentState(status?: number): Order['paymentState'] {
+  if (status === 2) return 'succeeded';
+  if (status === 3) return 'expired';
+  if (status === 4) return 'failed';
+  if (status === 1) return 'processing';
+  return 'pending';
+}
+
 export default function App() {
   // 1. Persistence & State
-  const [products, setProducts] = useState<Product[]>(PRODUCTS);
-  const [coupons, setCoupons] = useState<Coupon[]>(AVAILABLE_COUPONS);
+  const [products, setProducts] = useState<Product[]>(DEMO_MODE ? PRODUCTS : []);
+  const [coupons, setCoupons] = useState<Coupon[]>(DEMO_MODE ? AVAILABLE_COUPONS : []);
   const [banners, setBanners] = useState<PortalBanner[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -164,9 +183,9 @@ export default function App() {
   const [lastComparedProductIds, setLastComparedProductIds] = useState<string[]>(() => {
     try {
       const saved = localStorage.getItem('aurora_last_compare');
-      return saved ? JSON.parse(saved) : ['prod-1', 'prod-2'];
+      return saved ? JSON.parse(saved) : DEMO_MODE ? ['prod-1', 'prod-2'] : [];
     } catch {
-      return ['prod-1', 'prod-2'];
+      return DEMO_MODE ? ['prod-1', 'prod-2'] : [];
     }
   });
 
@@ -175,13 +194,15 @@ export default function App() {
       const saved = localStorage.getItem('aurora_compare_history');
       return saved
         ? JSON.parse(saved)
-        : [
+        : DEMO_MODE
+          ? [
             {
               id: 'comp-init-1',
               timestamp: Date.now() - 1000 * 60 * 15,
               productIds: ['prod-1', 'prod-2'],
             },
-          ];
+          ]
+          : [];
     } catch {
       return [];
     }
@@ -201,10 +222,10 @@ export default function App() {
   const [wishlist, setWishlist] = useState<string[]>(() => {
     try {
       const saved = localStorage.getItem('aurora_wishlist');
-      const parsed = saved ? JSON.parse(saved) : ['prod-1'];
-      return Array.isArray(parsed) ? parsed : ['prod-1'];
+      const parsed = saved ? JSON.parse(saved) : DEMO_MODE ? ['prod-1'] : [];
+      return Array.isArray(parsed) ? parsed : DEMO_MODE ? ['prod-1'] : [];
     } catch {
-      return ['prod-1'];
+      return DEMO_MODE ? ['prod-1'] : [];
     }
   });
 
@@ -216,7 +237,8 @@ export default function App() {
     } catch {
       // fallback to initial demo order
     }
-    return [
+    return DEMO_MODE
+      ? [
       {
         id: 'ord-preset-001',
         orderNumber: 'ORD-2026-889921',
@@ -284,11 +306,13 @@ export default function App() {
           },
         ],
       },
-    ];
+    ]
+      : [];
   });
   const [afterSales, setAfterSales] = useState<PortalAfterSaleRecord[]>([]);
   const [afterSalesLoading, setAfterSalesLoading] = useState(false);
   const [afterSalesError, setAfterSalesError] = useState<string | null>(null);
+  const [paymentPolling, setPaymentPolling] = useState<PaymentPollingTask | null>(null);
 
   const [appliedCoupon, setAppliedCoupon] = useState<Coupon | null>(null);
 
@@ -312,10 +336,10 @@ export default function App() {
   const [claimedCouponCodes, setClaimedCouponCodes] = useState<string[]>(() => {
     try {
       const saved = localStorage.getItem('aurora_claimed_coupons');
-      const parsed = saved ? JSON.parse(saved) : ['AURORA20'];
-      return Array.isArray(parsed) ? parsed : ['AURORA20'];
+      const parsed = saved ? JSON.parse(saved) : DEMO_MODE ? ['AURORA20'] : [];
+      return Array.isArray(parsed) ? parsed : DEMO_MODE ? ['AURORA20'] : [];
     } catch {
-      return ['AURORA20'];
+      return DEMO_MODE ? ['AURORA20'] : [];
     }
   });
 
@@ -323,9 +347,9 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(() => {
     try {
       const saved = localStorage.getItem('aurora_user_session');
-      return saved ? JSON.parse(saved) : PRESET_TEST_USERS[0].user;
+      return saved ? JSON.parse(saved) : DEMO_MODE ? PRESET_TEST_USERS[0].user : null;
     } catch {
-      return PRESET_TEST_USERS[0].user;
+      return DEMO_MODE ? PRESET_TEST_USERS[0].user : null;
     }
   });
   const [memberAddresses, setMemberAddresses] = useState<import('./types/ecommerce').Address[]>([]);
@@ -464,6 +488,82 @@ export default function App() {
       active = false;
     };
   }, [currentUser, products]);
+
+  // 支付单创建后轮询渠道状态，达到成功、失败或超时终态后立即清理定时器。
+  useEffect(() => {
+    const task = paymentPolling;
+    if (!task) return;
+    let active = true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const pollInterval = 2000;
+
+    const finish = async (state: NonNullable<Order['paymentState']>, status: number, message: string) => {
+      if (!active) return;
+      if (state === 'expired') {
+        // 超时主动关闭支付单，关闭失败不影响前端结束轮询和提示状态。
+        await closePortalPayment(task.memberId, task.paymentNo).catch((error) => {
+          console.warn('支付单超时关闭失败', error);
+        });
+        if (!active) return;
+      }
+      const updatedOrder: Order = {
+        ...task.order,
+        paymentNo: task.paymentNo,
+        paymentStatus: status,
+        paymentState: state,
+        status: state === 'succeeded' ? 'paid' : task.order.status,
+        statusLabel: state === 'succeeded' ? '已支付，等待发货' : state === 'failed' ? '支付失败' : '支付超时',
+        trackingSteps: state === 'succeeded'
+          ? task.order.trackingSteps.map((step, index) => index === 1
+            ? { ...step, completed: true, time: '刚刚', description: '支付回调已确认，系统正在安排仓库拣货。' }
+            : step)
+          : task.order.trackingSteps,
+      };
+      setOrders((previous) => previous.map((order) => order.id === updatedOrder.id ? updatedOrder : order));
+      setPaymentPolling(null);
+      if (state === 'succeeded') {
+        setCompletedOrder(updatedOrder);
+        showToast(message, 'success');
+      } else {
+        showToast(message, 'error');
+      }
+    };
+
+    const poll = async () => {
+      if (!active) return;
+      if (Date.now() >= task.expiresAt) {
+        await finish('expired', 3, '支付超时，支付单已关闭，请重新发起支付');
+        return;
+      }
+      try {
+        const payment = await fetchPortalPayment(task.memberId, task.paymentNo);
+        if (!active) return;
+        const state = mapPaymentState(payment.status);
+        if (state === 'succeeded') {
+          await finish(state, payment.status, '🎉 支付成功，订单已进入配货流程！');
+          return;
+        }
+        if (state === 'failed') {
+          await finish(state, payment.status, '支付失败，请检查支付方式后重试');
+          return;
+        }
+        if (state === 'expired') {
+          await finish(state, payment.status, '支付已超时，支付单已关闭');
+          return;
+        }
+      } catch (error) {
+        // 查询暂时失败时继续重试，直到超时窗口结束，避免单次网络抖动误判支付失败。
+        console.warn('支付状态查询失败，将继续重试', error);
+      }
+      if (active) timer = setTimeout(() => void poll(), pollInterval);
+    };
+
+    void poll();
+    return () => {
+      active = false;
+      if (timer) clearTimeout(timer);
+    };
+  }, [paymentPolling]);
 
   // 登录会员切换后独立加载售后记录，避免售后接口异常影响订单列表展示。
   useEffect(() => {
@@ -1108,7 +1208,34 @@ export default function App() {
     setIsCheckoutOpen(true);
   };
 
-  const handlePlaceOrderSuccess = (newOrder: Order) => {
+  const handlePlaceOrderSuccess = (newOrder: Order, persistence?: CheckoutPersistenceResult) => {
+    if (persistence?.paymentNo) {
+      const memberId = resolveMemberId(currentUser);
+      if (memberId) {
+        const paymentStatus = persistence.paymentStatus;
+        const paymentState = mapPaymentState(paymentStatus);
+        const persistedOrder: Order = {
+          ...newOrder,
+          paymentNo: persistence.paymentNo,
+          paymentStatus,
+          paymentState,
+          status: paymentState === 'succeeded' ? 'paid' : newOrder.status,
+          statusLabel: paymentState === 'succeeded' ? '已支付，等待发货' : '待支付',
+        };
+        setOrders((prev) => [persistedOrder, ...prev.filter((order) => order.id !== persistedOrder.id)]);
+        const purchasedProductIds = new Set(persistedOrder.items.map((item) => item.productId));
+        setCartItems((prev) => prev.filter((item) => !purchasedProductIds.has(item.productId) || !item.selected));
+        setIsCheckoutOpen(false);
+        setPaymentPolling({
+          memberId,
+          paymentNo: persistence.paymentNo,
+          order: persistedOrder,
+          expiresAt: Date.now() + 2 * 60 * 1000,
+        });
+        showToast('支付单已生成，正在确认支付状态…', 'info');
+        return;
+      }
+    }
     setOrders((prev) => [newOrder, ...prev]);
 
     // Remove purchased items from cart if they were from cart
@@ -1916,6 +2043,7 @@ export default function App() {
       <AuthModal
         isOpen={isAuthModalOpen}
         initialMode={authModalMode}
+        demoMode={DEMO_MODE}
         onClose={() => setIsAuthModalOpen(false)}
         onLoginSuccess={handleLoginSuccess}
       />

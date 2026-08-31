@@ -23,7 +23,7 @@ interface CheckoutModalProps {
   appliedCoupon: Coupon | null;
   claimedCoupons?: Coupon[];
   onClose: () => void;
-  onPlaceOrderSuccess: (newOrder: Order) => void;
+  onPlaceOrderSuccess: (newOrder: Order, persistence?: CheckoutPersistenceResult) => void;
   onApplyCoupon?: (couponCode: string) => boolean;
   onRemoveCoupon?: () => void;
   onPersistOrder?: (order: Order) => Promise<CheckoutPersistenceResult | void>;
@@ -278,7 +278,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       if (!persistence?.paymentCreated) {
         onPaymentFailure?.(persistence?.message || '支付单创建失败，订单已保留在本地，请稍后重试');
       }
-      onPlaceOrderSuccess(newOrder);
+      onPlaceOrderSuccess(newOrder, persistence);
     } catch (error) {
       console.error('订单或支付单同步失败', error);
       onPaymentFailure?.(error instanceof Error ? error.message : '支付单创建失败，订单已保留在本地，请稍后重试');

@@ -26,6 +26,7 @@ export type AuthMode = 'login-pwd' | 'login-sms' | 'register' | 'forgot-pwd';
 interface AuthModalProps {
   isOpen: boolean;
   initialMode?: AuthMode;
+  demoMode?: boolean;
   onClose: () => void;
   onLoginSuccess: (user: UserProfile, message: string) => void;
 }
@@ -100,6 +101,7 @@ export const PRESET_TEST_USERS: Array<{
 export const AuthModal: React.FC<AuthModalProps> = ({
   isOpen,
   initialMode = 'login-pwd',
+  demoMode = false,
   onClose,
   onLoginSuccess,
 }) => {
@@ -836,8 +838,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             </div>
           )}
 
-          {/* Quick Test Accounts Bar for Developer/User Seamless Testing */}
-          <div className="p-3 rounded-2xl bg-zinc-50 border border-zinc-200/80 space-y-2">
+          {/* 仅在显式演示环境提供快捷测试账号，生产环境不暴露预置身份。 */}
+          {demoMode && <div className="p-3 rounded-2xl bg-zinc-50 border border-zinc-200/80 space-y-2">
             <div className="flex items-center justify-between">
               <span className="text-[11px] font-bold text-zinc-600 flex items-center gap-1">
                 <Crown className="w-3.5 h-3.5 text-amber-500" />
@@ -872,7 +874,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 </button>
               ))}
             </div>
-          </div>
+          </div>}
         </div>
 
         {/* Footer Security Badges */}
