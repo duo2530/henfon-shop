@@ -1,6 +1,7 @@
 package com.henfon.shop.payment.wechat;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.boot.context.properties.bind.ConstructorBinding;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -14,6 +15,7 @@ import java.util.Base64;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * 微信支付 V3 配置兼容性测试。
@@ -81,6 +83,21 @@ class WechatPayV3ConfigurationTest {
 
         assertInstanceOf(WechatPayV3HttpClient.class,
                 new WechatPayV3Configuration().wechatPayClient(properties, new ObjectMapper()));
+    }
+
+    /**
+     * 校验存在兼容重载构造器时，规范构造器仍明确用于 Spring 配置绑定。
+     *
+     * @author Henfon
+     * @date 2026-08-31
+     */
+    @Test
+    void shouldMarkCanonicalConstructorForConfigurationBinding() {
+        boolean annotated = java.util.Arrays.stream(WechatPayV3Properties.class.getDeclaredConstructors())
+                .filter(constructor -> constructor.getParameterCount() == 15)
+                .anyMatch(constructor -> constructor.isAnnotationPresent(ConstructorBinding.class));
+
+        assertTrue(annotated);
     }
 
     /**

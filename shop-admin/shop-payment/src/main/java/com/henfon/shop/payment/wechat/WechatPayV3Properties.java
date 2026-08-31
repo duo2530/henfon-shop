@@ -1,6 +1,7 @@
 package com.henfon.shop.payment.wechat;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.boot.context.properties.bind.ConstructorBinding;
 
 import java.time.Duration;
 
@@ -32,6 +33,37 @@ public record WechatPayV3Properties(boolean enabled, String mode, String appId, 
                                     String publicKeyId, String publicKeyPath,
                                     String notifyUrl, String refundNotifyUrl, String apiBaseUrl,
                                     Duration connectTimeout, Duration readTimeout) {
+
+    /**
+     * 使用 Spring Boot 配置绑定创建微信支付 V3 配置。
+     *
+     * @author Henfon
+     * @date 2026-08-31
+     */
+    @ConstructorBinding
+    public WechatPayV3Properties(boolean enabled, String mode, String appId, String merchantId,
+                                 String merchantSerialNumber, String apiV3Key,
+                                 String merchantPrivateKeyPath, String platformCertificatePath,
+                                 String publicKeyId, String publicKeyPath,
+                                 String notifyUrl, String refundNotifyUrl, String apiBaseUrl,
+                                 Duration connectTimeout, Duration readTimeout) {
+        // 显式声明规范构造器，确保 Spring Boot 在存在兼容重载构造器时仍能完成配置绑定。
+        this.enabled = enabled;
+        this.mode = mode;
+        this.appId = appId;
+        this.merchantId = merchantId;
+        this.merchantSerialNumber = merchantSerialNumber;
+        this.apiV3Key = apiV3Key;
+        this.merchantPrivateKeyPath = merchantPrivateKeyPath;
+        this.platformCertificatePath = platformCertificatePath;
+        this.publicKeyId = publicKeyId;
+        this.publicKeyPath = publicKeyPath;
+        this.notifyUrl = notifyUrl;
+        this.refundNotifyUrl = refundNotifyUrl;
+        this.apiBaseUrl = apiBaseUrl;
+        this.connectTimeout = connectTimeout;
+        this.readTimeout = readTimeout;
+    }
 
     /**
      * 创建仅使用平台证书模式的兼容配置。

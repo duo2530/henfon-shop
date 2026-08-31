@@ -12,7 +12,17 @@ import org.mybatis.spring.annotation.MapperScan;
  * @date 2026-08-29
  */
 @SpringBootApplication
-@MapperScan("com.henfon.shop")
+// 仅扫描各业务模块的 Mapper 包，避免把支付客户端等普通接口误注册为 MyBatis Mapper。
+@MapperScan({
+        "com.henfon.shop.catalog.mapper",
+        "com.henfon.shop.content.mapper",
+        "com.henfon.shop.identity.mapper",
+        "com.henfon.shop.inventory.mapper",
+        "com.henfon.shop.marketing.mapper",
+        "com.henfon.shop.payment.mapper",
+        "com.henfon.shop.reporting.mapper",
+        "com.henfon.shop.trade.mapper"
+})
 @EnableScheduling
 public class ShopApplication {
 
