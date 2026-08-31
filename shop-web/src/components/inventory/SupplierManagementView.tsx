@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useAdmin } from '../../context/AdminContext';
+import { listInventorySuppliers } from '../../api/adminApi';
 import { 
   Truck, 
   Search, 
@@ -73,6 +74,33 @@ export const SupplierManagementView: React.FC = () => {
   const { showToast } = useAdmin();
   const [suppliers, setSuppliers] = useState<SupplierItem[]>(mockSuppliers);
   const [searchTerm, setSearchTerm] = useState('');
+
+  useEffect(() => {
+    let active = true;
+    listInventorySuppliers({ size: 200 })
+      .then((page) => {
+        if (!active || !page.records.length) return;
+        setSuppliers(page.records.map((supplier) => ({
+          id: String(supplier.id),
+          name: supplier.supplierName,
+          code: supplier.supplierCode,
+          category: '未分类',
+          contactPerson: supplier.contactName || '未填写',
+          phone: supplier.contactPhone || '未填写',
+          email: '',
+          address: supplier.address || '未填写',
+          settlementCycle: 'T+30',
+          status: supplier.status === 1 ? 'active' : 'disabled',
+          purchaseOrderCount: 0,
+        })));
+      })
+      .catch((error) => {
+        if (active) showToast(error instanceof Error ? error.message : '供应商数据加载失败，当前显示演示数据', 'error');
+      });
+    return () => {
+      active = false;
+    };
+  }, [showToast]);
 
   const filtered = suppliers.filter(
     (s) =>

@@ -367,6 +367,20 @@ export interface BackendInventoryWarehouse {
   version?: number;
 }
 
+export interface BackendInventorySupplier {
+  id: number;
+  supplierCode: string;
+  supplierName: string;
+  contactName?: string;
+  contactPhone?: string;
+  address?: string;
+  status: number;
+  createdAt?: string;
+  updatedAt?: string;
+  remark?: string;
+  version?: number;
+}
+
 export interface BackendStorageUploadResult {
   objectKey: string;
   url: string;
@@ -757,6 +771,35 @@ export function updateInventoryWarehouseStatus(id: number, status: number): Prom
 
 export function deleteInventoryWarehouse(id: number): Promise<void> {
   return request<void>(`/api/admin/inventory/warehouses/${id}`, { method: 'DELETE' });
+}
+
+export function listInventorySuppliers(params: { current?: number; size?: number; keyword?: string; status?: number } = {}): Promise<BackendPage<BackendInventorySupplier>> {
+  const query = new URLSearchParams({ current: String(params.current || 1), size: String(params.size || 200) });
+  if (params.keyword) query.set('keyword', params.keyword);
+  if (params.status !== undefined) query.set('status', String(params.status));
+  return request<BackendPage<BackendInventorySupplier>>(`/api/admin/inventory/suppliers?${query.toString()}`);
+}
+
+export function saveInventorySupplier(payload: {
+  id?: number;
+  supplierCode: string;
+  supplierName: string;
+  contactName?: string;
+  contactPhone?: string;
+  address?: string;
+  status: number;
+  remark?: string;
+  version?: number;
+}): Promise<number> {
+  return request<number>('/api/admin/inventory/suppliers', { method: 'POST', body: JSON.stringify(payload) });
+}
+
+export function updateInventorySupplierStatus(id: number, status: number): Promise<void> {
+  return request<void>(`/api/admin/inventory/suppliers/${id}/status?status=${status}`, { method: 'PUT' });
+}
+
+export function deleteInventorySupplier(id: number): Promise<void> {
+  return request<void>(`/api/admin/inventory/suppliers/${id}`, { method: 'DELETE' });
 }
 
 export async function uploadStorageFile(file: File): Promise<BackendStorageUploadResult> {
