@@ -23,6 +23,37 @@ import {
   ShieldAlert,
   Percent
 } from 'lucide-react';
+import {
+  BackendCatalogProductContent,
+  getCatalogProductContent,
+  saveCatalogProductContent,
+  uploadStorageFile,
+  deleteStorageFile
+} from '../../api/adminApi';
+
+type ProductContentDraft = {
+  features: string[];
+  specs: Array<{ specName: string; specValue: string }>;
+  media: Array<{ skuId?: number; mediaType: 'IMAGE' | 'VIDEO'; objectKey: string; mediaUrl?: string; isCover: number; remark?: string; persisted?: boolean }>;
+};
+
+const emptyProductContent: ProductContentDraft = { features: [], specs: [], media: [] };
+
+function contentFromBackend(content: BackendCatalogProductContent): ProductContentDraft {
+  return {
+    features: (content.features || []).map((item) => item.featureText),
+    specs: (content.specs || []).map((item) => ({ specName: item.specName, specValue: item.specValue })),
+    media: (content.media || []).map((item) => ({
+      skuId: item.skuId,
+      mediaType: item.mediaType === 'VIDEO' ? 'VIDEO' : 'IMAGE',
+      objectKey: item.objectKey,
+      mediaUrl: item.mediaUrl,
+      isCover: item.isCover === 1 ? 1 : 0,
+      remark: item.remark,
+      persisted: true
+    }))
+  };
+}
 
 const fallbackCategoryOptions: Array<{ id: number; code: ProductCategory; name: string }> = [
   { id: 1, code: 'electronics', name: '数码数控 (Electronics)' },
@@ -73,6 +104,9 @@ export const ProductManagementView: React.FC = () => {
   // Modal / Drawer states
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+  const [productContent, setProductContent] = useState<ProductContentDraft>(emptyProductContent);
+  const [contentLoading, setContentLoading] = useState(false);
+  const [contentSaving, setContentSaving] = useState(false);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [detailProduct, setDetailProduct] = useState<Product | null>(null);
   
@@ -187,6 +221,7 @@ export const ProductManagementView: React.FC = () => {
 
   const handleOpenAddModal = () => {
     setEditingProduct(null);
+    setProductContent(emptyProductContent);
     setFormData({
       name: '',
       category: 'electronics',
@@ -205,8 +240,9 @@ export const ProductManagementView: React.FC = () => {
     setIsModalOpen(true);
   };
 
-  const handleOpenEditModal = (product: Product) => {
+  const handleOpenEditModal = async (product: Product) => {
     setEditingProduct(product);
+    setProductContent(emptyProductContent);
     setFormData({
       name: product.name,
       category: product.category,
@@ -223,6 +259,16 @@ export const ProductManagementView: React.FC = () => {
       description: product.description || ''
     });
     setIsModalOpen(true);
+    if (!Number.isFinite(Number(product.id))) return;
+    setContentLoading(true);
+    try {
+      const content = await getCatalogProductContent(Number(product.id));
+      setProductContent(contentFromBackend(content));
+    } catch {
+      showToast('商品内容加载失败，可先维护后重试保存', 'warning');
+    } finally {
+      setContentLoading(false);
+    }
   };
 
   const handleAddTag = () => {
@@ -243,13 +289,58 @@ export const ProductManagementView: React.FC = () => {
     });
   };
 
-  const handleSubmitForm = (e: React.FormEvent) => {
+  const updateFeature = (index: number, value: string) => {
+    setProductContent((previous) => ({
+      ...previous,
+      features: previous.features.map((feature, itemIndex) => itemIndex === index ? value : feature)
+    }));
+  };
+
+  const updateSpec = (index: number, field: 'specName' | 'specValue', value: string) => {
+    setProductContent((previous) => ({
+      ...previous,
+      specs: previous.specs.map((spec, itemIndex) => itemIndex === index ? { ...spec, [field]: value } : spec)
+    }));
+  };
+
+  const removeMedia = (index: number) => {
+    const target = productContent.media[index];
+    setProductContent((previous) => ({ ...previous, media: previous.media.filter((_, itemIndex) => itemIndex !== index) }));
+    if (target?.objectKey && !target.persisted) {
+      void deleteStorageFile(target.objectKey).catch(() => {
+        // 对象可能已经被服务端清理，删除失败不阻断本地内容编辑。
+      });
+    }
+  };
+
+  const handleMediaUpload = async (file: File) => {
+    try {
+      const result = await uploadStorageFile(file);
+      const mediaType: 'IMAGE' | 'VIDEO' = result.contentType.startsWith('video/') ? 'VIDEO' : 'IMAGE';
+      setProductContent((previous) => ({
+        ...previous,
+        media: [...previous.media, {
+          mediaType,
+          objectKey: result.objectKey,
+          mediaUrl: result.url,
+          isCover: previous.media.some((item) => item.isCover === 1) ? 0 : 1,
+          persisted: false
+        }]
+      }));
+      showToast('媒体上传成功', 'success');
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : '媒体上传失败，请重试', 'error');
+    }
+  };
+
+  const handleSubmitForm = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.name.trim()) {
       showToast('请输入商品名称', 'error');
       return;
     }
 
+    let persistedProductId: number | null = null;
     if (editingProduct) {
       updateProduct(editingProduct.id, {
         name: formData.name,
@@ -267,8 +358,9 @@ export const ProductManagementView: React.FC = () => {
         description: formData.description,
         categoryName: categoryName(formData.category)
       });
+      persistedProductId = Number.isFinite(Number(editingProduct.id)) ? Number(editingProduct.id) : null;
     } else {
-      addProduct({
+      persistedProductId = await addProduct({
         name: formData.name,
         categoryId: categoryId(formData.category),
         category: formData.category,
@@ -284,6 +376,34 @@ export const ProductManagementView: React.FC = () => {
         description: formData.description,
         categoryName: categoryName(formData.category)
       });
+    }
+    if (persistedProductId !== null) {
+      setContentSaving(true);
+      try {
+        await saveCatalogProductContent(persistedProductId, {
+          features: productContent.features.map((feature, sortNo) => ({ featureText: feature.trim(), sortNo })).filter((feature) => feature.featureText),
+          specs: productContent.specs
+            .map((spec, sortNo) => ({ specName: spec.specName.trim(), specValue: spec.specValue.trim(), sortNo }))
+            .filter((spec) => spec.specName && spec.specValue),
+          media: productContent.media.map((media, sortNo) => ({
+            skuId: media.skuId,
+            mediaType: media.mediaType,
+            objectKey: media.objectKey,
+            mediaUrl: media.mediaUrl,
+            isCover: media.isCover,
+            sortNo,
+            remark: media.remark
+          }))
+        });
+        showToast('商品卖点、参数和媒体已保存', 'success');
+      } catch {
+        showToast('商品基础信息已保存，但内容媒体保存失败，请重新编辑重试', 'warning');
+      } finally {
+        setContentSaving(false);
+      }
+    } else if (productContent.media.length > 0) {
+      // 商品主记录保存失败时清理本次上传对象，避免 MinIO 产生孤立文件。
+      await Promise.allSettled(productContent.media.map((media) => deleteStorageFile(media.objectKey)));
     }
     setIsModalOpen(false);
   };
@@ -1048,7 +1168,7 @@ export const ProductManagementView: React.FC = () => {
       {/* Add / Edit Product Modal */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-xs overflow-y-auto">
-          <div className="bg-white rounded-xl max-w-xl w-full p-6 border border-gray-200 shadow-2xl animate-in zoom-in-95 duration-150 my-8">
+          <div className="bg-white rounded-xl max-w-3xl w-full p-6 border border-gray-200 shadow-2xl animate-in zoom-in-95 duration-150 my-8">
             <div className="flex items-center justify-between pb-3 border-b border-gray-200">
               <h3 className="text-base font-bold text-gray-900">
                 {editingProduct ? '编辑商品档案与定价' : '创建新商品 (New Product SKU)'}
@@ -1251,6 +1371,70 @@ export const ProductManagementView: React.FC = () => {
                 />
               </div>
 
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-xs font-bold text-gray-700">商品卖点、参数与媒体</div>
+                    <div className="text-[11px] text-gray-400 mt-0.5">内容会与商品一起保存，媒体文件限制为10MB。</div>
+                  </div>
+                  {contentLoading && <span className="text-[11px] text-blue-600">正在加载内容…</span>}
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-[11px] font-semibold text-gray-600">核心卖点</label>
+                    <button type="button" onClick={() => setProductContent((previous) => ({ ...previous, features: [...previous.features, ''] }))} className="text-[11px] text-blue-600 hover:text-blue-700">+ 添加卖点</button>
+                  </div>
+                  <div className="space-y-2">
+                    {productContent.features.map((feature, index) => (
+                      <div key={`feature-${index}`} className="flex gap-2">
+                        <input value={feature} onChange={(event) => updateFeature(index, event.target.value)} placeholder="例如：48小时长续航" maxLength={500} className="flex-1 h-[32px] px-2.5 rounded-lg border border-gray-300 bg-white text-xs" />
+                        <button type="button" onClick={() => setProductContent((previous) => ({ ...previous, features: previous.features.filter((_, itemIndex) => itemIndex !== index) }))} className="px-2 text-gray-400 hover:text-red-600" title="删除卖点"><Trash2 className="w-3.5 h-3.5" /></button>
+                      </div>
+                    ))}
+                    {productContent.features.length === 0 && <div className="text-[11px] text-gray-400">暂无卖点，点击右侧添加。</div>}
+                  </div>
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-[11px] font-semibold text-gray-600">商品参数</label>
+                    <button type="button" onClick={() => setProductContent((previous) => ({ ...previous, specs: [...previous.specs, { specName: '', specValue: '' }] }))} className="text-[11px] text-blue-600 hover:text-blue-700">+ 添加参数</button>
+                  </div>
+                  <div className="space-y-2">
+                    {productContent.specs.map((spec, index) => (
+                      <div key={`spec-${index}`} className="flex gap-2">
+                        <input value={spec.specName} onChange={(event) => updateSpec(index, 'specName', event.target.value)} placeholder="参数名" maxLength={128} className="w-1/3 h-[32px] px-2.5 rounded-lg border border-gray-300 bg-white text-xs" />
+                        <input value={spec.specValue} onChange={(event) => updateSpec(index, 'specValue', event.target.value)} placeholder="参数值" maxLength={500} className="flex-1 h-[32px] px-2.5 rounded-lg border border-gray-300 bg-white text-xs" />
+                        <button type="button" onClick={() => setProductContent((previous) => ({ ...previous, specs: previous.specs.filter((_, itemIndex) => itemIndex !== index) }))} className="px-2 text-gray-400 hover:text-red-600" title="删除参数"><Trash2 className="w-3.5 h-3.5" /></button>
+                      </div>
+                    ))}
+                    {productContent.specs.length === 0 && <div className="text-[11px] text-gray-400">暂无参数，点击右侧添加。</div>}
+                  </div>
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-[11px] font-semibold text-gray-600">图片 / 视频</label>
+                    <label className="text-[11px] text-blue-600 hover:text-blue-700 cursor-pointer">
+                      + 上传媒体
+                      <input type="file" accept="image/jpeg,image/png,image/webp,image/gif,video/mp4" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; if (file) void handleMediaUpload(file); event.target.value = ''; }} />
+                    </label>
+                  </div>
+                  <div className="space-y-2">
+                    {productContent.media.map((media, index) => (
+                      <div key={`${media.objectKey}-${index}`} className="flex items-center gap-2 bg-white rounded-lg border border-gray-200 p-2">
+                        {media.mediaType === 'VIDEO' ? <div className="w-12 h-8 rounded bg-slate-200 text-[10px] text-slate-600 flex items-center justify-center">VIDEO</div> : <img src={media.mediaUrl} alt="商品媒体" className="w-12 h-8 rounded object-cover bg-slate-100" />}
+                        <div className="min-w-0 flex-1"><div className="text-[11px] text-gray-700 truncate">{media.objectKey}</div><div className="text-[10px] text-gray-400">{media.mediaType}{media.isCover === 1 ? ' · 封面' : ''}</div></div>
+                        <button type="button" onClick={() => setProductContent((previous) => ({ ...previous, media: previous.media.map((item, itemIndex) => ({ ...item, isCover: itemIndex === index ? 1 : 0 })) }))} className={`text-[10px] px-2 py-1 rounded border ${media.isCover === 1 ? 'border-blue-200 bg-blue-50 text-blue-700' : 'border-gray-200 text-gray-500 hover:text-blue-600'}`}>设为封面</button>
+                        <button type="button" onClick={() => removeMedia(index)} className="px-1.5 text-gray-400 hover:text-red-600" title="删除媒体"><Trash2 className="w-3.5 h-3.5" /></button>
+                      </div>
+                    ))}
+                    {productContent.media.length === 0 && <div className="text-[11px] text-gray-400">暂无媒体，请上传商品图片或 MP4 视频。</div>}
+                  </div>
+                </div>
+              </div>
+
               <div>
                 <label className="block text-xs font-semibold text-gray-700 mb-1">
                   商品规格与卖点描述
@@ -1274,9 +1458,10 @@ export const ProductManagementView: React.FC = () => {
                 </button>
                 <button
                   type="submit"
+                  disabled={contentLoading || contentSaving}
                   className="px-5 py-2 rounded-lg bg-[#2563EB] text-white hover:bg-blue-700 text-xs font-semibold shadow-xs cursor-pointer"
                 >
-                  {editingProduct ? '保存修改' : '确认添加'}
+                  {contentSaving ? '正在保存…' : editingProduct ? '保存修改' : '确认添加'}
                 </button>
               </div>
             </form>

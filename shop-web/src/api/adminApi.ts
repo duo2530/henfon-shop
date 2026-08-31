@@ -193,6 +193,39 @@ export interface BackendCatalogSku {
   remark?: string;
 }
 
+export interface BackendCatalogProductFeature {
+  id: number;
+  productId: number;
+  featureText: string;
+  sortNo: number;
+}
+
+export interface BackendCatalogProductSpec {
+  id: number;
+  productId: number;
+  specName: string;
+  specValue: string;
+  sortNo: number;
+}
+
+export interface BackendCatalogProductMedia {
+  id: number;
+  productId: number;
+  skuId?: number;
+  mediaType: 'IMAGE' | 'VIDEO' | string;
+  objectKey: string;
+  mediaUrl?: string;
+  isCover: number;
+  sortNo: number;
+  remark?: string;
+}
+
+export interface BackendCatalogProductContent {
+  features: BackendCatalogProductFeature[];
+  specs: BackendCatalogProductSpec[];
+  media: BackendCatalogProductMedia[];
+}
+
 export interface BackendContentBanner {
   id: number;
   bannerTitle: string;
@@ -543,6 +576,21 @@ export function updateCatalogSkuStatus(productId: number, skuId: number, status:
 
 export function deleteCatalogSku(productId: number, skuId: number): Promise<void> {
   return request<void>(`/api/admin/catalog/products/${productId}/skus/${skuId}`, { method: 'DELETE' });
+}
+
+export function getCatalogProductContent(productId: number): Promise<BackendCatalogProductContent> {
+  return request<BackendCatalogProductContent>(`/api/admin/catalog/products/${productId}/content`);
+}
+
+export function saveCatalogProductContent(productId: number, content: {
+  features: Array<{ featureText: string; sortNo?: number }>;
+  specs: Array<{ specName: string; specValue: string; sortNo?: number }>;
+  media: Array<{ skuId?: number; mediaType: 'IMAGE' | 'VIDEO'; objectKey: string; mediaUrl?: string; isCover: number; sortNo?: number; remark?: string }>;
+}): Promise<BackendCatalogProductContent> {
+  return request<BackendCatalogProductContent>(`/api/admin/catalog/products/${productId}/content`, {
+    method: 'PUT',
+    body: JSON.stringify(content),
+  });
 }
 
 export function listInventoryWarnings(): Promise<BackendInventoryStock[]> {

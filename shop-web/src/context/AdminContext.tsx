@@ -61,6 +61,7 @@ import {
   listCatalogCategories,
   listCatalogProducts,
   saveCatalogProduct as saveCatalogProductApi,
+  saveCatalogProductContent,
   listTradeOrders,
   shipTradeOrder,
   cancelTradeOrder,
@@ -98,7 +99,7 @@ interface AdminContextType {
   removeToast: (id: string) => void;
   
   // Product actions
-  addProduct: (product: Omit<Product, 'id' | 'createdAt' | 'salesCount'>) => void;
+  addProduct: (product: Omit<Product, 'id' | 'createdAt' | 'salesCount'>) => Promise<number | null>;
   updateProduct: (id: string, updates: Partial<Product>) => void;
   deleteProduct: (id: string) => void;
   toggleProductStatus: (id: string) => void;
@@ -424,7 +425,7 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   };
 
   // Product Methods
-  const addProduct = (productData: Omit<Product, 'id' | 'createdAt' | 'salesCount'>) => {
+  const addProduct = async (productData: Omit<Product, 'id' | 'createdAt' | 'salesCount'>): Promise<number | null> => {
     const newProduct: Product = {
       ...productData,
       id: `prod-${Date.now()}`,
@@ -435,9 +436,14 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     showToast(`商品「${newProduct.name}」添加成功`, 'success');
     const request = productToCatalogRequest(newProduct);
     delete request.id;
-    void saveCatalogProductApi(request).then((id) => {
+    try {
+      const id = await saveCatalogProductApi(request);
       setProducts((prev) => prev.map((product) => product.id === newProduct.id ? { ...product, id: String(id) } : product));
-    }).catch(() => showToast('商品已加入当前页面，但服务端保存失败', 'warning'));
+      return id;
+    } catch {
+      showToast('商品已加入当前页面，但服务端保存失败', 'warning');
+      return null;
+    }
   };
 
   const updateProduct = (id: string, updates: Partial<Product>) => {

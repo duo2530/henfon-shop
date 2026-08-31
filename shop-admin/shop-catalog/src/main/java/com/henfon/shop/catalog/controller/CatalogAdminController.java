@@ -2,6 +2,7 @@ package com.henfon.shop.catalog.controller;
 
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.henfon.shop.catalog.dto.CatalogProductSaveRequest;
+import com.henfon.shop.catalog.dto.CatalogProductContentSaveRequest;
 import com.henfon.shop.catalog.dto.CatalogCategorySaveRequest;
 import com.henfon.shop.catalog.dto.CatalogSkuSaveRequest;
 import com.henfon.shop.catalog.entity.CatalogCategory;
@@ -10,6 +11,7 @@ import com.henfon.shop.catalog.entity.CatalogSku;
 import com.henfon.shop.catalog.service.CatalogCategoryService;
 import com.henfon.shop.catalog.service.CatalogProductService;
 import com.henfon.shop.catalog.service.CatalogSkuService;
+import com.henfon.shop.catalog.service.CatalogProductContentService;
 import com.henfon.shop.common.api.ApiResponse;
 import jakarta.validation.Valid;
 import org.slf4j.MDC;
@@ -24,6 +26,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * 商品目录管理接口。
@@ -38,21 +41,26 @@ public class CatalogAdminController {
     private final CatalogProductService catalogProductService;
     private final CatalogCategoryService catalogCategoryService;
     private final CatalogSkuService catalogSkuService;
+    private final CatalogProductContentService catalogProductContentService;
 
     /**
      * 创建商品目录管理控制器。
      *
      * @param catalogProductService 商品服务
      * @param catalogCategoryService 类目服务
+     * @param catalogSkuService SKU服务
+     * @param catalogProductContentService 商品内容服务
      * @author Henfon
      * @date 2026-08-29
      */
     public CatalogAdminController(CatalogProductService catalogProductService,
                                   CatalogCategoryService catalogCategoryService,
-                                  CatalogSkuService catalogSkuService) {
+                                  CatalogSkuService catalogSkuService,
+                                  CatalogProductContentService catalogProductContentService) {
         this.catalogProductService = catalogProductService;
         this.catalogCategoryService = catalogCategoryService;
         this.catalogSkuService = catalogSkuService;
+        this.catalogProductContentService = catalogProductContentService;
     }
 
     /**
@@ -171,6 +179,37 @@ public class CatalogAdminController {
     public ApiResponse<Void> deleteSku(@PathVariable Long productId, @PathVariable Long skuId) {
         catalogSkuService.delete(productId, skuId);
         return ApiResponse.success(requestId());
+    }
+
+    /**
+     * 查询商品卖点、参数和媒体内容。
+     *
+     * @param productId 商品ID
+     * @return 商品内容聚合数据
+     * @author Henfon
+     * @date 2026-08-31
+     */
+    @GetMapping("/products/{productId}/content")
+    @PreAuthorize("hasAuthority('catalog:product:query')")
+    public ApiResponse<Map<String, Object>> getProductContent(@PathVariable Long productId) {
+        return ApiResponse.success(catalogProductContentService.getContent(productId), requestId());
+    }
+
+    /**
+     * 覆盖保存商品卖点、参数和媒体内容。
+     *
+     * @param productId 商品ID
+     * @param request 内容保存请求
+     * @return 保存后的商品内容聚合数据
+     * @author Henfon
+     * @date 2026-08-31
+     */
+    @org.springframework.web.bind.annotation.PutMapping("/products/{productId}/content")
+    @PreAuthorize("hasAuthority('catalog:product:query')")
+    public ApiResponse<Map<String, Object>> saveProductContent(
+            @PathVariable Long productId,
+            @Valid @RequestBody CatalogProductContentSaveRequest request) {
+        return ApiResponse.success(catalogProductContentService.replaceContent(productId, request), requestId());
     }
 
     /**
