@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
 import java.util.Map;
+import java.math.BigDecimal;
 
 /**
  * 门户商品查询接口。
@@ -46,6 +47,9 @@ public class CatalogPortalController {
      *
      * @param keyword 搜索关键字
      * @param categoryId 类目ID
+     * @param minPrice 最低价格
+     * @param maxPrice 最高价格
+     * @param sortBy 排序方式：featured、newest、sales、price-asc、price-desc
      * @param current 页码
      * @param size 页大小
      * @return 商品分页数据
@@ -55,9 +59,12 @@ public class CatalogPortalController {
     @GetMapping("/products")
     public ApiResponse<IPage<CatalogProduct>> products(@RequestParam(required = false) String keyword,
                                                         @RequestParam(required = false) Long categoryId,
+                                                        @RequestParam(required = false) BigDecimal minPrice,
+                                                        @RequestParam(required = false) BigDecimal maxPrice,
+                                                        @RequestParam(required = false) String sortBy,
                                                         @RequestParam(defaultValue = "1") long current,
                                                         @RequestParam(defaultValue = "20") long size) {
-        return ApiResponse.success(portalService.page(keyword, categoryId, current, size), MDC.get("requestId"));
+        return ApiResponse.success(portalService.page(keyword, categoryId, minPrice, maxPrice, sortBy, current, size), MDC.get("requestId"));
     }
 
     /**

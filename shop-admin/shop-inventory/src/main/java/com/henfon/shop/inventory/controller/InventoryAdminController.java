@@ -4,9 +4,12 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.henfon.shop.common.api.ApiResponse;
 import com.henfon.shop.inventory.dto.InventoryAdjustRequest;
 import com.henfon.shop.inventory.dto.InventoryStockSaveRequest;
+import com.henfon.shop.inventory.dto.InventoryWarehouseSaveRequest;
 import com.henfon.shop.inventory.entity.InventoryStock;
+import com.henfon.shop.inventory.entity.InventoryWarehouse;
 import com.henfon.shop.inventory.service.InventoryStockService;
 import com.henfon.shop.inventory.service.InventoryReservationExpiryService;
+import com.henfon.shop.inventory.service.InventoryWarehouseService;
 import jakarta.validation.Valid;
 import org.slf4j.MDC;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -32,18 +35,102 @@ public class InventoryAdminController {
 
     private final InventoryStockService inventoryStockService;
     private final InventoryReservationExpiryService expiryService;
+    private final InventoryWarehouseService warehouseService;
 
     /**
      * 创建库存管理控制器。
      *
      * @param inventoryStockService 库存应用服务
+     * @param expiryService 预占过期补偿服务
+     * @param warehouseService 仓库基础管理服务
      * @author Henfon
-     * @date 2026-08-30
+     * @date 2026-08-31
      */
     public InventoryAdminController(InventoryStockService inventoryStockService,
-                                    InventoryReservationExpiryService expiryService) {
+                                    InventoryReservationExpiryService expiryService,
+                                    InventoryWarehouseService warehouseService) {
         this.inventoryStockService = inventoryStockService;
         this.expiryService = expiryService;
+        this.warehouseService = warehouseService;
+    }
+
+    /**
+     * 分页查询仓库。
+     *
+     * @param keyword 仓库编码或名称关键字
+     * @param status 仓库状态
+     * @param current 当前页
+     * @param size 页大小
+     * @return 仓库分页数据
+     * @author Henfon
+     * @date 2026-08-31
+     */
+    @GetMapping("/warehouses")
+    @PreAuthorize("hasAuthority('inventory:warehouse:query')")
+    public ApiResponse<IPage<InventoryWarehouse>> pageWarehouses(
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) Integer status,
+            @RequestParam(defaultValue = "1") long current,
+            @RequestParam(defaultValue = "20") long size) {
+        return ApiResponse.success(warehouseService.page(keyword, status, current, size), MDC.get("requestId"));
+    }
+
+    /**
+     * 查询启用仓库列表。
+     *
+     * @return 启用仓库列表
+     * @author Henfon
+     * @date 2026-08-31
+     */
+    @GetMapping("/warehouses/enabled")
+    @PreAuthorize("hasAuthority('inventory:warehouse:query')")
+    public ApiResponse<List<InventoryWarehouse>> listEnabledWarehouses() {
+        return ApiResponse.success(warehouseService.listEnabled(), MDC.get("requestId"));
+    }
+
+    /**
+     * 新增或编辑仓库。
+     *
+     * @param request 仓库保存请求
+     * @return 仓库ID
+     * @author Henfon
+     * @date 2026-08-31
+     */
+    @org.springframework.web.bind.annotation.PostMapping("/warehouses")
+    @PreAuthorize("hasAuthority('inventory:warehouse:save')")
+    public ApiResponse<Long> saveWarehouse(@Valid @RequestBody InventoryWarehouseSaveRequest request) {
+        return ApiResponse.success(warehouseService.save(request), MDC.get("requestId"));
+    }
+
+    /**
+     * 修改仓库启停状态。
+     *
+     * @param id 仓库ID
+     * @param status 目标状态
+     * @return 空响应
+     * @author Henfon
+     * @date 2026-08-31
+     */
+    @PutMapping("/warehouses/{id}/status")
+    @PreAuthorize("hasAuthority('inventory:warehouse:status')")
+    public ApiResponse<Void> updateWarehouseStatus(@PathVariable Long id, @RequestParam Integer status) {
+        warehouseService.updateStatus(id, status);
+        return ApiResponse.success(MDC.get("requestId"));
+    }
+
+    /**
+     * 逻辑删除仓库。
+     *
+     * @param id 仓库ID
+     * @return 空响应
+     * @author Henfon
+     * @date 2026-08-31
+     */
+    @org.springframework.web.bind.annotation.DeleteMapping("/warehouses/{id}")
+    @PreAuthorize("hasAuthority('inventory:warehouse:delete')")
+    public ApiResponse<Void> deleteWarehouse(@PathVariable Long id) {
+        warehouseService.delete(id);
+        return ApiResponse.success(MDC.get("requestId"));
     }
 
     /**

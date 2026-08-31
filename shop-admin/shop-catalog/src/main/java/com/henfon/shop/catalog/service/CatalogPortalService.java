@@ -13,9 +13,11 @@ import com.henfon.shop.catalog.mapper.CatalogProductMapper;
 import com.henfon.shop.catalog.mapper.CatalogProductMediaMapper;
 import com.henfon.shop.catalog.mapper.CatalogProductSpecMapper;
 import com.henfon.shop.catalog.mapper.CatalogSkuMapper;
+import com.henfon.shop.common.exception.BusinessException;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
+import java.math.BigDecimal;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -62,22 +64,43 @@ public class CatalogPortalService {
      *
      * @param keyword 搜索关键字
      * @param categoryId 类目ID
+     * @param minPrice 最低价格
+     * @param maxPrice 最高价格
+     * @param sortBy 排序方式
      * @param current 页码
      * @param size 页大小
      * @return 商品分页结果
      * @author Henfon
      * @date 2026-08-29
      */
-    public IPage<CatalogProduct> page(String keyword, Long categoryId, long current, long size) {
+    public IPage<CatalogProduct> page(String keyword, Long categoryId, BigDecimal minPrice,
+                                      BigDecimal maxPrice, String sortBy, long current, long size) {
+        if ((minPrice != null && minPrice.signum() < 0) || (maxPrice != null && maxPrice.signum() < 0)) {
+            throw new BusinessException("CATALOG_PRICE_RANGE_INVALID", "价格区间不能为负数");
+        }
+        if (minPrice != null && maxPrice != null && minPrice.compareTo(maxPrice) > 0) {
+            throw new BusinessException("CATALOG_PRICE_RANGE_INVALID", "最低价格不能高于最高价格");
+        }
         long safeCurrent = Math.max(current, 1);
         long safeSize = Math.min(Math.max(size, 1), 100);
         LambdaQueryWrapper<CatalogProduct> wrapper = new LambdaQueryWrapper<CatalogProduct>()
                 .eq(CatalogProduct::getStatus, 1)
                 .eq(categoryId != null, CatalogProduct::getCategoryId, categoryId)
+                .ge(minPrice != null, CatalogProduct::getPrice, minPrice)
+                .le(maxPrice != null, CatalogProduct::getPrice, maxPrice)
                 .and(StringUtils.hasText(keyword), q -> q.like(CatalogProduct::getProductName, keyword)
                         .or().like(CatalogProduct::getProductCode, keyword)
-                        .or().like(CatalogProduct::getBrandName, keyword))
-                .orderByDesc(CatalogProduct::getCreatedAt);
+                        .or().like(CatalogProduct::getBrandName, keyword));
+        // 排序字段使用白名单映射，避免将前端参数直接拼接进SQL。
+        switch (sortBy == null ? "featured" : sortBy) {
+            case "price-asc" -> wrapper.orderByAsc(CatalogProduct::getPrice);
+            case "price-desc" -> wrapper.orderByDesc(CatalogProduct::getPrice);
+            case "sales" -> wrapper.orderByDesc(CatalogProduct::getSalesCount);
+            case "newest" -> wrapper.orderByDesc(CatalogProduct::getCreatedAt);
+            default -> wrapper.orderByDesc(CatalogProduct::getSalesCount)
+                    .orderByDesc(CatalogProduct::getCreatedAt);
+        }
+        wrapper.orderByAsc(CatalogProduct::getId);
         return productMapper.selectPage(new Page<>(safeCurrent, safeSize), wrapper);
     }
 

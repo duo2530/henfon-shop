@@ -92,6 +92,22 @@ public class TradePortalController {
     }
 
     /**
+     * 查询门户会员订单物流轨迹。
+     *
+     * @param orderId 订单ID
+     * @param authentication 当前会员认证信息
+     * @return 物流轨迹列表
+     * @author Henfon
+     * @date 2026-08-31
+     */
+    @GetMapping("/orders/{orderId}/logistics")
+    public ApiResponse<List<TradeOrderLogistics>> logistics(@PathVariable Long orderId,
+                                                            Authentication authentication) {
+        Long memberId = MemberPrincipalResolver.requireMemberId(authentication, null);
+        return ApiResponse.success(orderService.listMemberLogistics(memberId, orderId), MDC.get("requestId"));
+    }
+
+    /**
      * 创建门户订单。
      *
      * @param request 订单创建请求

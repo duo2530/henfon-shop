@@ -307,6 +307,20 @@ export interface BackendTradeOrder {
   completedAt?: string;
 }
 
+export interface BackendTradeOrderLogistics {
+  id: number;
+  orderId: number;
+  trackingNo: string;
+  logisticsCompany: string;
+  logisticsStatus?: string;
+  eventTime: string;
+  eventDescription: string;
+  eventLocation?: string;
+  sortNo: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 export interface BackendInventoryStock {
   id: number;
   warehouseId: number;
@@ -318,6 +332,18 @@ export interface BackendInventoryStock {
   safetyStock: number;
   updatedAt?: string;
   remark?: string;
+}
+
+export interface BackendInventoryWarehouse {
+  id: number;
+  warehouseCode: string;
+  warehouseName: string;
+  status: number;
+  isDefault: number;
+  createdAt?: string;
+  updatedAt?: string;
+  remark?: string;
+  version?: number;
 }
 
 export interface BackendStorageUploadResult {
@@ -340,6 +366,18 @@ export interface BackendTradeAfterSale {
   createdAt?: string;
   updatedAt?: string;
   remark?: string;
+}
+
+export interface BackendReportingDashboardMetrics {
+  date: string;
+  todayOrderCount: number;
+  todaySalesAmount: number;
+  todayProductCount: number;
+  todayMemberCount: number;
+  totalOrderCount: number;
+  totalSalesAmount: number;
+  totalProductCount: number;
+  totalMemberCount: number;
 }
 
 interface ApiEnvelope<T> {
@@ -597,6 +635,37 @@ export function listInventoryWarnings(): Promise<BackendInventoryStock[]> {
   return request<BackendInventoryStock[]>('/api/admin/inventory/stocks/warnings');
 }
 
+export function listInventoryWarehouses(params: { current?: number; size?: number; keyword?: string; status?: number } = {}): Promise<BackendPage<BackendInventoryWarehouse>> {
+  const query = new URLSearchParams({ current: String(params.current || 1), size: String(params.size || 200) });
+  if (params.keyword) query.set('keyword', params.keyword);
+  if (params.status !== undefined) query.set('status', String(params.status));
+  return request<BackendPage<BackendInventoryWarehouse>>(`/api/admin/inventory/warehouses?${query.toString()}`);
+}
+
+export function listEnabledInventoryWarehouses(): Promise<BackendInventoryWarehouse[]> {
+  return request<BackendInventoryWarehouse[]>('/api/admin/inventory/warehouses/enabled');
+}
+
+export function saveInventoryWarehouse(payload: {
+  id?: number;
+  warehouseCode: string;
+  warehouseName: string;
+  status: number;
+  isDefault: number;
+  remark?: string;
+  version?: number;
+}): Promise<number> {
+  return request<number>('/api/admin/inventory/warehouses', { method: 'POST', body: JSON.stringify(payload) });
+}
+
+export function updateInventoryWarehouseStatus(id: number, status: number): Promise<void> {
+  return request<void>(`/api/admin/inventory/warehouses/${id}/status?status=${status}`, { method: 'PUT' });
+}
+
+export function deleteInventoryWarehouse(id: number): Promise<void> {
+  return request<void>(`/api/admin/inventory/warehouses/${id}`, { method: 'DELETE' });
+}
+
 export async function uploadStorageFile(file: File): Promise<BackendStorageUploadResult> {
   const formData = new FormData();
   formData.append('file', file);
@@ -705,8 +774,60 @@ export function listTradeOrders(params: { current?: number; size?: number; keywo
   return request<BackendPage<BackendTradeOrder>>(`/api/admin/trade/orders?${query.toString()}`);
 }
 
+export function getReportingDashboardMetrics(date?: string): Promise<BackendReportingDashboardMetrics> {
+  const query = date ? `?date=${encodeURIComponent(date)}` : '';
+  return request<BackendReportingDashboardMetrics>(`/api/admin/reporting/overview${query}`);
+}
+
 export function shipTradeOrder(orderId: number, payload: { logisticsCompany: string; trackingNo: string }): Promise<void> {
   return request<void>(`/api/admin/trade/orders/${orderId}/ship`, { method: 'PUT', body: JSON.stringify(payload) });
+}
+
+export function listTradeOrderLogistics(orderId: number): Promise<BackendTradeOrderLogistics[]> {
+  return request<BackendTradeOrderLogistics[]>(`/api/admin/trade/orders/${orderId}/logistics`);
+}
+
+export function upsertTradeOrderLogistics(orderId: number, payload: {
+  id?: number;
+  logisticsCompany: string;
+  trackingNo: string;
+  logisticsStatus?: string;
+  eventTime: string;
+  eventDescription: string;
+  eventLocation?: string;
+  sortNo?: number;
+}): Promise<BackendTradeOrderLogistics> {
+  return request<BackendTradeOrderLogistics>(`/api/admin/trade/orders/${orderId}/logistics`, {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+}
+
+export function appendTradeOrderLogistics(orderId: number, payload: {
+  logisticsCompany: string;
+  trackingNo: string;
+  logisticsStatus?: string;
+  eventTime: string;
+  eventDescription: string;
+  eventLocation?: string;
+  sortNo?: number;
+}): Promise<BackendTradeOrderLogistics> {
+  return upsertTradeOrderLogistics(orderId, payload);
+}
+
+export function updateTradeOrderLogistics(orderId: number, logisticsId: number, payload: {
+  logisticsCompany: string;
+  trackingNo: string;
+  logisticsStatus?: string;
+  eventTime: string;
+  eventDescription: string;
+  eventLocation?: string;
+  sortNo?: number;
+}): Promise<BackendTradeOrderLogistics> {
+  return request<BackendTradeOrderLogistics>(`/api/admin/trade/orders/${orderId}/logistics/${logisticsId}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload)
+  });
 }
 
 export function cancelTradeOrder(orderId: number, reason?: string): Promise<void> {

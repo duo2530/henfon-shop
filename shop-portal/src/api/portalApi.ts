@@ -203,8 +203,24 @@ function buildSkuVariants(skus: ProductSku[], basePrice: number): ProductVariant
   }));
 }
 
-export async function fetchPortalProducts(keyword?: string): Promise<Product[]> {
-  const query = keyword ? `?keyword=${encodeURIComponent(keyword)}` : '';
+export async function fetchPortalProducts(options: {
+  keyword?: string;
+  categoryId?: number;
+  minPrice?: number;
+  maxPrice?: number;
+  sortBy?: 'featured' | 'sales' | 'price-asc' | 'price-desc' | 'newest';
+  current?: number;
+  size?: number;
+} = {}): Promise<Product[]> {
+  const params = new URLSearchParams();
+  if (options.keyword) params.set('keyword', options.keyword);
+  if (options.categoryId !== undefined) params.set('categoryId', String(options.categoryId));
+  if (options.minPrice !== undefined) params.set('minPrice', String(options.minPrice));
+  if (options.maxPrice !== undefined) params.set('maxPrice', String(options.maxPrice));
+  if (options.sortBy) params.set('sortBy', options.sortBy);
+  if (options.current !== undefined) params.set('current', String(options.current));
+  if (options.size !== undefined) params.set('size', String(options.size));
+  const query = params.toString() ? `?${params.toString()}` : '';
   const page = await request<ProductPage>(`/api/portal/catalog/products${query}`);
   return (page.records || []).map(mapProduct);
 }
@@ -465,6 +481,16 @@ export async function fetchPortalOrders(memberId: number): Promise<PortalOrderRe
  */
 export async function fetchPortalOrderDetail(orderId: number): Promise<PortalOrderDetailRecord> {
   return request<PortalOrderDetailRecord>(`/api/portal/trade/orders/${orderId}`);
+}
+
+/**
+ * 查询门户会员订单物流轨迹。
+ *
+ * @param orderId 订单ID
+ * @return 物流轨迹列表
+ */
+export async function fetchPortalOrderLogistics(orderId: number): Promise<PortalOrderLogisticsRecord[]> {
+  return request<PortalOrderLogisticsRecord[]>(`/api/portal/trade/orders/${orderId}/logistics`);
 }
 
 export interface PortalOrderCreatePayload {

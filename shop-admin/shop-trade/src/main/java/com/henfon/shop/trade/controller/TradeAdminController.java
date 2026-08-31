@@ -9,12 +9,14 @@ import com.henfon.shop.trade.dto.TradeOrderShipRequest;
 import com.henfon.shop.trade.dto.TradeOrderCancelRequest;
 import com.henfon.shop.trade.dto.TradeOrderRemarkRequest;
 import com.henfon.shop.trade.dto.TradeOrderRefundRequest;
+import com.henfon.shop.trade.dto.TradeOrderLogisticsRequest;
 import jakarta.validation.Valid;
 import com.henfon.shop.trade.service.TradeOrderService;
 import org.slf4j.MDC;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -93,6 +95,40 @@ public class TradeAdminController {
     @PreAuthorize("hasAuthority('trade:order:query')")
     public ApiResponse<List<TradeOrderLogistics>> listLogistics(@PathVariable Long orderId) {
         return ApiResponse.success(tradeOrderService.listLogistics(orderId), MDC.get("requestId"));
+    }
+
+    /**
+     * 追加或更新订单物流节点。
+     *
+     * @param orderId 订单ID
+     * @param request 物流节点信息
+     * @return 保存后的物流节点
+     * @author Henfon
+     * @date 2026-08-31
+     */
+    @PostMapping("/orders/{orderId}/logistics")
+    @PreAuthorize("hasAuthority('trade:order:ship')")
+    public ApiResponse<TradeOrderLogistics> upsertLogistics(@PathVariable Long orderId,
+                                                            @Valid @RequestBody TradeOrderLogisticsRequest request) {
+        return ApiResponse.success(tradeOrderService.upsertLogistics(orderId, request), MDC.get("requestId"));
+    }
+
+    /**
+     * 更新指定订单物流节点。
+     *
+     * @param orderId 订单ID
+     * @param logisticsId 物流节点ID
+     * @param request 物流节点信息
+     * @return 更新后的物流节点
+     * @author Henfon
+     * @date 2026-08-31
+     */
+    @PutMapping("/orders/{orderId}/logistics/{logisticsId}")
+    @PreAuthorize("hasAuthority('trade:order:ship')")
+    public ApiResponse<TradeOrderLogistics> updateLogistics(@PathVariable Long orderId,
+                                                            @PathVariable Long logisticsId,
+                                                            @Valid @RequestBody TradeOrderLogisticsRequest request) {
+        return ApiResponse.success(tradeOrderService.updateLogistics(orderId, logisticsId, request), MDC.get("requestId"));
     }
 
     /**

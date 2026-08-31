@@ -1,14 +1,12 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useAdmin } from '../../context/AdminContext';
 import { Order } from '../../types';
+import { BackendReportingDashboardMetrics, getReportingDashboardMetrics } from '../../api/adminApi';
 import { SalesTrendChart } from './SalesTrendChart';
 import { 
-  TrendingUp, 
-  TrendingDown, 
   Package, 
   ShoppingBag, 
   Users, 
-  AlertCircle,
   Eye,
   Undo2,
   Mail,
@@ -19,14 +17,45 @@ import {
 } from 'lucide-react';
 
 export const DashboardView: React.FC = () => {
-  const { orders, products, users, todos, resolveTodo, setCurrentTab } = useAdmin();
+  const { orders, todos, resolveTodo, setCurrentTab } = useAdmin();
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
+  const [metrics, setMetrics] = useState<BackendReportingDashboardMetrics | null>(null);
+  const [metricsLoading, setMetricsLoading] = useState(true);
+  const [metricsError, setMetricsError] = useState<string | null>(null);
+  const [metricsReloadKey, setMetricsReloadKey] = useState(0);
 
-  // Key KPI values
-  const totalSalesToday = 45231;
-  const pendingOrdersCount = orders.filter((o) => o.status === 'pending_shipment' || o.status === 'pending_payment').length + 124;
-  const totalUsersCount = 12450;
-  const lowStockCount = products.filter((p) => p.stock <= 10).length + 22;
+  useEffect(() => {
+    let cancelled = false;
+    setMetricsLoading(true);
+    setMetricsError(null);
+    getReportingDashboardMetrics()
+      .then((result) => {
+        if (!cancelled) {
+          setMetrics(result);
+        }
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) {
+          setMetrics(null);
+          setMetricsError(error instanceof Error ? error.message : '经营指标加载失败');
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setMetricsLoading(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [metricsReloadKey]);
+
+  const formatCount = (value?: number) => (metricsLoading || metricsError || value === undefined ? '—' : value.toLocaleString('zh-CN'));
+  const formatAmount = (value?: number) => (
+    metricsLoading || metricsError || value === undefined
+      ? '—'
+      : `¥${value.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+  );
 
   // Recent 5 orders
   const recentOrders = orders.slice(0, 5);
@@ -59,20 +88,17 @@ export const DashboardView: React.FC = () => {
           </div>
           <div className="flex items-baseline justify-between mt-1">
             <span className="text-2xl md:text-3xl font-bold text-[#191C1E]">
-              ¥{totalSalesToday.toLocaleString()}
+              {formatAmount(metrics?.todaySalesAmount)}
             </span>
-            <span className="inline-flex items-center text-xs font-medium text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded">
-              <TrendingUp className="w-3.5 h-3.5 mr-1" />
-              +12.5%
-            </span>
+            <span className="text-xs font-medium text-gray-500">接口实时数据</span>
           </div>
         </div>
 
-        {/* Metric 2: 待处理订单 */}
+        {/* Metric 2: 今日订单数 */}
         <div className="bg-white rounded-xl p-5 border border-[#E2E8F0] shadow-xs hover:shadow-md transition-shadow">
           <div className="flex justify-between items-start mb-2">
             <span className="text-xs font-semibold uppercase tracking-wider text-[#434655]">
-              待处理订单
+              今日订单数
             </span>
             <div className="w-8 h-8 rounded-lg bg-orange-50 text-orange-600 flex items-center justify-center">
               <Package className="w-4 h-4" />
@@ -80,12 +106,9 @@ export const DashboardView: React.FC = () => {
           </div>
           <div className="flex items-baseline justify-between mt-1">
             <span className="text-2xl md:text-3xl font-bold text-[#191C1E]">
-              {pendingOrdersCount}
+              {formatCount(metrics?.todayOrderCount)}
             </span>
-            <span className="inline-flex items-center text-xs font-medium text-red-600 bg-red-50 px-2 py-0.5 rounded">
-              <TrendingDown className="w-3.5 h-3.5 mr-1" />
-              -3.2%
-            </span>
+            <span className="text-xs font-medium text-gray-500">按创建日期统计</span>
           </div>
         </div>
 
@@ -101,35 +124,48 @@ export const DashboardView: React.FC = () => {
           </div>
           <div className="flex items-baseline justify-between mt-1">
             <span className="text-2xl md:text-3xl font-bold text-[#191C1E]">
-              {totalUsersCount.toLocaleString()}
+              {formatCount(metrics?.totalMemberCount)}
             </span>
-            <span className="inline-flex items-center text-xs font-medium text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded">
-              <TrendingUp className="w-3.5 h-3.5 mr-1" />
-              +5.1%
-            </span>
+            <span className="text-xs font-medium text-gray-500">累计有效会员</span>
           </div>
         </div>
 
-        {/* Metric 4: 库存预警 */}
+        {/* Metric 4: 商品总数 */}
         <div className="bg-white rounded-xl p-5 border border-[#E2E8F0] shadow-xs hover:shadow-md transition-shadow">
           <div className="flex justify-between items-start mb-2">
             <span className="text-xs font-semibold uppercase tracking-wider text-[#434655]">
-              库存预警
+              商品总数
             </span>
             <div className="w-8 h-8 rounded-lg bg-red-50 text-red-600 flex items-center justify-center">
-              <AlertCircle className="w-4 h-4" />
+              <Package className="w-4 h-4" />
             </div>
           </div>
           <div className="flex items-baseline justify-between mt-1">
             <span className="text-2xl md:text-3xl font-bold text-[#DC2626]">
-              {lowStockCount}
+              {formatCount(metrics?.totalProductCount)}
             </span>
-            <span className="text-xs font-medium text-gray-500">
-              件商品缺货或告急
-            </span>
+            <span className="text-xs font-medium text-gray-500">累计有效商品</span>
           </div>
         </div>
       </div>
+
+      {metricsError && (
+        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 flex items-center justify-between gap-3" role="alert">
+          <span>经营指标加载失败：{metricsError}</span>
+          <button
+            type="button"
+            onClick={() => setMetricsReloadKey((value) => value + 1)}
+            className="shrink-0 rounded-md border border-red-300 bg-white px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-100"
+          >
+            重试
+          </button>
+        </div>
+      )}
+      {!metricsLoading && !metricsError && !metrics && (
+        <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500" role="status">
+          暂无经营指标数据
+        </div>
+      )}
 
       {/* Middle Section: Chart & To-do List */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

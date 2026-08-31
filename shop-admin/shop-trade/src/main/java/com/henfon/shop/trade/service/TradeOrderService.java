@@ -14,6 +14,7 @@ import com.henfon.shop.trade.dto.TradeOrderShipRequest;
 import com.henfon.shop.trade.dto.TradeOrderCancelRequest;
 import com.henfon.shop.trade.dto.TradeOrderRemarkRequest;
 import com.henfon.shop.trade.dto.TradeOrderRefundRequest;
+import com.henfon.shop.trade.dto.TradeOrderLogisticsRequest;
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.henfon.shop.common.exception.BusinessException;
 import com.henfon.shop.inventory.dto.InventoryReservationItem;
@@ -130,6 +131,147 @@ public class TradeOrderService {
                 .eq(TradeOrderLogistics::getOrderId, orderId)
                 .orderByAsc(TradeOrderLogistics::getSortNo)
                 .orderByAsc(TradeOrderLogistics::getEventTime));
+    }
+
+    /**
+     * 查询会员自己的订单物流轨迹。
+     *
+     * @param memberId 会员 ID
+     * @param orderId 订单 ID
+     * @return 物流轨迹列表
+     * @author Henfon
+     * @date 2026-08-31
+     */
+    public List<TradeOrderLogistics> listMemberLogistics(Long memberId, Long orderId) {
+        // 先校验订单归属，再读取轨迹，避免通过订单 ID 越权查看物流信息。
+        requireMemberOrder(memberId, orderId);
+        return listLogistics(orderId);
+    }
+
+    /**
+     * 追加或更新后台订单物流节点。
+     *
+     * <p>未携带节点 ID 时按订单、运单号、事件时间和描述执行幂等追加；携带节点 ID 时仅允许更新当前订单的既有节点。</p>
+     *
+     * @param orderId 订单 ID
+     * @param request 物流节点请求
+     * @return 新增或更新后的物流节点
+     * @author Henfon
+     * @date 2026-08-31
+     */
+    @Transactional
+    public TradeOrderLogistics upsertLogistics(Long orderId, TradeOrderLogisticsRequest request) {
+        // 订单不存在、尚未发货或运单信息不一致时拒绝写入，避免轨迹串单。
+        TradeOrder order = requireOrder(orderId);
+        String logisticsCompany = request.logisticsCompany().trim();
+        String trackingNo = request.trackingNo().trim();
+        if (!StringUtils.hasText(order.getLogisticsCompany())
+                || !StringUtils.hasText(order.getTrackingNo())
+                || !logisticsCompany.equals(order.getLogisticsCompany().trim())
+                || !trackingNo.equals(order.getTrackingNo().trim())) {
+            throw new BusinessException("TRADE_LOGISTICS_ORDER_MISMATCH", "物流公司或运单号与订单不匹配");
+        }
+
+        String description = request.eventDescription().trim();
+        TradeOrderLogistics logistics;
+        if (request.id() != null) {
+            logistics = tradeOrderLogisticsMapper.selectOne(new LambdaQueryWrapper<TradeOrderLogistics>()
+                    .eq(TradeOrderLogistics::getId, request.id())
+                    .eq(TradeOrderLogistics::getOrderId, orderId)
+                    .last("LIMIT 1"));
+            if (logistics == null) {
+                throw new BusinessException("TRADE_LOGISTICS_NOT_FOUND", "物流节点不存在或不属于该订单");
+            }
+        } else {
+            // 第三方重复回调直接返回原节点，保证同一事件不会重复展示。
+            logistics = tradeOrderLogisticsMapper.selectOne(new LambdaQueryWrapper<TradeOrderLogistics>()
+                    .eq(TradeOrderLogistics::getOrderId, orderId)
+                    .eq(TradeOrderLogistics::getTrackingNo, trackingNo)
+                    .eq(TradeOrderLogistics::getEventTime, request.eventTime())
+                    .eq(TradeOrderLogistics::getEventDescription, description)
+                    .last("LIMIT 1"));
+            if (logistics == null) {
+                logistics = new TradeOrderLogistics();
+                logistics.setOrderId(orderId);
+                logistics.setTrackingNo(trackingNo);
+                logistics.setLogisticsCompany(logisticsCompany);
+                logistics.setEventTime(request.eventTime());
+                logistics.setEventDescription(description);
+                logistics.setSortNo(request.sortNo() == null ? nextLogisticsSortNo(orderId) : Math.max(request.sortNo(), 0));
+                logistics.setLogisticsStatus(normalizeOptional(request.logisticsStatus()));
+                logistics.setEventLocation(normalizeOptional(request.eventLocation()));
+                tradeOrderLogisticsMapper.insert(logistics);
+                return logistics;
+            }
+            return logistics;
+        }
+
+        logistics.setTrackingNo(trackingNo);
+        logistics.setLogisticsCompany(logisticsCompany);
+        logistics.setLogisticsStatus(normalizeOptional(request.logisticsStatus()));
+        logistics.setEventTime(request.eventTime());
+        logistics.setEventDescription(description);
+        logistics.setEventLocation(normalizeOptional(request.eventLocation()));
+        if (request.sortNo() != null) {
+            logistics.setSortNo(Math.max(request.sortNo(), 0));
+        }
+        if (tradeOrderLogisticsMapper.updateById(logistics) == 0) {
+            throw new BusinessException("TRADE_LOGISTICS_CONCURRENT_UPDATE", "物流节点已被其他操作修改，请刷新后重试");
+        }
+        return logistics;
+    }
+
+    /**
+     * 按节点 ID 更新订单物流节点。
+     *
+     * @param orderId 订单 ID
+     * @param logisticsId 物流节点 ID
+     * @param request 物流节点请求
+     * @return 更新后的物流节点
+     * @author Henfon
+     * @date 2026-08-31
+     */
+    @Transactional
+    public TradeOrderLogistics updateLogistics(Long orderId, Long logisticsId, TradeOrderLogisticsRequest request) {
+        // 路径中的节点 ID 优先，避免客户端通过请求体修改其他节点。
+        TradeOrderLogisticsRequest updateRequest = new TradeOrderLogisticsRequest(
+                logisticsId,
+                request.logisticsCompany(),
+                request.trackingNo(),
+                request.logisticsStatus(),
+                request.eventTime(),
+                request.eventDescription(),
+                request.eventLocation(),
+                request.sortNo());
+        return upsertLogistics(orderId, updateRequest);
+    }
+
+    /**
+     * 计算订单物流节点的默认排序号。
+     *
+     * @param orderId 订单 ID
+     * @return 下一个排序号
+     * @author Henfon
+     * @date 2026-08-31
+     */
+    private int nextLogisticsSortNo(Long orderId) {
+        TradeOrderLogistics latest = tradeOrderLogisticsMapper.selectOne(new LambdaQueryWrapper<TradeOrderLogistics>()
+                .eq(TradeOrderLogistics::getOrderId, orderId)
+                .orderByDesc(TradeOrderLogistics::getSortNo)
+                .last("LIMIT 1"));
+        return latest == null || latest.getSortNo() == null ? 0 : latest.getSortNo() + 1;
+    }
+
+    /**
+     * 清理可选物流文本字段。
+     *
+     * @param value 原始文本
+     * @return 清理后的文本或空值
+     * @author Henfon
+     * @date 2026-08-31
+     */
+    private String normalizeOptional(String value) {
+        return StringUtils.hasText(value) ? value.trim() : null;
     }
 
     /**

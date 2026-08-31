@@ -276,6 +276,19 @@ public class IdentityDataInitializer implements ApplicationRunner {
             }
             menus.add(menu);
         }
+        // 仓库基础管理权限挂在仓储目录下，分别控制查询、保存、启停和删除操作。
+        String[][] warehouseButtons = {
+                {"仓库查询", "inventory:warehouse:query"}, {"仓库保存", "inventory:warehouse:save"},
+                {"仓库启停", "inventory:warehouse:status"}, {"仓库删除", "inventory:warehouse:delete"}
+        };
+        for (String[] button : warehouseButtons) {
+            SysMenu menu = ensureMenu(button[0], "BUTTON", button[1], null, 101);
+            if (!inventory.getId().equals(menu.getParentId())) {
+                menu.setParentId(inventory.getId());
+                sysMenuMapper.updateById(menu);
+            }
+            menus.add(menu);
+        }
         return menus;
     }
 
