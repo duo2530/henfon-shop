@@ -1544,16 +1544,28 @@ export default function App() {
     const memberId = resolveMemberId(currentUser);
     const numericAddressId = Number(addressId);
     if (!memberId || !Number.isFinite(numericAddressId)) return;
-    await deletePortalAddress(memberId, numericAddressId);
-    setMemberAddresses((previous) => previous.filter((item) => item.id !== addressId));
+    try {
+      await deletePortalAddress(memberId, numericAddressId);
+      setMemberAddresses((previous) => previous.filter((item) => item.id !== addressId));
+      showToast('收货地址已删除', 'success');
+    } catch (error) {
+      // 接口失败时保留原地址，避免本地状态与服务端不一致。
+      showToast(error instanceof Error ? error.message : '删除地址失败，请稍后重试', 'error');
+    }
   };
 
   const handleSetDefaultAddress = async (addressId: string) => {
     const memberId = resolveMemberId(currentUser);
     const numericAddressId = Number(addressId);
     if (!memberId || !Number.isFinite(numericAddressId)) return;
-    await setDefaultPortalAddress(memberId, numericAddressId);
-    setMemberAddresses((previous) => previous.map((item) => ({ ...item, isDefault: item.id === addressId })));
+    try {
+      await setDefaultPortalAddress(memberId, numericAddressId);
+      setMemberAddresses((previous) => previous.map((item) => ({ ...item, isDefault: item.id === addressId })));
+      showToast('默认地址已更新', 'success');
+    } catch (error) {
+      // 服务端拒绝时不更新本地默认标记，等待用户重试。
+      showToast(error instanceof Error ? error.message : '设置默认地址失败，请稍后重试', 'error');
+    }
   };
 
   // Filtered & Sorted Products
