@@ -27,7 +27,8 @@ public interface TradeEventOutboxNotificationMapper {
     @Select("SELECT id, event_id, event_type, payload FROM trade_event_outbox "
             + "WHERE is_deleted = 0 AND status = 1 AND event_type IN "
             + "('PAYMENT_SUCCEEDED', 'ORDER_SHIPPED', 'REFUND_SUCCEEDED', "
-            + "'AFTER_SALE_CREATED', 'AFTER_SALE_APPROVED', 'AFTER_SALE_REJECTED', 'AFTER_SALE_COMPLETED') "
+            + "'AFTER_SALE_CREATED', 'AFTER_SALE_APPROVED', 'AFTER_SALE_REJECTED', "
+            + "'AFTER_SALE_CANCELLED', 'AFTER_SALE_COMPLETED') "
             + "ORDER BY id DESC LIMIT #{limit}")
     List<TradeEventOutboxNotificationRecord> findNotificationEvents(@Param("limit") int limit);
 }

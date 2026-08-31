@@ -3,6 +3,7 @@ package com.henfon.shop.identity.controller;
 import com.henfon.shop.common.api.ApiResponse;
 import com.henfon.shop.identity.dto.AdminLoginRequest;
 import com.henfon.shop.identity.dto.AdminLoginResponse;
+import com.henfon.shop.identity.dto.AdminPasswordChangeRequest;
 import com.henfon.shop.identity.security.AuthenticatedUser;
 import com.henfon.shop.identity.entity.SysMenu;
 import com.henfon.shop.identity.mapper.SysUserRoleMapper;
@@ -57,6 +58,22 @@ public class AdminAuthController {
     public ApiResponse<AdminLoginResponse> login(@Valid @RequestBody AdminLoginRequest request,
                                                   HttpServletRequest servletRequest) {
         return ApiResponse.success(adminAuthService.login(request, servletRequest.getRemoteAddr()), requestId());
+    }
+
+    /**
+     * 修改当前管理员密码。
+     *
+     * @param request 密码修改请求
+     * @param authentication 当前认证信息
+     * @return 空响应
+     * @author Henfon
+     * @date 2026-08-31
+     */
+    @PostMapping("/password")
+    public ApiResponse<Void> changePassword(@Valid @RequestBody AdminPasswordChangeRequest request,
+                                             Authentication authentication) {
+        adminAuthService.changePassword(authentication, request);
+        return ApiResponse.success(requestId());
     }
 
     /**

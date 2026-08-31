@@ -59,6 +59,9 @@ shop:
       merchant-private-key-path: ${SHOP_WECHAT_PAY_MERCHANT_PRIVATE_KEY_PATH:}
       # platform-certificate-path：生产微信支付平台证书 wechatpay_*.pem 的绝对路径。
       platform-certificate-path: ${SHOP_WECHAT_PAY_PLATFORM_CERTIFICATE_PATH:}
+      # public-key-id/public-key-path：平台公钥验签模式的公钥 ID 和 PEM 路径；配置后可替代平台证书。
+      public-key-id: ${SHOP_WECHAT_PAY_PUBLIC_KEY_ID:}
+      public-key-path: ${SHOP_WECHAT_PAY_PUBLIC_KEY_PATH:}
       # notify-url：生产支付异步通知公网 HTTPS 地址，必须在商户平台配置并与此值一致。
       notify-url: ${SHOP_WECHAT_PAY_NOTIFY_URL:}
       # refund-notify-url：生产退款异步通知公网 HTTPS 地址。

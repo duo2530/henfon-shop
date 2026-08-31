@@ -56,8 +56,29 @@ interface CatalogSkuRecord {
   stock?: number;
 }
 
-interface ProductPage {
-  records: CatalogProductRecord[];
+interface ProductPageResponse {
+  records?: CatalogProductRecord[];
+  total?: number;
+  size?: number;
+  current?: number;
+  pages?: number;
+}
+
+/** 门户商品分页结果，记录已转换为前端商品模型。 */
+export interface PortalProductPage {
+  records: Product[];
+  total: number;
+  size: number;
+  current: number;
+  pages: number;
+}
+
+/** 门户启用类目记录，用于把门户筛选同步到服务端分页查询。 */
+export interface PortalCategoryRecord {
+  id: number;
+  categoryName: string;
+  categoryCode?: string;
+  status?: number;
 }
 
 interface MarketingCouponRecord {
@@ -279,6 +300,27 @@ export async function fetchPortalProducts(options: {
   current?: number;
   size?: number;
 } = {}): Promise<Product[]> {
+  const page = await fetchPortalProductsPage(options);
+  return page.records;
+}
+
+/**
+ * 分页查询门户商品。
+ *
+ * 服务端负责关键词、类目、价格区间和排序，页面使用返回的 total/pages 渲染分页控件。
+ *
+ * @param options 商品查询条件和分页参数
+ * @return 商品分页结果
+ */
+export async function fetchPortalProductsPage(options: {
+  keyword?: string;
+  categoryId?: number;
+  minPrice?: number;
+  maxPrice?: number;
+  sortBy?: 'featured' | 'sales' | 'price-asc' | 'price-desc' | 'newest';
+  current?: number;
+  size?: number;
+} = {}): Promise<PortalProductPage> {
   const params = new URLSearchParams();
   if (options.keyword) params.set('keyword', options.keyword);
   if (options.categoryId !== undefined) params.set('categoryId', String(options.categoryId));
@@ -288,8 +330,23 @@ export async function fetchPortalProducts(options: {
   if (options.current !== undefined) params.set('current', String(options.current));
   if (options.size !== undefined) params.set('size', String(options.size));
   const query = params.toString() ? `?${params.toString()}` : '';
-  const page = await request<ProductPage>(`/api/portal/catalog/products${query}`);
-  return (page.records || []).map(mapProduct);
+  const page = await request<ProductPageResponse>(`/api/portal/catalog/products${query}`);
+  const records = (page.records || []).map(mapProduct);
+  const size = Number(page.size || options.size || 20);
+  const current = Number(page.current || options.current || 1);
+  const total = Number(page.total || records.length);
+  return {
+    records,
+    total,
+    size,
+    current,
+    pages: Number(page.pages || Math.ceil(total / Math.max(size, 1))),
+  };
+}
+
+/** 查询门户启用类目。 */
+export async function fetchPortalCategories(): Promise<PortalCategoryRecord[]> {
+  return request<PortalCategoryRecord[]>('/api/portal/catalog/categories');
 }
 
 export async function loginPortalMember(account: string, password: string): Promise<MemberAuthResponse> {

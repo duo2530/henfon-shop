@@ -3,6 +3,7 @@ package com.henfon.shop.trade.service;
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.henfon.shop.integration.messaging.RocketMqTopics;
 import com.henfon.shop.trade.entity.TradeEventOutbox;
+import com.henfon.shop.trade.entity.TradeAfterSale;
 import com.henfon.shop.trade.entity.TradeOrder;
 import com.henfon.shop.trade.mapper.TradeEventOutboxMapper;
 import org.springframework.stereotype.Service;
@@ -53,6 +54,31 @@ public class TradeEventOutboxService {
         event.setAggregateId(String.valueOf(order.getId()));
         event.setTopic(topic);
         event.setPayload(buildOrderPayload(order));
+        event.setStatus(STATUS_PENDING);
+        event.setRetryCount(0);
+        event.setNextRetryAt(LocalDateTime.now());
+        outboxMapper.insert(event);
+    }
+
+    /**
+     * 在当前售后事务中记录售后领域事件。
+     *
+     * @param afterSale 售后单
+     * @param eventType 事件类型
+     * @param topic RocketMQ 主题
+     * @author Henfon
+     * @date 2026-08-31
+     */
+    @Transactional
+    public void recordAfterSaleEvent(TradeAfterSale afterSale, String eventType, String topic) {
+        // 售后状态与 Outbox 同事务提交，确保通知消费者不会观察到半成品状态。
+        TradeEventOutbox event = new TradeEventOutbox();
+        event.setEventId(IdWorker.getIdStr());
+        event.setEventType(eventType);
+        event.setAggregateType("TRADE_AFTER_SALE");
+        event.setAggregateId(String.valueOf(afterSale.getId()));
+        event.setTopic(topic);
+        event.setPayload(buildAfterSalePayload(afterSale));
         event.setStatus(STATUS_PENDING);
         event.setRetryCount(0);
         event.setNextRetryAt(LocalDateTime.now());
@@ -120,6 +146,26 @@ public class TradeEventOutboxService {
                 + ",\"memberId\":" + (order.getMemberId() == null ? "null" : order.getMemberId())
                 + ",\"orderStatus\":" + order.getOrderStatus()
                 + ",\"paymentStatus\":" + order.getPaymentStatus() + "}";
+    }
+
+    /**
+     * 构造售后事件载荷。
+     *
+     * @param afterSale 售后单实体
+     * @return JSON 字符串
+     * @author Henfon
+     * @date 2026-08-31
+     */
+    private String buildAfterSalePayload(TradeAfterSale afterSale) {
+        // 载荷仅保留通知和后续异步处理所需字段，不携带售后原因等可能含隐私的信息。
+        return "{\"afterSaleId\":" + afterSale.getId()
+                + ",\"afterSaleNo\":\"" + escape(afterSale.getAfterSaleNo()) + "\""
+                + ",\"orderId\":" + (afterSale.getOrderId() == null ? "null" : afterSale.getOrderId())
+                + ",\"memberId\":" + (afterSale.getMemberId() == null ? "null" : afterSale.getMemberId())
+                + ",\"afterSaleType\":" + (afterSale.getAfterSaleType() == null ? "null" : afterSale.getAfterSaleType())
+                + ",\"status\":" + (afterSale.getStatus() == null ? "null" : afterSale.getStatus())
+                + ",\"refundAmount\":" + (afterSale.getRefundAmount() == null ? "0" : afterSale.getRefundAmount())
+                + "}";
     }
 
     /**

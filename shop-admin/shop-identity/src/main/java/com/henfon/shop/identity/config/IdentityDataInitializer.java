@@ -342,6 +342,18 @@ public class IdentityDataInitializer implements ApplicationRunner {
             }
             menus.add(menu);
         }
+        // RocketMQ 死信查询和人工重试权限挂在系统设置下，避免补偿接口被普通订单操作员误用。
+        String[][] outboxButtons = {
+                {"消息死信查询", "trade:outbox:query"}, {"消息死信重试", "trade:outbox:retry"}
+        };
+        for (String[] button : outboxButtons) {
+            SysMenu menu = ensureMenu(button[0], "BUTTON", button[1], null, 105);
+            if (!settings.getId().equals(menu.getParentId())) {
+                menu.setParentId(settings.getId());
+                sysMenuMapper.updateById(menu);
+            }
+            menus.add(menu);
+        }
         // 发票查询和状态维护权限挂在财务目录下，供后台开票流程使用。
         String[][] invoiceButtons = {
                 {"发票查询", "payment:invoice:query"}, {"发票状态维护", "payment:invoice:status"}

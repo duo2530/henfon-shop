@@ -14,6 +14,8 @@ import com.henfon.shop.trade.entity.TradeOrderItem;
 import com.henfon.shop.trade.mapper.TradeAfterSaleMapper;
 import com.henfon.shop.trade.mapper.TradeOrderItemMapper;
 import com.henfon.shop.trade.mapper.TradeOrderMapper;
+import com.henfon.shop.integration.messaging.RocketMqTopics;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -35,13 +37,16 @@ public class TradeAfterSaleService {
     private static final int TYPE_EXCHANGE = 3;
     private static final int STATUS_PENDING_AUDIT = 10;
     private static final int STATUS_PROCESSING = 20;
+    private static final int STATUS_COMPLETED = 30;
     private static final int STATUS_REJECTED = 40;
     private static final int STATUS_CANCELLED = 50;
+    private static final int STATUS_REFUND_FAILED = 60;
 
     private final TradeAfterSaleMapper afterSaleMapper;
     private final TradeOrderMapper orderMapper;
     private final TradeOrderItemMapper orderItemMapper;
     private final TradeOrderService tradeOrderService;
+    private final TradeEventOutboxService tradeEventOutboxService;
 
     /**
      * 创建售后服务。
@@ -53,12 +58,30 @@ public class TradeAfterSaleService {
      * @author Henfon
      * @date 2026-08-30
      */
+    @Autowired
     public TradeAfterSaleService(TradeAfterSaleMapper afterSaleMapper, TradeOrderMapper orderMapper,
-                                 TradeOrderItemMapper orderItemMapper, TradeOrderService tradeOrderService) {
+                                 TradeOrderItemMapper orderItemMapper, TradeOrderService tradeOrderService,
+                                 TradeEventOutboxService tradeEventOutboxService) {
         this.afterSaleMapper = afterSaleMapper;
         this.orderMapper = orderMapper;
         this.orderItemMapper = orderItemMapper;
         this.tradeOrderService = tradeOrderService;
+        this.tradeEventOutboxService = tradeEventOutboxService;
+    }
+
+    /**
+     * 创建售后服务（兼容未配置领域事件 Outbox 的调用方）。
+     *
+     * @param afterSaleMapper 售后单数据访问对象
+     * @param orderMapper 订单数据访问对象
+     * @param orderItemMapper 订单明细数据访问对象
+     * @param tradeOrderService 订单服务
+     * @author Henfon
+     * @date 2026-08-31
+     */
+    public TradeAfterSaleService(TradeAfterSaleMapper afterSaleMapper, TradeOrderMapper orderMapper,
+                                 TradeOrderItemMapper orderItemMapper, TradeOrderService tradeOrderService) {
+        this(afterSaleMapper, orderMapper, orderItemMapper, tradeOrderService, null);
     }
 
     /**
@@ -91,6 +114,10 @@ public class TradeAfterSaleService {
         afterSale.setReason(request.reason().trim());
         afterSale.setRefundAmount(refundAmount);
         afterSaleMapper.insert(afterSale);
+        if (tradeEventOutboxService != null) {
+            tradeEventOutboxService.recordAfterSaleEvent(afterSale, "AFTER_SALE_CREATED",
+                    RocketMqTopics.AFTER_SALE_CREATED);
+        }
         return afterSale;
     }
 
@@ -151,6 +178,10 @@ public class TradeAfterSaleService {
         afterSale.setStatus(STATUS_PROCESSING);
         afterSale.setRemark(normalizeRemark(request == null ? null : request.remark(), "后台审核通过"));
         updateAfterSale(afterSale);
+        if (tradeEventOutboxService != null) {
+            tradeEventOutboxService.recordAfterSaleEvent(afterSale, "AFTER_SALE_APPROVED",
+                    RocketMqTopics.AFTER_SALE_APPROVED);
+        }
         return afterSale;
     }
 
@@ -172,6 +203,10 @@ public class TradeAfterSaleService {
         afterSale.setStatus(STATUS_REJECTED);
         afterSale.setRemark(normalizeRemark(request == null ? null : request.remark(), "后台驳回售后申请"));
         updateAfterSale(afterSale);
+        if (tradeEventOutboxService != null) {
+            tradeEventOutboxService.recordAfterSaleEvent(afterSale, "AFTER_SALE_REJECTED",
+                    RocketMqTopics.AFTER_SALE_REJECTED);
+        }
         return afterSale;
     }
 
@@ -193,7 +228,62 @@ public class TradeAfterSaleService {
         afterSale.setStatus(STATUS_CANCELLED);
         afterSale.setRemark("会员取消售后申请");
         updateAfterSale(afterSale);
+        if (tradeEventOutboxService != null) {
+            tradeEventOutboxService.recordAfterSaleEvent(afterSale, "AFTER_SALE_CANCELLED",
+                    RocketMqTopics.AFTER_SALE_CANCELLED);
+        }
         return afterSale;
+    }
+
+    /**
+     * 退款成功后完成对应的仅退款售后单。
+     *
+     * <p>支付回调可能重复到达，因此只锁定处理中记录并将状态推进一次；找不到匹配记录时视为幂等空操作。</p>
+     *
+     * @param orderId 订单ID
+     * @param refundAmount 实际退款金额
+     * @return 是否完成了售后单
+     * @author Henfon
+     * @date 2026-08-31
+     */
+    @Transactional
+    public boolean markRefundSucceeded(Long orderId, BigDecimal refundAmount) {
+        TradeAfterSale afterSale = findProcessingRefundOnly(orderId, refundAmount);
+        if (afterSale == null) {
+            return false;
+        }
+        afterSale.setStatus(STATUS_COMPLETED);
+        afterSale.setRemark("退款成功，售后单已完成，金额：" + refundAmount);
+        updateAfterSale(afterSale);
+        if (tradeEventOutboxService != null) {
+            // 完成事件用于会员通知，重复回调不会重复写入，因为处理中记录已被消费。
+            tradeEventOutboxService.recordAfterSaleEvent(afterSale, "AFTER_SALE_COMPLETED",
+                    RocketMqTopics.AFTER_SALE_COMPLETED);
+        }
+        return true;
+    }
+
+    /**
+     * 退款失败后关闭对应的仅退款售后单。
+     *
+     * <p>失败售后不再占用处理中唯一目标，会员可以重新提交申请；原始失败原因写入备注便于审计。</p>
+     *
+     * @param orderId 订单ID
+     * @param refundAmount 退款金额
+     * @return 是否更新了售后单
+     * @author Henfon
+     * @date 2026-08-31
+     */
+    @Transactional
+    public boolean markRefundFailed(Long orderId, BigDecimal refundAmount) {
+        TradeAfterSale afterSale = findProcessingRefundOnly(orderId, refundAmount);
+        if (afterSale == null) {
+            return false;
+        }
+        afterSale.setStatus(STATUS_REFUND_FAILED);
+        afterSale.setRemark("支付渠道退款失败，售后单可重新申请，金额：" + refundAmount);
+        updateAfterSale(afterSale);
+        return true;
     }
 
     /**
@@ -310,6 +400,29 @@ public class TradeAfterSaleService {
                     .or().eq(TradeAfterSale::getOrderItemId, orderItemId));
         }
         return afterSaleMapper.selectCount(wrapper) > 0;
+    }
+
+    /**
+     * 查询与退款金额匹配的处理中仅退款售后单。
+     *
+     * @param orderId 订单ID
+     * @param refundAmount 退款金额
+     * @return 匹配的售后单，不存在时返回空值
+     * @author Henfon
+     * @date 2026-08-31
+     */
+    private TradeAfterSale findProcessingRefundOnly(Long orderId, BigDecimal refundAmount) {
+        if (orderId == null || refundAmount == null || refundAmount.signum() <= 0) {
+            return null;
+        }
+        // 金额参与匹配，避免同一订单多明细售后时把回调错误归属到其他售后单。
+        return afterSaleMapper.selectOne(new LambdaQueryWrapper<TradeAfterSale>()
+                .eq(TradeAfterSale::getOrderId, orderId)
+                .eq(TradeAfterSale::getAfterSaleType, TYPE_REFUND_ONLY)
+                .eq(TradeAfterSale::getStatus, STATUS_PROCESSING)
+                .eq(TradeAfterSale::getRefundAmount, refundAmount)
+                .orderByAsc(TradeAfterSale::getCreatedAt)
+                .last("LIMIT 1 FOR UPDATE"));
     }
 
     /**

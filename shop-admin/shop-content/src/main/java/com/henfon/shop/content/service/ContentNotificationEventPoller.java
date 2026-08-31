@@ -102,7 +102,8 @@ public class ContentNotificationEventPoller {
                 }
             }
             notificationService.saveEvent(new com.henfon.shop.content.dto.NotificationEventRequest(
-                    memberId, orderId, orderNo, eventType, title, content, "OUTBOX:" + event.eventId()));
+                    // 与 RocketMQ 消费者使用同一幂等键，兼容轮询兜底时不会重复生成通知。
+                    memberId, orderId, orderNo, eventType, title, content, "ROCKETMQ:" + event.eventId()));
         } catch (Exception exception) {
             // 单条脏事件跳过并记录日志，避免阻塞同批次其他会员通知。
             log.warn("交易事件转换站内通知失败，eventId={}", event.eventId(), exception);

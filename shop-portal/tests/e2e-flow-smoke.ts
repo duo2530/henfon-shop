@@ -6,6 +6,7 @@ import {
   createPortalPayment,
   fetchPortalPayment,
   fetchPortalProducts,
+  fetchPortalProductsPage,
   hasPortalMemberSession,
   loginPortalMember,
 } from '../src/api/portalApi';
@@ -41,7 +42,8 @@ globalThis.fetch = (async (input: RequestInfo | URL) => {
     return jsonResponse({ accessToken: 'access-token', refreshToken: 'refresh-token', expiresInSeconds: 1800, memberId: 1, username: 'demo', nickname: '测试会员', memberLevel: '普通会员', points: 10, balance: 0 });
   }
   if (url.includes('/api/portal/catalog/products')) {
-    return jsonResponse({ records: [{ id: 1001, productName: '测试商品', productCode: 'SKU-1001', categoryName: '影音', price: 199, marketPrice: 299, currentStock: 20, salesCount: 3, shortDescription: '冒烟测试商品' }] });
+    const current = url.includes('current=2') ? 2 : 1;
+    return jsonResponse({ records: [{ id: 1001, productName: '测试商品', productCode: 'SKU-1001', categoryName: '影音', price: 199, marketPrice: 299, currentStock: 20, salesCount: 3, shortDescription: '冒烟测试商品' }], total: 41, size: url.includes('size=1') ? 1 : 20, current, pages: url.includes('size=1') ? 41 : 3 });
   }
   if (url.endsWith('/api/portal/trade/cart/items')) return jsonResponse(9001);
   if (url.includes('/api/portal/trade/orders') && !url.includes('/payment')) {
@@ -63,6 +65,10 @@ assert.equal(hasPortalMemberSession(), true);
 const products = await fetchPortalProducts({ keyword: '测试' });
 assert.equal(products[0]?.id, 'prod-1001');
 assert.equal(products[0]?.stock, 20);
+const productPage = await fetchPortalProductsPage({ current: 2, size: 1 });
+assert.equal(productPage.current, 2);
+assert.equal(productPage.pages, 41);
+assert.equal(productPage.total, 41);
 
 const cartItemId = await addPortalCartItem(1, 1001, 1, 2001);
 assert.equal(cartItemId, 9001);

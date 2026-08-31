@@ -29,6 +29,8 @@ import {
   deletePortalCartItem,
   fetchPortalAddresses,
   fetchPortalBanners,
+  fetchPortalCategories,
+  fetchPortalProductsPage,
   fetchPortalCart,
   fetchPortalCoupons,
   fetchPortalFavorites,
@@ -55,6 +57,7 @@ import {
   PortalOrderItemRecord,
   PortalOrderLogisticsRecord,
   PortalAfterSaleRecord,
+  PortalCategoryRecord,
 } from './api/portalApi';
 import {
   Product,
@@ -162,6 +165,13 @@ function mapPaymentState(status?: number): Order['paymentState'] {
 export default function App() {
   // 1. Persistence & State
   const [products, setProducts] = useState<Product[]>(DEMO_MODE ? PRODUCTS : []);
+  const [productPage, setProductPage] = useState(1);
+  const [productPageLoading, setProductPageLoading] = useState(!DEMO_MODE);
+  const [productPageTotal, setProductPageTotal] = useState(DEMO_MODE ? PRODUCTS.length : 0);
+  const [productPageCount, setProductPageCount] = useState(DEMO_MODE ? 1 : 0);
+  const [productPageError, setProductPageError] = useState<string | null>(null);
+  const [productReloadKey, setProductReloadKey] = useState(0);
+  const [portalCategories, setPortalCategories] = useState<PortalCategoryRecord[]>([]);
   const [coupons, setCoupons] = useState<Coupon[]>(DEMO_MODE ? AVAILABLE_COUPONS : []);
   const [banners, setBanners] = useState<PortalBanner[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
@@ -317,21 +327,96 @@ export default function App() {
 
   const [appliedCoupon, setAppliedCoupon] = useState<Coupon | null>(null);
 
-  // 首屏从后端加载门户数据，接口不可用时保留演示数据，保证页面仍可预览。
+  // 首屏加载优惠券、Banner 和类目；商品列表由下方分页 effect 独立管理。
   useEffect(() => {
     let active = true;
-    Promise.allSettled([fetchPortalProducts(), fetchPortalCoupons(), fetchPortalBanners()])
-      .then(([productResult, couponResult, bannerResult]) => {
+    Promise.allSettled([
+      fetchPortalCoupons(),
+      fetchPortalBanners(),
+      fetchPortalCategories(),
+    ])
+      .then(([couponResult, bannerResult, categoryResult]) => {
         if (!active) return;
-        if (productResult.status === 'fulfilled' && productResult.value.length > 0) setProducts(productResult.value);
-        if (couponResult.status === 'fulfilled' && couponResult.value.length > 0) setCoupons(couponResult.value);
-        if (bannerResult.status === 'fulfilled' && bannerResult.value.length > 0) setBanners(bannerResult.value);
+        if (couponResult.status === 'fulfilled' && couponResult.value.length > 0) {
+          setCoupons(couponResult.value);
+        }
+        if (bannerResult.status === 'fulfilled' && bannerResult.value.length > 0) {
+          setBanners(bannerResult.value);
+        }
+        if (categoryResult.status === 'fulfilled') {
+          setPortalCategories(categoryResult.value);
+        }
       })
-      .catch((error) => console.warn('门户后端暂不可用，继续使用演示数据', error));
+      .catch((error) => console.warn('门户基础数据接口暂不可用，继续使用演示数据', error));
     return () => {
       active = false;
     };
   }, []);
+
+  /**
+   * 按当前筛选条件加载门户商品分页。
+   *
+   * @author Henfon
+   * @date 2026-08-31
+   */
+  useEffect(() => {
+    let active = true;
+    if (DEMO_MODE) {
+      setProducts(PRODUCTS);
+      setProductPageTotal(PRODUCTS.length);
+      setProductPageCount(1);
+      setProductPageLoading(false);
+      setProductPageError(null);
+      return () => {
+        active = false;
+      };
+    }
+
+    const categoryId = selectedCategory === 'all'
+      ? undefined
+      : portalCategories.find((category) => {
+          const value = `${category.categoryCode || ''} ${category.categoryName || ''}`.toLowerCase();
+          if (selectedCategory === 'digital') return value.includes('digital') || value.includes('数码') || value.includes('电子');
+          if (selectedCategory === 'audio') return value.includes('audio') || value.includes('影音');
+          if (selectedCategory === 'home') return value.includes('home') || value.includes('家居');
+          if (selectedCategory === 'fashion') return value.includes('fashion') || value.includes('服饰');
+          if (selectedCategory === 'outdoor') return value.includes('outdoor') || value.includes('户外');
+          if (selectedCategory === 'lifestyle') return value.includes('lifestyle') || value.includes('生活') || value.includes('咖啡');
+          return false;
+        })?.id;
+
+    setProductPageLoading(true);
+    setProductPageError(null);
+    fetchPortalProductsPage({
+      keyword: searchQuery.trim() || undefined,
+      categoryId,
+      minPrice: priceRange[0] > 0 ? priceRange[0] : undefined,
+      maxPrice: priceRange[1] < 2000 ? priceRange[1] : undefined,
+      sortBy: sortBy === 'rating' ? 'featured' : sortBy,
+      current: productPage,
+      size: 24,
+    })
+      .then((page) => {
+        if (!active) return;
+        setProducts(page.records);
+        setProductPage(page.current);
+        setProductPageTotal(page.total);
+        setProductPageCount(Math.max(page.pages, 1));
+      })
+      .catch((error) => {
+        if (!active) return;
+        setProducts([]);
+        setProductPageTotal(0);
+        setProductPageCount(0);
+        setProductPageError(error instanceof Error ? error.message : '商品加载失败，请稍后重试');
+      })
+      .finally(() => {
+        if (active) setProductPageLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [productPage, productReloadKey, selectedCategory, searchQuery, sortBy, priceRange, portalCategories]);
 
   // Claimed coupons in user's account
   const [claimedCouponCodes, setClaimedCouponCodes] = useState<string[]>(() => {
@@ -1652,8 +1737,14 @@ export default function App() {
         currentUser={currentUser}
         claimedCouponsCount={claimedCoupons.length}
         products={products}
-        onSearchChange={setSearchQuery}
-        onCategorySelect={(cat) => setSelectedCategory(cat)}
+        onSearchChange={(query) => {
+          setSearchQuery(query);
+          setProductPage(1);
+        }}
+        onCategorySelect={(cat) => {
+          setSelectedCategory(cat);
+          setProductPage(1);
+        }}
         onSelectProduct={openProduct}
         onOpenCart={() => setIsCartOpen(true)}
         onOpenWishlist={() => setIsWishlistOpen(true)}
@@ -1669,7 +1760,10 @@ export default function App() {
         {!searchQuery && selectedCategory === 'all' && (
           <HeroBanner
             banners={banners}
-            onExploreCategory={(cat) => setSelectedCategory(cat)}
+            onExploreCategory={(cat) => {
+              setSelectedCategory(cat);
+              setProductPage(1);
+            }}
             onSelectProduct={(productId) => {
               const normalizedId = /^\d+$/.test(productId) ? `prod-${productId}` : productId;
               const p = products.find((it) => it.id === normalizedId) || PRODUCTS.find((it) => it.id === normalizedId);
@@ -1703,14 +1797,14 @@ export default function App() {
                   {selectedCategory === 'all' ? '全部优选商品' : `品类筛选`}
                 </span>
                 <span className="text-xs px-2 py-0.5 rounded-full bg-zinc-100 text-zinc-600 font-semibold">
-                  共 {filteredProducts.length} 款
+                  共 {productPageTotal || filteredProducts.length} 款
                 </span>
               </div>
 
               {searchQuery && (
                 <div className="flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg bg-zinc-100 text-zinc-800">
                   <span>搜索: "{searchQuery}"</span>
-                  <button onClick={() => setSearchQuery('')} className="ml-1 text-zinc-400 hover:text-zinc-900">
+                  <button onClick={() => { setSearchQuery(''); setProductPage(1); }} className="ml-1 text-zinc-400 hover:text-zinc-900">
                     ✕
                   </button>
                 </div>
@@ -1771,7 +1865,7 @@ export default function App() {
 
               {/* Only In Stock Toggle */}
               <button
-                onClick={() => setOnlyInStock(!onlyInStock)}
+                onClick={() => { setOnlyInStock(!onlyInStock); setProductPage(1); }}
                 aria-pressed={onlyInStock}
                 aria-label="仅看现货"
                 className={`px-3 py-1.5 rounded-xl text-xs font-medium border transition flex items-center gap-1.5 ${
@@ -1786,7 +1880,7 @@ export default function App() {
 
               {/* Only Discount Toggle */}
               <button
-                onClick={() => setOnlyDiscount(!onlyDiscount)}
+                onClick={() => { setOnlyDiscount(!onlyDiscount); setProductPage(1); }}
                 aria-pressed={onlyDiscount}
                 aria-label="限时特惠"
                 className={`px-3 py-1.5 rounded-xl text-xs font-medium border transition flex items-center gap-1.5 ${
@@ -1803,7 +1897,7 @@ export default function App() {
               <div className="relative flex items-center">
                 <select
                   value={sortBy}
-                  onChange={(e) => setSortBy(e.target.value as SortOption)}
+                  onChange={(e) => { setSortBy(e.target.value as SortOption); setProductPage(1); }}
                   className="py-1.5 pl-3 pr-7 rounded-xl border border-zinc-200 bg-white text-xs font-medium text-zinc-800 focus:outline-none focus:border-zinc-900 cursor-pointer appearance-none"
                 >
                   <option value="featured">综合推荐</option>
@@ -1850,7 +1944,35 @@ export default function App() {
         </section>
 
         {/* Product Grid / List Section */}
-        {filteredProducts.length === 0 ? (
+        {productPageLoading && products.length === 0 ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-6" aria-label="商品加载中" aria-busy="true">
+            {Array.from({ length: 8 }).map((_, index) => (
+              <div key={index} className="h-[360px] rounded-3xl border border-zinc-200 bg-white p-4 shadow-xs animate-pulse">
+                <div className="h-48 rounded-2xl bg-zinc-100" />
+                <div className="mt-5 h-4 w-3/4 rounded bg-zinc-100" />
+                <div className="mt-3 h-3 w-1/2 rounded bg-zinc-100" />
+                <div className="mt-8 h-6 w-1/3 rounded bg-zinc-100" />
+              </div>
+            ))}
+          </div>
+        ) : productPageError ? (
+          <div className="bg-white rounded-3xl border border-red-200 p-12 text-center space-y-4 shadow-xs" role="alert">
+            <div className="w-16 h-16 rounded-full bg-red-50 flex items-center justify-center text-red-500 mx-auto">
+              <RotateCcw className="w-8 h-8 stroke-1" />
+            </div>
+            <div>
+              <h3 className="text-base font-bold text-zinc-900">商品加载失败</h3>
+              <p className="text-xs text-zinc-500 mt-1 max-w-sm mx-auto">{productPageError}</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setProductReloadKey((value) => value + 1)}
+              className="px-5 py-2.5 rounded-xl bg-zinc-900 text-white text-xs font-semibold hover:bg-zinc-800 transition"
+            >
+              重新加载
+            </button>
+          </div>
+        ) : filteredProducts.length === 0 ? (
           <div className="bg-white rounded-3xl border border-zinc-200 p-12 text-center space-y-4 shadow-xs">
             <div className="w-16 h-16 rounded-full bg-zinc-100 flex items-center justify-center text-zinc-400 mx-auto">
               <Search className="w-8 h-8 stroke-1" />
@@ -1867,6 +1989,7 @@ export default function App() {
                 setSearchQuery('');
                 setOnlyInStock(false);
                 setOnlyDiscount(false);
+                setProductPage(1);
               }}
               className="px-5 py-2.5 rounded-xl bg-zinc-900 text-white text-xs font-semibold hover:bg-zinc-800 transition"
             >
@@ -1876,9 +1999,9 @@ export default function App() {
         ) : (
           <div
             className={
-              viewMode === 'grid'
+              `${productPageLoading ? 'opacity-60 pointer-events-none' : ''} ${viewMode === 'grid'
                 ? 'grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-6'
-                : 'space-y-4'
+                : 'space-y-4'}`
             }
           >
             {filteredProducts.map((product) => (
@@ -1896,6 +2019,34 @@ export default function App() {
               />
             ))}
           </div>
+        )}
+        {productPageLoading && products.length > 0 && (
+          <p className="mt-4 text-center text-xs text-zinc-500" role="status" aria-live="polite">正在更新商品列表…</p>
+        )}
+        {!productPageLoading && !productPageError && productPageCount > 1 && (
+          <nav className="mt-8 flex items-center justify-center gap-2" aria-label="商品分页">
+            <button
+              type="button"
+              onClick={() => setProductPage((page) => Math.max(page - 1, 1))}
+              disabled={productPage <= 1}
+              className="min-w-20 rounded-xl border border-zinc-300 bg-white px-3 py-2 text-xs font-semibold text-zinc-800 transition hover:border-zinc-900 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-40"
+              aria-label="上一页商品"
+            >
+              上一页
+            </button>
+            <span className="px-3 text-xs font-semibold text-zinc-600" aria-live="polite">
+              第 {productPage} / {productPageCount} 页
+            </span>
+            <button
+              type="button"
+              onClick={() => setProductPage((page) => Math.min(page + 1, productPageCount))}
+              disabled={productPage >= productPageCount}
+              className="min-w-20 rounded-xl border border-zinc-300 bg-white px-3 py-2 text-xs font-semibold text-zinc-800 transition hover:border-zinc-900 hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-40"
+              aria-label="下一页商品"
+            >
+              下一页
+            </button>
+          </nav>
         )}
       </main>
 

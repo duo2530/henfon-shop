@@ -1143,6 +1143,14 @@ export async function loginAdmin(username: string, password: string): Promise<{ 
   };
 }
 
+/** 修改当前管理员密码。 */
+export function changeAdminPassword(oldPassword: string, newPassword: string): Promise<void> {
+  return request<void>('/api/admin/auth/password', {
+    method: 'POST',
+    body: JSON.stringify({ oldPassword, newPassword }),
+  });
+}
+
 export function getCurrentAdmin(): Promise<AdminUser> {
   return request<AdminUser>('/api/admin/auth/me');
 }

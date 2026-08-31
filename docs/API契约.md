@@ -6,7 +6,7 @@
 
 - 根路径：`/api`；管理端路径以 `/admin` 开头，门户路径以 `/portal` 开头。
 - 编码：UTF-8，`Content-Type: application/json`；文件上传使用 `multipart/form-data`。
-- 认证：管理端接口携带 `Authorization: Bearer <管理员JWT>`；会员接口携带会员 JWT。会员 `memberId` 必须与令牌主体一致，服务端不得信任 URL 中的其他会员 ID。
+- 认证：管理端接口携带 `Authorization: Bearer <管理员JWT>`；会员接口携带会员 JWT。会员 `memberId` 必须与令牌主体一致，服务端不得信任 URL 中的其他会员 ID。管理员连续登录失败达到阈值后账号短期锁定。
 - 幂等：创建订单、支付、领取优惠券等写操作建议携带 `Idempotency-Key`；重复请求返回同一业务结果。
 - 链路：请求可携带 `X-Request-Id`，响应 `requestId` 原样返回（未提供时由网关/过滤器生成）。
 
@@ -45,7 +45,7 @@ HTTP 状态：成功 2xx；参数/业务错误 400；认证失败 401；无权�
 
 ## 5. 错误码
 
-通用错误码：`VALIDATION_ERROR`（参数校验）、`AUTH_INVALID`/`MEMBER_AUTH_INVALID`（凭证无效）、`AUTH_DISABLED`/`MEMBER_AUTH_DISABLED`（账号禁用）、`AUTH_RATE_LIMITED`（登录限流）、`MEMBER_AUTH_REQUIRED`、`MEMBER_ID_MISMATCH`、`*_NOT_FOUND`（资源不存在）、`*_CONCURRENT[_UPDATE]`（乐观锁冲突）、`*_STATUS_INVALID`（非法状态流转）、`SYSTEM_ERROR`。各领域错误码沿用代码中 `BusinessException` 的稳定字符串前缀（如 `TRADE_`、`INVENTORY_`、`PAYMENT_`、`MARKETING_`、`CATALOG_`、`CONTENT_`）；客户端应按 `code` 分支，不能匹配中文 `message`。
+通用错误码：`VALIDATION_ERROR`（参数校验）、`AUTH_INVALID`/`MEMBER_AUTH_INVALID`（凭证无效）、`AUTH_DISABLED`/`MEMBER_AUTH_DISABLED`（账号禁用）、`AUTH_RATE_LIMITED`（登录限流）、`AUTH_LOCKED`（管理员连续失败锁定）、`AUTH_PASSWORD_INVALID`/`AUTH_PASSWORD_UNCHANGED`（密码修改失败）、`MEMBER_AUTH_REQUIRED`、`MEMBER_ID_MISMATCH`、`*_NOT_FOUND`（资源不存在）、`*_CONCURRENT[_UPDATE]`（乐观锁冲突）、`*_STATUS_INVALID`（非法状态流转）、`SYSTEM_ERROR`。各领域错误码沿用代码中 `BusinessException` 的稳定字符串前缀（如 `TRADE_`、`INVENTORY_`、`PAYMENT_`、`MARKETING_`、`CATALOG_`、`CONTENT_`）；客户端应按 `code` 分支，不能匹配中文 `message`。
 
 ## 6. 现有模块主要接口
 
@@ -59,7 +59,7 @@ HTTP 状态：成功 2xx；参数/业务错误 400；认证失败 401；无权�
 
 ### shop-identity（认证、会员、RBAC、审计）
 
-- 管理认证：`POST /api/admin/auth/login`、`GET /api/admin/auth/me`、`GET /api/admin/auth/menus`。
+- 管理认证：`POST /api/admin/auth/login`、`POST /api/admin/auth/password`、`GET /api/admin/auth/me`、`GET /api/admin/auth/menus`。修改密码请求体为 `{ "oldPassword": "...", "newPassword": "..." }`，新密码长度 6～64 位。
 - 会员认证：`POST /api/portal/auth/login|register|refresh|logout`。
 - 会员门户：`GET /api/portal/member/profile|addresses|favorites|compare/history`；地址 `POST /addresses`、`PUT/DELETE /addresses/{id}`、`PUT /addresses/{id}/default`；收藏 `POST /favorites/{productId}/toggle`；对比历史 `POST /compare/history`。
 - 会员管理：`GET /api/admin/member/users`（分页）、`PUT /users/{id}`、`PUT /users/{id}/status`、`PUT /users/{id}/assets`、标签 `GET/PUT /tags`、`PUT /tags/{id}`、`PUT /users/{id}/tags`。
@@ -83,6 +83,7 @@ HTTP 状态：成功 2xx；参数/业务错误 400；认证失败 401；无权�
 - 门户订单：`GET /api/portal/trade/orders`（分页）、`GET /orders/{id}`、`GET /orders/{id}/logistics`、`POST /orders`、`PUT /orders/{id}/cancel|confirm`。
 - 管理订单：`GET /api/admin/trade/orders`（分页）、`GET /orders/{id}/items|logistics`、`POST /orders/{id}/logistics`、`PUT /orders/{id}/logistics/{logisticsId}`、`PUT /orders/{id}/ship|cancel|remark|refund`。
 - 售后：门户 `GET/POST /api/portal/trade/after-sales`、`DELETE /after-sales/{id}`；管理 `GET /api/admin/trade/after-sales`（分页）、`PUT /{id}/approve|reject`。
+- Outbox 运维：`GET /api/admin/trade/outbox/dead-events`（按事件类型、主题、聚合 ID 分页筛选）、`POST /api/admin/trade/outbox/{eventId}/retry`（仅允许死信事件人工重试，需 `trade:outbox:query/retry` 权限）。
 
 ### shop-marketing（优惠券、秒杀）
 
@@ -98,7 +99,7 @@ HTTP 状态：成功 2xx；参数/业务错误 400；认证失败 401；无权�
 ### shop-payment（支付、退款、发票）
 
 - 门户支付：`POST /api/portal/payment/orders/{orderId}`、`GET /orders/{paymentNo}`、`PUT /orders/{paymentNo}/close`。
-- 微信回调：`POST /api/wx/pay/notify`、`POST /api/wx/pay/refund/notify`（验签与幂等由服务端处理）。
+- 微信回调：`POST /api/wx/pay/notify`、`POST /api/wx/pay/refund/notify`（联调 DTO）；生产 V3 原始回调使用 `POST /api/wx/pay/notify/v3`、`POST /api/wx/pay/refund/notify/v3`，服务端先校验 `Wechatpay-Timestamp/Nonce/Signature` 再解密并执行幂等状态更新。
 - 管理退款：`POST /api/admin/payment/refunds`、`GET /refunds/{refundNo}`；发票 `GET /api/admin/payment/invoices`（分页）、`PUT /invoices/{invoiceNo}/status`。
 - 门户发票：`POST/GET /api/portal/payment/invoices/orders/{orderId}`。
 
