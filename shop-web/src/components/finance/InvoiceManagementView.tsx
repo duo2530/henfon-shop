@@ -1,19 +1,7 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useAdmin } from '../../context/AdminContext';
-import { 
-  FileText, 
-  Search, 
-  Download, 
-  CheckCircle, 
-  Clock, 
-  X, 
-  Eye, 
-  Printer, 
-  Send, 
-  Building, 
-  User, 
-  AlertCircle 
-} from 'lucide-react';
+import { Download, CheckCircle, Clock, Search, Send } from 'lucide-react';
+import { BackendPaymentInvoice, listPaymentInvoices, updatePaymentInvoiceStatus } from '../../api/adminApi';
 
 export interface InvoiceRecord {
   id: string;
@@ -26,78 +14,85 @@ export interface InvoiceRecord {
   taxRate: number;
   taxAmount: number;
   applicantEmail: string;
-  status: 'issued' | 'pending' | 'rejected' | 'red_ink';
+  status: 'issued' | 'pending' | 'issuing' | 'rejected' | 'red_ink';
   createdAt: string;
   issuedAt?: string;
 }
 
-const mockInvoices: InvoiceRecord[] = [
-  {
-    id: 'inv-001',
-    invoiceNo: 'INV20260829001',
-    orderNumber: 'ORD20260829101',
-    type: 'special_vat',
-    title: '上海极客无限网络技术有限公司',
-    taxCode: '91310115MA1K39482X',
-    amount: 1299.00,
+function toInvoiceRecord(invoice: BackendPaymentInvoice): InvoiceRecord {
+  const status: InvoiceRecord['status'] = invoice.status === 2
+    ? 'issued'
+    : invoice.status === 1
+      ? 'issuing'
+      : invoice.status === 3 || invoice.status === 4
+        ? 'rejected'
+        : 'pending';
+  return {
+    id: String(invoice.id),
+    invoiceNo: invoice.invoiceNo,
+    orderNumber: invoice.orderNo,
+    type: invoice.invoiceType === 2 ? 'special_vat' : 'general_vat',
+    title: invoice.title,
+    taxCode: invoice.taxNo || '-',
+    amount: Number(invoice.amount || 0),
     taxRate: 13,
-    taxAmount: 149.44,
-    applicantEmail: 'finance@geeknetwork.com',
-    status: 'issued',
-    createdAt: '2026-08-29 11:00:00',
-    issuedAt: '2026-08-29 11:30:22'
-  },
-  {
-    id: 'inv-002',
-    invoiceNo: 'INV20260829002',
-    orderNumber: 'ORD20260829105',
-    type: 'electronic',
-    title: '个人 (李伟)',
-    taxCode: '-',
-    amount: 389.00,
-    taxRate: 13,
-    taxAmount: 44.75,
-    applicantEmail: 'liwei882@qq.com',
-    status: 'issued',
-    createdAt: '2026-08-29 13:20:15',
-    issuedAt: '2026-08-29 13:25:00'
-  },
-  {
-    id: 'inv-003',
-    invoiceNo: 'INV20260829003',
-    orderNumber: 'ORD20260829118',
-    type: 'special_vat',
-    title: '杭州西湖数码创新工作室',
-    taxCode: '91330106MA27K8391A',
-    amount: 2850.00,
-    taxRate: 13,
-    taxAmount: 327.88,
-    applicantEmail: 'tax@hzwestlake.cn',
-    status: 'pending',
-    createdAt: '2026-08-29 14:40:00'
-  }
-];
+    taxAmount: Number(invoice.amount || 0) * 13 / 113,
+    applicantEmail: invoice.email || '-',
+    status,
+    createdAt: invoice.createdAt || invoice.requestedAt || '-',
+    issuedAt: invoice.issuedAt,
+  };
+}
 
 export const InvoiceManagementView: React.FC = () => {
   const { showToast } = useAdmin();
-  const [invoices, setInvoices] = useState<InvoiceRecord[]>(mockInvoices);
+  const [invoices, setInvoices] = useState<InvoiceRecord[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
-  const [inspectInvoice, setInspectInvoice] = useState<InvoiceRecord | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
-  const handleIssueInvoice = (id: string) => {
-    setInvoices((prev) =>
-      prev.map((inv) => {
-        if (inv.id === id) {
-          return {
-            ...inv,
-            status: 'issued',
-            issuedAt: new Date().toISOString().replace('T', ' ').substring(0, 19)
-          };
-        }
-        return inv;
-      })
-    );
-    showToast('电子发票已完成航信金税盘直连开具并推送到客户邮箱', 'success');
+  const loadInvoices = async () => {
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const result = await listPaymentInvoices({ keyword: searchTerm || undefined });
+      setInvoices(result.records.map(toInvoiceRecord));
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : '发票数据加载失败');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => void loadInvoices(), 250);
+    return () => window.clearTimeout(timer);
+  }, [searchTerm]);
+
+  const handleIssueInvoice = async (invoiceNo: string) => {
+    try {
+      await updatePaymentInvoiceStatus(invoiceNo, { status: 1 });
+      showToast('发票已进入开票中状态，待开票平台回传结果', 'success');
+      await loadInvoices();
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : '发票状态更新失败', 'error');
+    }
+  };
+
+  const handleBatchIssue = async () => {
+    const pendingInvoices = invoices.filter((invoice) => invoice.status === 'pending');
+    if (pendingInvoices.length === 0) {
+      showToast('当前没有待开票申请', 'info');
+      return;
+    }
+    try {
+      await Promise.all(pendingInvoices.map((invoice) => updatePaymentInvoiceStatus(invoice.invoiceNo, { status: 1 })));
+      showToast(`已将 ${pendingInvoices.length} 条申请置为开票中`, 'success');
+      await loadInvoices();
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : '批量更新发票状态失败', 'error');
+      await loadInvoices();
+    }
   };
 
   return (
@@ -118,11 +113,11 @@ export const InvoiceManagementView: React.FC = () => {
         </div>
 
         <button
-          onClick={() => showToast('已批量将今日审核通过的发票推送到税控盘', 'info')}
+          onClick={() => void handleBatchIssue()}
           className="h-[36px] px-4 rounded-lg bg-[#2563EB] text-white hover:bg-blue-700 flex items-center justify-center gap-2 text-xs font-semibold shadow-xs"
         >
           <Send className="w-4 h-4" />
-          <span>批量金税直连开具</span>
+          <span>批量进入开票中</span>
         </button>
       </div>
 
@@ -141,6 +136,15 @@ export const InvoiceManagementView: React.FC = () => {
           </div>
         </div>
 
+        {loadError && (
+          <div className="m-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            <div className="flex items-center justify-between gap-3">
+              <span>{loadError}</span>
+              <button onClick={() => void loadInvoices()} className="font-semibold underline">重试</button>
+            </div>
+          </div>
+        )}
+
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead className="bg-[#F8FAFC] border-b border-[#E2E8F0] text-xs font-semibold text-gray-600 uppercase">
@@ -155,7 +159,11 @@ export const InvoiceManagementView: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100 text-sm">
-              {invoices.map((inv) => (
+              {loading ? (
+                <tr><td colSpan={7} className="py-10 text-center text-gray-400">正在加载发票数据...</td></tr>
+              ) : invoices.length === 0 ? (
+                <tr><td colSpan={7} className="py-10 text-center text-gray-400">暂无发票申请</td></tr>
+              ) : invoices.map((inv) => (
                 <tr key={inv.id} className="hover:bg-[#F8FAFC]">
                   <td className="py-3 px-4">
                     <div className="font-mono font-bold text-gray-900 text-xs">{inv.invoiceNo}</div>
@@ -192,6 +200,14 @@ export const InvoiceManagementView: React.FC = () => {
                       <span className="text-xs font-semibold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-full inline-flex items-center gap-1">
                         <CheckCircle className="w-3 h-3" /> 已开具
                       </span>
+                    ) : inv.status === 'issuing' ? (
+                      <span className="text-xs font-semibold text-blue-800 bg-blue-100 px-2 py-0.5 rounded-full inline-flex items-center gap-1">
+                        <Clock className="w-3 h-3" /> 开票中
+                      </span>
+                    ) : inv.status === 'rejected' ? (
+                      <span className="text-xs font-semibold text-red-800 bg-red-100 px-2 py-0.5 rounded-full inline-flex items-center gap-1">
+                        <Clock className="w-3 h-3" /> 失败/取消
+                      </span>
                     ) : (
                       <span className="text-xs font-semibold text-amber-800 bg-amber-100 px-2 py-0.5 rounded-full inline-flex items-center gap-1">
                         <Clock className="w-3 h-3" /> 待开具
@@ -202,18 +218,20 @@ export const InvoiceManagementView: React.FC = () => {
                   <td className="py-3 px-4 text-right">
                     {inv.status === 'pending' ? (
                       <button
-                        onClick={() => handleIssueInvoice(inv.id)}
+                        onClick={() => void handleIssueInvoice(inv.invoiceNo)}
                         className="px-2.5 py-1 bg-blue-600 text-white rounded text-xs font-semibold hover:bg-blue-700"
                       >
                         立即开票
                       </button>
-                    ) : (
+                    ) : inv.status === 'issued' && inv.invoiceNo ? (
                       <button
-                        onClick={() => showToast(`已下载发票 PDF: ${inv.invoiceNo}.pdf`, 'success')}
+                        onClick={() => inv.status === 'issued' && showToast('开票平台尚未返回发票附件', 'info')}
                         className="text-blue-600 hover:text-blue-700 text-xs font-semibold flex items-center gap-1 ml-auto"
                       >
                         <Download className="w-3.5 h-3.5" /> 下载PDF
                       </button>
+                    ) : (
+                      <span className="text-xs text-gray-400">暂无可用操作</span>
                     )}
                   </td>
                 </tr>

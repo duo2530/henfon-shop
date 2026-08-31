@@ -32,6 +32,8 @@ import {
   fetchPortalOrders,
   fetchPortalOrderDetail,
   fetchPortalOrderLogistics,
+  applyPortalOrderInvoice,
+  fetchPortalOrderInvoice,
   fetchPortalAfterSales,
   createPortalAfterSale,
   cancelPortalAfterSale,
@@ -1286,6 +1288,44 @@ export default function App() {
     }
   };
 
+  const handleApplyInvoice = async (order: Order) => {
+    const orderId = Number(order.id);
+    if (!resolveMemberId(currentUser) || !Number.isFinite(orderId)) {
+      showToast('当前订单尚未同步到服务端，暂不能申请发票', 'error');
+      return;
+    }
+    const existing = await fetchPortalOrderInvoice(orderId).catch(() => null);
+    if (existing) {
+      const statusLabels: Record<number, string> = { 0: '待开票', 1: '开票中', 2: '已开票', 3: '开票失败', 4: '已取消' };
+      showToast(`该订单已有发票申请（${existing.invoiceNo}），状态：${statusLabels[existing.status] || '处理中'}`, 'info');
+      return;
+    }
+    const invoiceTypeInput = window.prompt('请选择发票类型：1 普通发票，2 增值税专用发票', '1');
+    const invoiceType = Number(invoiceTypeInput);
+    if (invoiceType !== 1 && invoiceType !== 2) {
+      showToast('发票类型不合法，请重新申请', 'error');
+      return;
+    }
+    const title = window.prompt('请输入发票抬头', currentUser?.nickname || '个人');
+    if (!title?.trim()) {
+      showToast('发票抬头不能为空', 'error');
+      return;
+    }
+    const taxNo = invoiceType === 2 ? window.prompt('请输入纳税人识别号（专票必填）', '') || '' : '';
+    const email = window.prompt('请输入接收发票的邮箱（可选）', currentUser?.email || '') || '';
+    try {
+      const invoice = await applyPortalOrderInvoice(orderId, {
+        invoiceType: invoiceType as 1 | 2,
+        title: title.trim(),
+        taxNo: taxNo.trim() || undefined,
+        email: email.trim() || undefined,
+      });
+      showToast(`发票申请已提交（${invoice.invoiceNo}），等待商家开具`, 'success');
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : '发票申请失败，请稍后重试', 'error');
+    }
+  };
+
   const handleCancelAfterSale = async (afterSale: PortalAfterSaleRecord) => {
     const memberId = resolveMemberId(currentUser);
     if (!memberId) {
@@ -1814,6 +1854,7 @@ export default function App() {
         afterSalesError={afterSalesError}
         onApplyAfterSale={handleApplyAfterSale}
         onCancelAfterSale={handleCancelAfterSale}
+        onApplyInvoice={handleApplyInvoice}
       />
 
       <WishlistModal

@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Order } from '../types/ecommerce';
 import { PortalAfterSaleRecord } from '../api/portalApi';
-import { Package, X, ChevronDown, ChevronUp, RotateCcw } from 'lucide-react';
+import { Package, X, ChevronDown, ChevronUp, RotateCcw, Receipt } from 'lucide-react';
 import { OrderTracking } from './OrderTracking';
 
 interface OrdersModalProps {
@@ -15,6 +15,7 @@ interface OrdersModalProps {
   afterSalesError?: string | null;
   onApplyAfterSale?: (order: Order) => Promise<void> | void;
   onCancelAfterSale?: (afterSale: PortalAfterSaleRecord) => Promise<void> | void;
+  onApplyInvoice?: (order: Order) => Promise<void> | void;
 }
 
 export const OrdersModal: React.FC<OrdersModalProps> = ({
@@ -28,6 +29,7 @@ export const OrdersModal: React.FC<OrdersModalProps> = ({
   afterSalesError,
   onApplyAfterSale,
   onCancelAfterSale,
+  onApplyInvoice,
 }) => {
   const [expandedOrderId, setExpandedOrderId] = useState<string | null>(
     orders[0]?.id || null
@@ -198,6 +200,16 @@ export const OrdersModal: React.FC<OrdersModalProps> = ({
                             className="px-3 py-1.5 rounded-lg border border-amber-200 text-amber-700 text-xs font-semibold hover:bg-amber-50 disabled:opacity-50"
                           >
                             {actioningOrderId === ord.id ? '提交中…' : '申请售后'}
+                          </button>
+                        )}
+                        {canApplyAfterSale && onApplyInvoice && (
+                          <button
+                            type="button"
+                            disabled={actioningOrderId === ord.id}
+                            onClick={() => void runOrderAction(ord, onApplyInvoice)}
+                            className="px-3 py-1.5 rounded-lg border border-sky-200 text-sky-700 text-xs font-semibold hover:bg-sky-50 disabled:opacity-50"
+                          >
+                            {actioningOrderId === ord.id ? '处理中…' : <><Receipt className="w-3.5 h-3.5 inline mr-1" />申请发票</>}
                           </button>
                         )}
                         {(ord.status === 'placed' || ord.status === 'paid' || ord.status === 'processing') && (

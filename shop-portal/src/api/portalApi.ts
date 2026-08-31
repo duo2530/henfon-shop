@@ -432,6 +432,25 @@ export interface PortalOrderDetailRecord {
   logistics: PortalOrderLogisticsRecord[];
 }
 
+export interface PortalInvoiceRecord {
+  id: number;
+  invoiceNo: string;
+  orderId: number;
+  orderNo: string;
+  invoiceType: number;
+  title: string;
+  taxNo?: string;
+  email?: string;
+  amount: number;
+  status: number;
+  invoiceUrl?: string;
+  failureReason?: string;
+  requestedAt?: string;
+  issuedAt?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 export interface PortalPaymentOrderRecord {
   id: number;
   paymentNo: string;
@@ -491,6 +510,24 @@ export async function fetchPortalOrderDetail(orderId: number): Promise<PortalOrd
  */
 export async function fetchPortalOrderLogistics(orderId: number): Promise<PortalOrderLogisticsRecord[]> {
   return request<PortalOrderLogisticsRecord[]>(`/api/portal/trade/orders/${orderId}/logistics`);
+}
+
+/** 查询会员订单发票申请状态。 */
+export async function fetchPortalOrderInvoice(orderId: number): Promise<PortalInvoiceRecord | null> {
+  return request<PortalInvoiceRecord | null>(`/api/portal/payment/invoices/orders/${orderId}`);
+}
+
+/** 为已支付订单提交发票申请，重复申请由服务端幂等返回原记录。 */
+export async function applyPortalOrderInvoice(orderId: number, payload: {
+  invoiceType: 1 | 2;
+  title: string;
+  taxNo?: string;
+  email?: string;
+}): Promise<PortalInvoiceRecord> {
+  return request<PortalInvoiceRecord>(`/api/portal/payment/invoices/orders/${orderId}`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
 }
 
 export interface PortalOrderCreatePayload {

@@ -279,6 +279,27 @@ export interface BackendMarketingCoupon {
   updatedAt?: string;
 }
 
+export interface BackendPaymentInvoice {
+  id: number;
+  invoiceNo: string;
+  orderId: number;
+  orderNo: string;
+  memberId: number;
+  invoiceType: number;
+  title: string;
+  taxNo?: string;
+  email?: string;
+  amount: number;
+  status: number;
+  invoiceUrl?: string;
+  failureReason?: string;
+  requestedAt?: string;
+  issuedAt?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  remark?: string;
+}
+
 export interface BackendTradeOrder {
   id: number;
   orderNo: string;
@@ -747,6 +768,33 @@ export function listMarketingCoupons(params: { current?: number; size?: number; 
   if (params.keyword) query.set('keyword', params.keyword);
   if (params.status !== undefined) query.set('status', String(params.status));
   return request<BackendPage<BackendMarketingCoupon>>(`/api/admin/marketing/coupons?${query.toString()}`);
+}
+
+export function listPaymentInvoices(params: {
+  current?: number;
+  size?: number;
+  keyword?: string;
+  status?: number;
+  orderId?: number;
+  memberId?: number;
+} = {}): Promise<BackendPage<BackendPaymentInvoice>> {
+  const query = new URLSearchParams({ current: String(params.current || 1), size: String(params.size || 200) });
+  if (params.keyword) query.set('keyword', params.keyword);
+  if (params.status !== undefined) query.set('status', String(params.status));
+  if (params.orderId !== undefined) query.set('orderId', String(params.orderId));
+  if (params.memberId !== undefined) query.set('memberId', String(params.memberId));
+  return request<BackendPage<BackendPaymentInvoice>>(`/api/admin/payment/invoices?${query.toString()}`);
+}
+
+export function updatePaymentInvoiceStatus(invoiceNo: string, payload: {
+  status: number;
+  invoiceUrl?: string;
+  failureReason?: string;
+}): Promise<BackendPaymentInvoice> {
+  return request<BackendPaymentInvoice>(`/api/admin/payment/invoices/${encodeURIComponent(invoiceNo)}/status`, {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  });
 }
 
 export function saveMarketingCoupon(payload: {
