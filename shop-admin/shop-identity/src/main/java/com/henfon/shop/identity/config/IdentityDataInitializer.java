@@ -276,6 +276,20 @@ public class IdentityDataInitializer implements ApplicationRunner {
             }
             menus.add(menu);
         }
+        // 盘点接口权限挂在仓储目录下，控制盘点查询、创建和差异提交操作。
+        String[][] stocktakeButtons = {
+                {"库存盘点查询", "inventory:stocktake:query"},
+                {"库存盘点创建", "inventory:stocktake:create"},
+                {"库存盘点完成", "inventory:stocktake:complete"}
+        };
+        for (String[] button : stocktakeButtons) {
+            SysMenu menu = ensureMenu(button[0], "BUTTON", button[1], null, 102);
+            if (!inventory.getId().equals(menu.getParentId())) {
+                menu.setParentId(inventory.getId());
+                sysMenuMapper.updateById(menu);
+            }
+            menus.add(menu);
+        }
         // 仓库基础管理权限挂在仓储目录下，分别控制查询、保存、启停和删除操作。
         String[][] warehouseButtons = {
                 {"仓库查询", "inventory:warehouse:query"}, {"仓库保存", "inventory:warehouse:save"},
