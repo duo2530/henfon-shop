@@ -408,6 +408,33 @@ export interface BackendReportingSalesTrendPoint {
   productQuantity: number;
 }
 
+export interface BackendLoginLog {
+  id: number;
+  userId?: number;
+  username: string;
+  loginStatus: number;
+  loginIp?: string;
+  userAgent?: string;
+  failureReason?: string;
+  loginAt?: string;
+}
+
+export interface BackendOperationLog {
+  id: number;
+  traceId?: string;
+  userId?: number;
+  username?: string;
+  moduleKey?: string;
+  operation?: string;
+  requestMethod?: string;
+  requestUri?: string;
+  requestParams?: string;
+  responseStatus?: number;
+  clientIp?: string;
+  durationMs?: number;
+  createdAt?: string;
+}
+
 interface ApiEnvelope<T> {
   code: string;
   message: string;
@@ -458,6 +485,20 @@ async function request<T>(path: string, options: RequestInit = {}, token?: strin
 
 function delay(milliseconds: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
+}
+
+export function listLoginLogs(params: { current?: number; size?: number; username?: string; status?: number } = {}): Promise<BackendPage<BackendLoginLog>> {
+  const query = new URLSearchParams({ current: String(params.current || 1), size: String(params.size || 20) });
+  if (params.username) query.set('username', params.username);
+  if (params.status !== undefined) query.set('status', String(params.status));
+  return request<BackendPage<BackendLoginLog>>(`/api/admin/audit/login-logs?${query.toString()}`);
+}
+
+export function listOperationLogs(params: { current?: number; size?: number; username?: string; moduleKey?: string } = {}): Promise<BackendPage<BackendOperationLog>> {
+  const query = new URLSearchParams({ current: String(params.current || 1), size: String(params.size || 20) });
+  if (params.username) query.set('username', params.username);
+  if (params.moduleKey) query.set('moduleKey', params.moduleKey);
+  return request<BackendPage<BackendOperationLog>>(`/api/admin/audit/operation-logs?${query.toString()}`);
 }
 
 export async function listSystemUsers(params: { current?: number; size?: number; keyword?: string } = {}): Promise<BackendPage<BackendSystemUser>> {
