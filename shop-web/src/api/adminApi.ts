@@ -422,18 +422,42 @@ export const getAdminToken = (): string | null => localStorage.getItem(TOKEN_KEY
 export const clearAdminToken = (): void => localStorage.removeItem(TOKEN_KEY);
 
 async function request<T>(path: string, options: RequestInit = {}, token?: string): Promise<T> {
-  const headers = new Headers(options.headers);
-  headers.set('Content-Type', 'application/json');
-  const accessToken = token || getAdminToken();
-  if (accessToken) {
-    headers.set('Authorization', `Bearer ${accessToken}`);
+  const method = (options.method || 'GET').toUpperCase();
+  const retryable = method === 'GET' || method === 'HEAD';
+  const maxAttempts = retryable ? 3 : 1;
+  let lastError: unknown;
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    try {
+      const headers = new Headers(options.headers);
+      headers.set('Content-Type', 'application/json');
+      const accessToken = token || getAdminToken();
+      if (accessToken) {
+        headers.set('Authorization', `Bearer ${accessToken}`);
+      }
+      const response = await fetch(`${API_BASE_URL}${path}`, { ...options, headers });
+      if (response.status >= 500 && retryable && attempt < maxAttempts - 1) {
+        await delay(300 * 2 ** attempt);
+        continue;
+      }
+      const body = await response.json().catch(() => null) as ApiEnvelope<T> | null;
+      if (!response.ok || !body || body.code !== '0') {
+        throw new Error(body?.message || `请求失败（${response.status}）`);
+      }
+      return body.data;
+    } catch (error) {
+      lastError = error;
+      if (!retryable || !(error instanceof TypeError) || attempt >= maxAttempts - 1) break;
+      await delay(300 * 2 ** attempt);
+    }
   }
-  const response = await fetch(`${API_BASE_URL}${path}`, { ...options, headers });
-  const body = await response.json().catch(() => null) as ApiEnvelope<T> | null;
-  if (!response.ok || !body || body.code !== '0') {
-    throw new Error(body?.message || `请求失败（${response.status}）`);
+  if (!navigator.onLine) {
+    throw new Error('当前网络不可用，请检查网络连接后重试');
   }
-  return body.data;
+  throw lastError instanceof Error ? lastError : new Error('请求失败，请稍后重试');
+}
+
+function delay(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
 }
 
 export async function listSystemUsers(params: { current?: number; size?: number; keyword?: string } = {}): Promise<BackendPage<BackendSystemUser>> {
