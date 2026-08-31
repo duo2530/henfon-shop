@@ -253,7 +253,7 @@ export interface BackendContentReview {
   reviewContent: string;
   variantSummary?: string;
   helpfulCount: number;
-  status: number;
+  status: 0 | 1 | 2;
   reviewedAt?: string;
   replyContent?: string;
   repliedAt?: string;
@@ -378,6 +378,13 @@ export interface BackendReportingDashboardMetrics {
   totalSalesAmount: number;
   totalProductCount: number;
   totalMemberCount: number;
+}
+
+export interface BackendReportingSalesTrendPoint {
+  date: string;
+  salesAmount: number;
+  orderCount: number;
+  productQuantity: number;
 }
 
 interface ApiEnvelope<T> {
@@ -692,7 +699,7 @@ export function listContentReviews(params: { current?: number; size?: number; pr
   return request<BackendPage<BackendContentReview>>(`/api/admin/content/reviews?${query.toString()}`);
 }
 
-export function updateContentReviewStatus(id: number, status: number): Promise<void> {
+export function updateContentReviewStatus(id: number, status: 0 | 1 | 2): Promise<void> {
   return request<void>(`/api/admin/content/reviews/${id}/status?status=${status}`, { method: 'PUT' });
 }
 
@@ -777,6 +784,14 @@ export function listTradeOrders(params: { current?: number; size?: number; keywo
 export function getReportingDashboardMetrics(date?: string): Promise<BackendReportingDashboardMetrics> {
   const query = date ? `?date=${encodeURIComponent(date)}` : '';
   return request<BackendReportingDashboardMetrics>(`/api/admin/reporting/overview${query}`);
+}
+
+export function getReportingSalesTrend(startDate?: string, endDate?: string): Promise<BackendReportingSalesTrendPoint[]> {
+  const query = new URLSearchParams();
+  if (startDate) query.set('startDate', startDate);
+  if (endDate) query.set('endDate', endDate);
+  const queryString = query.toString();
+  return request<BackendReportingSalesTrendPoint[]>(`/api/admin/reporting/sales-trend${queryString ? `?${queryString}` : ''}`);
 }
 
 export function shipTradeOrder(orderId: number, payload: { logisticsCompany: string; trackingNo: string }): Promise<void> {

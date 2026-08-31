@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   ResponsiveContainer,
   ComposedChart,
@@ -11,10 +11,9 @@ import {
   Tooltip,
   Legend,
 } from 'recharts';
-import { salesTrends7Days, salesTrends30Days } from '../../data/mockData';
 import { DailySalesData } from '../../types';
+import { getReportingSalesTrend } from '../../api/adminApi';
 import { 
-  TrendingUp, 
   BarChart3, 
   Layers, 
   DollarSign, 
@@ -30,15 +29,68 @@ interface SalesTrendChartProps {
 export const SalesTrendChart: React.FC<SalesTrendChartProps> = ({ className = '' }) => {
   const [timeRange, setTimeRange] = useState<'7days' | '30days'>('7days');
   const [chartViewMode, setChartViewMode] = useState<'composed' | 'amount' | 'volume'>('composed');
+  const [currentData, setCurrentData] = useState<DailySalesData[]>([]);
+  const [metricsLoading, setMetricsLoading] = useState(true);
+  const [metricsError, setMetricsError] = useState<string | null>(null);
+  const [metricsReloadKey, setMetricsReloadKey] = useState(0);
 
-  const currentData: DailySalesData[] = timeRange === '7days' ? salesTrends7Days : salesTrends30Days;
+  useEffect(() => {
+    let cancelled = false;
+    const endDate = new Date();
+    const startDate = new Date(endDate);
+    startDate.setDate(startDate.getDate() - (timeRange === '7days' ? 6 : 29));
+    const toDateParam = (value: Date) => {
+      const pad = (part: number) => String(part).padStart(2, '0');
+      return `${value.getFullYear()}-${pad(value.getMonth() + 1)}-${pad(value.getDate())}`;
+    };
+
+    setMetricsLoading(true);
+    setMetricsError(null);
+    getReportingSalesTrend(toDateParam(startDate), toDateParam(endDate))
+      .then((rows) => {
+        if (!cancelled) {
+          setCurrentData((rows || []).map((row) => {
+            const [, month, day] = row.date.split('-');
+            const sales = Number(row.salesAmount) || 0;
+            const orders = Number(row.orderCount) || 0;
+            return {
+              date: month && day ? `${month}-${day}` : row.date,
+              fullDate: row.date,
+              sales,
+              volume: Number(row.productQuantity) || 0,
+              orders,
+              avgOrderValue: orders > 0 ? sales / orders : undefined,
+            };
+          }));
+        }
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) {
+          setCurrentData([]);
+          setMetricsError(error instanceof Error ? error.message : '销售趋势加载失败');
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setMetricsLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [timeRange, metricsReloadKey]);
 
   // Aggregate Metrics for Selected Period
   const totalSales = currentData.reduce((acc, curr) => acc + curr.sales, 0);
   const totalVolume = currentData.reduce((acc, curr) => acc + (curr.volume || 0), 0);
   const totalOrders = currentData.reduce((acc, curr) => acc + curr.orders, 0);
-  const avgDailySales = Math.round(totalSales / currentData.length);
-  const avgDailyVolume = Math.round(totalVolume / currentData.length);
+  const avgDailySales = currentData.length ? Math.round(totalSales / currentData.length) : 0;
+  const avgDailyVolume = currentData.length ? Math.round(totalVolume / currentData.length) : 0;
+  const hasTrendData = !metricsLoading && !metricsError && currentData.length > 0;
+  const peakData = currentData.reduce<DailySalesData | null>((peak, item) => (
+    !peak || item.sales > peak.sales ? item : peak
+  ), null);
 
   // Custom Recharts Tooltip
   const CustomTooltip = ({ active, payload, label }: any) => {
@@ -183,6 +235,19 @@ export const SalesTrendChart: React.FC<SalesTrendChartProps> = ({ className = ''
         </div>
       </div>
 
+      {metricsError && (
+        <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 flex items-center justify-between gap-3" role="alert">
+          <span>销售趋势加载失败：{metricsError}</span>
+          <button
+            type="button"
+            onClick={() => setMetricsReloadKey((value) => value + 1)}
+            className="shrink-0 rounded-md border border-red-300 bg-white px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-100"
+          >
+            重试
+          </button>
+        </div>
+      )}
+
       {/* Metric Quick Glance Chips */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
         <div className="p-2.5 rounded-lg bg-blue-50/60 border border-blue-100 flex flex-col justify-between">
@@ -191,11 +256,9 @@ export const SalesTrendChart: React.FC<SalesTrendChartProps> = ({ className = ''
           </span>
           <div className="flex items-baseline justify-between mt-1">
             <span className="text-base sm:text-lg font-bold text-blue-700 font-mono">
-              ¥{totalSales.toLocaleString()}
+              {hasTrendData ? `¥${totalSales.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '—'}
             </span>
-            <span className="text-[10px] font-semibold text-emerald-600 flex items-center">
-              <TrendingUp className="w-3 h-3 mr-0.5" /> +14.8%
-            </span>
+            <span className="text-[10px] text-gray-500">接口实时数据</span>
           </div>
         </div>
 
@@ -205,11 +268,9 @@ export const SalesTrendChart: React.FC<SalesTrendChartProps> = ({ className = ''
           </span>
           <div className="flex items-baseline justify-between mt-1">
             <span className="text-base sm:text-lg font-bold text-emerald-700 font-mono">
-              {totalVolume.toLocaleString()} <span className="text-xs font-normal">件</span>
+              {hasTrendData ? totalVolume.toLocaleString() : '—'} <span className="text-xs font-normal">{hasTrendData ? '件' : ''}</span>
             </span>
-            <span className="text-[10px] font-semibold text-emerald-600 flex items-center">
-              <TrendingUp className="w-3 h-3 mr-0.5" /> +11.2%
-            </span>
+            <span className="text-[10px] text-gray-500">接口实时数据</span>
           </div>
         </div>
 
@@ -217,7 +278,7 @@ export const SalesTrendChart: React.FC<SalesTrendChartProps> = ({ className = ''
           <span className="text-[11px] text-gray-500 font-medium">日均成交金额</span>
           <div className="flex items-baseline justify-between mt-1">
             <span className="text-base sm:text-lg font-bold text-indigo-700 font-mono">
-              ¥{avgDailySales.toLocaleString()}
+              {hasTrendData ? `¥${avgDailySales.toLocaleString('zh-CN')}` : '—'}
             </span>
             <span className="text-[10px] text-gray-500">/天</span>
           </div>
@@ -227,15 +288,24 @@ export const SalesTrendChart: React.FC<SalesTrendChartProps> = ({ className = ''
           <span className="text-[11px] text-gray-500 font-medium">日均商品销量</span>
           <div className="flex items-baseline justify-between mt-1">
             <span className="text-base sm:text-lg font-bold text-amber-700 font-mono">
-              {avgDailyVolume} <span className="text-xs font-normal">件</span>
+              {hasTrendData ? avgDailyVolume : '—'} <span className="text-xs font-normal">{hasTrendData ? '件' : ''}</span>
             </span>
-            <span className="text-[10px] text-gray-500">({totalOrders} 单)</span>
+            <span className="text-[10px] text-gray-500">({hasTrendData ? totalOrders : '—'} 单)</span>
           </div>
         </div>
       </div>
 
       {/* Main Recharts Container */}
       <div className="w-full h-[280px] bg-gradient-to-b from-gray-50/50 to-white rounded-lg p-2 border border-gray-100">
+        {metricsLoading ? (
+          <div className="h-full flex items-center justify-center text-sm text-slate-400" role="status">
+            正在加载销售趋势...
+          </div>
+        ) : currentData.length === 0 ? (
+          <div className="h-full flex items-center justify-center text-sm text-slate-400" role="status">
+            {metricsError ? '暂无可展示的销售趋势' : '暂无销售趋势数据'}
+          </div>
+        ) : (
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart
             data={currentData}
@@ -369,16 +439,21 @@ export const SalesTrendChart: React.FC<SalesTrendChartProps> = ({ className = ''
             )}
           </ComposedChart>
         </ResponsiveContainer>
+        )}
       </div>
 
       {/* Footer Info / Trend Highlights */}
       <div className="mt-3 pt-2.5 border-t border-gray-100 flex flex-wrap items-center justify-between text-xs text-gray-500 gap-2">
         <span className="flex items-center gap-1.5">
           <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-          本周销量峰值日: <strong className="text-gray-800">周六 (¥54,100 / 396件)</strong>
+          {peakData ? (
+            <>销售额峰值日: <strong className="text-gray-800">{peakData.fullDate || peakData.date} (¥{peakData.sales.toLocaleString('zh-CN')} / {peakData.volume.toLocaleString('zh-CN')}件)</strong></>
+          ) : (
+            <>销售额峰值日: <strong className="text-gray-800">暂无数据</strong></>
+          )}
         </span>
         <span className="text-gray-400">
-          数据每 10 分钟自动与订单及仓储数据库同步
+          数据来源：订单及订单明细实时聚合
         </span>
       </div>
     </div>

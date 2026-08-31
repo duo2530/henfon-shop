@@ -31,6 +31,7 @@ import {
   fetchPortalFavorites,
   fetchPortalOrders,
   fetchPortalOrderDetail,
+  fetchPortalOrderLogistics,
   fetchPortalAfterSales,
   createPortalAfterSale,
   cancelPortalAfterSale,
@@ -378,21 +379,37 @@ export default function App() {
             isDefault: address.isDefault === 1,
           })));
         }
-        // 订单列表只包含汇总字段，详情接口补齐明细和真实物流节点。
+        // 物流轨迹优先走独立接口，详情接口作为兼容回退，同时补齐商品明细。
         const details = await Promise.all(remoteOrders.map(async (order) => {
+          let remoteLogistics: PortalOrderLogisticsRecord[] | null = null;
           try {
-            return await fetchPortalOrderDetail(order.id);
+            remoteLogistics = await fetchPortalOrderLogistics(order.id);
+          } catch (error) {
+            console.warn(`订单 ${order.orderNo} 物流轨迹加载失败`, error);
+          }
+          let detail = null as Awaited<ReturnType<typeof fetchPortalOrderDetail>> | null;
+          try {
+            detail = await fetchPortalOrderDetail(order.id);
           } catch (error) {
             console.warn(`订单 ${order.orderNo} 详情加载失败`, error);
-            return null;
           }
+          const fallbackLogistics = detail?.logistics || [];
+          const logistics = remoteLogistics && remoteLogistics.length > 0
+            ? remoteLogistics
+            : fallbackLogistics;
+          return {
+            detail,
+            logistics,
+            logisticsUnavailable: remoteLogistics === null && logistics.length === 0,
+          };
         }));
         if (!active) return;
         setOrders(remoteOrders.map((order, index) => {
-          const detail = details[index];
+          const detailResult = details[index];
+          const detail = detailResult.detail;
           const status = mapPortalOrderStatus(order.orderStatus);
           const detailItems = detail?.items || [];
-          const detailLogistics = detail?.logistics || [];
+          const detailLogistics = detailResult.logistics;
           return {
             id: String(order.id),
             orderNumber: order.orderNo,
@@ -417,9 +434,20 @@ export default function App() {
               isDefault: false,
             },
             paymentMethod: order.paymentMethod || '在线支付',
-            estimatedDelivery: detailLogistics.length > 0 ? '物流持续更新中' : '以物流轨迹为准',
+            estimatedDelivery: detailLogistics.length > 0
+              ? '物流持续更新中'
+              : detailResult.logisticsUnavailable
+              ? '物流轨迹暂不可用'
+              : '以物流轨迹为准',
             trackingSteps: detailLogistics.length > 0
               ? mapPortalLogistics(detailLogistics)
+              : detailResult.logisticsUnavailable
+              ? [{
+                  title: '物流轨迹加载失败',
+                  time: '稍后重试',
+                  completed: false,
+                  description: '物流服务暂时不可用，请稍后刷新订单查看最新节点。',
+                }]
               : [{
                   title: '暂无物流轨迹',
                   time: '待同步',

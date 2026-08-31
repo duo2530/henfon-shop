@@ -3,9 +3,11 @@ package com.henfon.shop.reporting.mapper;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
+import com.henfon.shop.reporting.dto.ReportingSalesTrendRow;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.List;
 
 /**
  * 后台经营指标聚合数据访问接口。
@@ -15,6 +17,38 @@ import java.time.LocalDateTime;
  */
 @Mapper
 public interface ReportingMetricsMapper {
+
+    /**
+     * 按自然日聚合指定范围内的销售趋势。
+     *
+     * @param startTime 开始时间（包含）
+     * @param endTime 结束时间（不包含）
+     * @return 每日销售趋势原始聚合结果
+     * @author Henfon
+     * @date 2026-08-31
+     */
+    @Select("""
+            SELECT DATE(o.paid_at) AS date,
+                   COALESCE(SUM(o.paid_amount), 0.00) AS sales_amount,
+                   COUNT(*) AS order_count,
+                   COALESCE(SUM(item.product_quantity), 0) AS product_quantity
+            FROM trade_order o
+            LEFT JOIN (
+                SELECT order_id, SUM(quantity) AS product_quantity
+                FROM trade_order_item
+                WHERE is_deleted = 0
+                GROUP BY order_id
+            ) item ON item.order_id = o.id
+            WHERE o.is_deleted = 0
+              AND o.payment_status = 1
+              AND o.order_status <> 70
+              AND o.paid_at >= #{startTime}
+              AND o.paid_at < #{endTime}
+            GROUP BY DATE(o.paid_at)
+            ORDER BY date
+            """)
+    List<ReportingSalesTrendRow> listSalesTrend(@Param("startTime") LocalDateTime startTime,
+                                                @Param("endTime") LocalDateTime endTime);
 
     /**
      * 统计指定时间范围内的订单数量。

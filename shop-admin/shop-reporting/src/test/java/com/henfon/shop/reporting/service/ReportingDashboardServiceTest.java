@@ -2,6 +2,8 @@ package com.henfon.shop.reporting.service;
 
 import com.henfon.shop.common.exception.BusinessException;
 import com.henfon.shop.reporting.dto.ReportingDashboardMetricsResponse;
+import com.henfon.shop.reporting.dto.ReportingSalesTrendPoint;
+import com.henfon.shop.reporting.dto.ReportingSalesTrendRow;
 import com.henfon.shop.reporting.mapper.ReportingMetricsMapper;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -11,6 +13,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -102,5 +105,49 @@ class ReportingDashboardServiceTest {
                 () -> service.queryMetrics(LocalDate.now().plusDays(1)));
 
         assertEquals("REPORTING_DATE_INVALID", exception.getCode());
+    }
+
+    /**
+     * 校验销售趋势会补齐无成交日期并保留数据库聚合值。
+     *
+     * @author Henfon
+     * @date 2026-08-31
+     */
+    @Test
+    void shouldFillMissingSalesTrendDates() {
+        ReportingDashboardService service = new ReportingDashboardService(reportingMetricsMapper);
+        LocalDate endDate = LocalDate.now();
+        LocalDate startDate = endDate.minusDays(2);
+        ReportingSalesTrendRow row = new ReportingSalesTrendRow();
+        row.setDate(endDate.minusDays(1));
+        row.setSalesAmount(new BigDecimal("88.00"));
+        row.setOrderCount(2L);
+        row.setProductQuantity(4L);
+        when(reportingMetricsMapper.listSalesTrend(startDate.atStartOfDay(), endDate.plusDays(1).atStartOfDay()))
+                .thenReturn(List.of(row));
+
+        List<ReportingSalesTrendPoint> points = service.querySalesTrend(startDate, endDate);
+
+        assertEquals(3, points.size());
+        assertEquals(BigDecimal.ZERO, points.get(0).getSalesAmount());
+        assertEquals(new BigDecimal("88.00"), points.get(1).getSalesAmount());
+        assertEquals(4L, points.get(1).getProductQuantity());
+        assertEquals(BigDecimal.ZERO, points.get(2).getSalesAmount());
+    }
+
+    /**
+     * 校验销售趋势查询范围最多覆盖30个自然日。
+     *
+     * @author Henfon
+     * @date 2026-08-31
+     */
+    @Test
+    void shouldRejectSalesTrendRangeOverThirtyDays() {
+        ReportingDashboardService service = new ReportingDashboardService(reportingMetricsMapper);
+
+        BusinessException exception = assertThrows(BusinessException.class,
+                () -> service.querySalesTrend(LocalDate.now().minusDays(30), LocalDate.now()));
+
+        assertEquals("REPORTING_DATE_RANGE_TOO_LARGE", exception.getCode());
     }
 }

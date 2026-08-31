@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useAdmin } from '../../context/AdminContext';
 import { listContentReviews, replyContentReview, updateContentReviewStatus } from '../../api/adminApi';
 import { 
@@ -10,7 +10,9 @@ import {
   CornerDownRight, 
   ShieldCheck, 
   AlertCircle, 
-  Send 
+  Send,
+  Loader2,
+  RefreshCw
 } from 'lucide-react';
 
 export interface ReviewItem {
@@ -28,79 +30,52 @@ export interface ReviewItem {
   isFeatured?: boolean;
 }
 
-const mockReviews: ReviewItem[] = [
-  {
-    id: 'rev-001',
-    userName: '数码发烧友_Alan',
-    userAvatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100&auto=format&fit=crop&q=80',
-    productName: '极客降噪无线蓝牙耳机 Pro Max',
-    rating: 5,
-    content: '降噪效果非常惊艳！在高铁和飞机上戴上瞬间安静，音质高中低频分离度极高，佩戴舒适不压耳，强烈推荐！',
-    images: [
-      'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=300&auto=format&fit=crop&q=80'
-    ],
-    reply: '感谢您的认可与支持！耳机支持 OTA 固件升级，后续还将持续优化音质算法与续航表现，祝您使用愉快！',
-    status: 'approved',
-    createdAt: '2026-08-28 14:20:00',
-    likes: 42,
-    isFeatured: true
-  },
-  {
-    id: 'rev-002',
-    userName: '小西爱生活',
-    userAvatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100&auto=format&fit=crop&q=80',
-    productName: '天然有机大马士革玫瑰纯露 200ml',
-    rating: 5,
-    content: '味道非常天然纯正的淡淡玫瑰香，喷雾很细腻，换季敏感湿敷特别舒服，已经第二次回购了。',
-    status: 'approved',
-    createdAt: '2026-08-29 09:15:00',
-    likes: 18,
-    isFeatured: false
-  },
-  {
-    id: 'rev-003',
-    userName: '匿名买家',
-    userAvatar: 'https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?w=100&auto=format&fit=crop&q=80',
-    productName: '智能磁吸无线快充底座',
-    rating: 2,
-    content: '物流速度还行，但是充电时发热稍微有点明显，咨询客服回复稍慢。',
-    reply: '',
-    status: 'pending',
-    createdAt: '2026-08-29 11:40:00',
-    likes: 3,
-    isFeatured: false
-  }
-];
+function reviewStatus(status: number): ReviewItem['status'] {
+  // 后端约定：0待审核、1审核通过、2已隐藏。
+  if (status === 1) return 'approved';
+  if (status === 2) return 'hidden';
+  return 'pending';
+}
 
 export const ReviewManagementView: React.FC = () => {
   const { showToast } = useAdmin();
-  const [reviews, setReviews] = useState<ReviewItem[]>(mockReviews);
+  const [reviews, setReviews] = useState<ReviewItem[]>([]);
   const [replyTextMap, setReplyTextMap] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [replyingId, setReplyingId] = useState<string | null>(null);
+  const [statusUpdatingId, setStatusUpdatingId] = useState<string | null>(null);
+
+  const loadReviews = useCallback(async () => {
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const page = await listContentReviews({ current: 1, size: 100 });
+      setReviews((page.records || []).map((review) => ({
+        id: String(review.id),
+        userName: review.memberName,
+        userAvatar: review.memberAvatarUrl || '',
+        productName: `商品 #${review.productId}`,
+        rating: review.rating,
+        content: review.reviewContent,
+        reply: review.replyContent || '',
+        status: reviewStatus(review.status),
+        createdAt: review.createdAt || review.reviewedAt || '',
+        likes: review.helpfulCount || 0,
+      })));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '评价数据加载失败';
+      setReviews([]);
+      setLoadError(message);
+      showToast(`${message}，请点击重试`, 'error');
+    } finally {
+      setLoading(false);
+    }
+  }, [showToast]);
 
   useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    listContentReviews({ current: 1, size: 100 })
-      .then((page) => {
-        if (cancelled) return;
-        setReviews((page.records || []).map((review) => ({
-          id: String(review.id),
-          userName: review.memberName,
-          userAvatar: review.memberAvatarUrl || '',
-          productName: `商品 #${review.productId}`,
-          rating: review.rating,
-          content: review.reviewContent,
-          reply: review.replyContent || '',
-          status: review.status === 1 ? 'approved' : 'pending',
-          createdAt: review.createdAt || review.reviewedAt || '',
-          likes: review.helpfulCount || 0,
-        })));
-      })
-      .catch(() => showToast('评价接口暂不可用，当前显示演示数据', 'warning'))
-      .finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
-  }, []);
+    void loadReviews();
+  }, [loadReviews]);
 
   const handleReplySubmit = async (id: string) => {
     const text = replyTextMap[id];
@@ -108,26 +83,36 @@ export const ReviewManagementView: React.FC = () => {
       showToast('请输入回复内容', 'error');
       return;
     }
+    const previous = reviews;
+    setReplyingId(id);
+    setReviews((prev) => prev.map((review) => review.id === id ? { ...review, reply: text.trim() } : review));
     try {
       await replyContentReview(Number(id), text.trim());
-      setReviews((prev) => prev.map((r) => (r.id === id ? { ...r, reply: text.trim() } : r)));
       setReplyTextMap((prev) => ({ ...prev, [id]: '' }));
       showToast('官方回复已发布并通知客户', 'success');
     } catch (error) {
+      setReviews(previous);
       showToast(error instanceof Error ? error.message : '回复发布失败，请稍后重试', 'error');
+    } finally {
+      setReplyingId(null);
     }
   };
 
   const handleToggleStatus = async (review: ReviewItem) => {
-    const nextStatus = review.status === 'approved' ? 0 : 1;
+    const nextStatus = review.status === 'approved' ? 2 : 1;
+    const previous = reviews;
+    const nextFrontendStatus: ReviewItem['status'] = nextStatus === 1 ? 'approved' : 'hidden';
+    setStatusUpdatingId(review.id);
+    // 先更新界面提供即时反馈，接口失败时恢复快照，避免显示虚假的审核结果。
+    setReviews((prev) => prev.map((item) => item.id === review.id ? { ...item, status: nextFrontendStatus } : item));
     try {
       await updateContentReviewStatus(Number(review.id), nextStatus);
-      setReviews((prev) => prev.map((item) => item.id === review.id
-        ? { ...item, status: nextStatus === 1 ? 'approved' : 'hidden' }
-        : item));
       showToast(nextStatus === 1 ? '评价已通过审核' : '评价已隐藏', 'success');
     } catch (error) {
+      setReviews(previous);
       showToast(error instanceof Error ? error.message : '评价状态更新失败，请稍后重试', 'error');
+    } finally {
+      setStatusUpdatingId(null);
     }
   };
 
@@ -150,9 +135,16 @@ export const ReviewManagementView: React.FC = () => {
       </div>
 
       {/* Review List */}
-      {loading && <div className="text-sm text-gray-500">正在加载真实评价数据…</div>}
+      {loading && <div className="flex items-center text-sm text-gray-500"><Loader2 className="w-4 h-4 mr-2 animate-spin" />正在加载真实评价数据…</div>}
+      {!loading && loadError && (
+        <div className="rounded-xl border border-red-200 bg-red-50 py-10 text-center text-sm text-red-700" role="alert">
+          <AlertCircle className="w-6 h-6 mx-auto mb-2" />
+          <p>{loadError}</p>
+          <button type="button" onClick={() => void loadReviews()} className="mt-3 inline-flex items-center gap-1.5 text-blue-700 hover:underline"><RefreshCw className="w-4 h-4" />重新加载</button>
+        </div>
+      )}
       <div className="space-y-4">
-        {!loading && reviews.length === 0 && (
+        {!loading && !loadError && reviews.length === 0 && (
           <div className="rounded-xl border border-dashed border-gray-300 bg-white py-12 text-center text-sm text-gray-400">
             暂无评价数据
           </div>
@@ -233,21 +225,29 @@ export const ReviewManagementView: React.FC = () => {
                   className="flex-1 h-[34px] px-3 text-xs rounded-lg border border-gray-300 outline-none"
                 />
                 <button
-                  onClick={() => handleReplySubmit(rev.id)}
-                  className="h-[34px] px-3.5 bg-blue-600 text-white rounded-lg text-xs font-semibold hover:bg-blue-700 flex items-center gap-1 shrink-0"
+                  type="button"
+                  disabled={replyingId === rev.id}
+                  onClick={() => void handleReplySubmit(rev.id)}
+                  className="h-[34px] px-3.5 bg-blue-600 text-white rounded-lg text-xs font-semibold hover:bg-blue-700 flex items-center gap-1 shrink-0 disabled:opacity-60"
                 >
-                  <Send className="w-3.5 h-3.5" /> 回复
+                  {replyingId === rev.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />} {replyingId === rev.id ? '发布中…' : '回复'}
                 </button>
               </div>
             )}
 
             <div className="flex items-center justify-between text-xs text-gray-400 pt-2 border-t border-gray-100">
-              <span>{rev.createdAt} · 赞同 {rev.likes}</span>
+              <span className="flex items-center gap-2">{rev.createdAt} · 赞同 {rev.likes}
+                <span className={`px-1.5 py-0.5 rounded ${rev.status === 'approved' ? 'bg-emerald-50 text-emerald-700' : rev.status === 'hidden' ? 'bg-gray-100 text-gray-600' : 'bg-amber-50 text-amber-700'}`}>
+                  {rev.status === 'approved' ? '已通过' : rev.status === 'hidden' ? '已隐藏' : '待审核'}
+                </span>
+              </span>
               <button
+                type="button"
+                disabled={statusUpdatingId === rev.id}
                 onClick={() => void handleToggleStatus(rev)}
-                className="text-gray-500 hover:text-amber-600 font-semibold"
+                className="text-gray-500 hover:text-amber-600 font-semibold disabled:opacity-50"
               >
-                {rev.status === 'approved' ? '隐藏评价' : '通过审核'}
+                {statusUpdatingId === rev.id ? '处理中…' : rev.status === 'approved' ? '隐藏评价' : rev.status === 'hidden' ? '重新展示' : '通过审核'}
               </button>
             </div>
           </div>

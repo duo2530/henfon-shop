@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useState, ReactNode } from 'react';
 import { 
   Product, 
   ProductStatus,
@@ -412,13 +412,13 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     setAuthorizedMenuItems([]);
   };
 
-  const showToast = (message: string, type: 'success' | 'info' | 'warning' | 'error' = 'success') => {
+  const showToast = useCallback((message: string, type: 'success' | 'info' | 'warning' | 'error' = 'success') => {
     const id = Date.now().toString() + Math.random().toString(36).substring(2, 5);
     setToasts((prev) => [...prev, { id, message, type }]);
     setTimeout(() => {
-      removeToast(id);
+      setToasts((prev) => prev.filter((toast) => toast.id !== id));
     }, 3500);
-  };
+  }, []);
 
   const removeToast = (id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));

@@ -2,6 +2,7 @@ package com.henfon.shop.reporting.controller;
 
 import com.henfon.shop.common.api.ApiResponse;
 import com.henfon.shop.reporting.dto.ReportingDashboardMetricsResponse;
+import com.henfon.shop.reporting.dto.ReportingSalesTrendPoint;
 import com.henfon.shop.reporting.service.ReportingDashboardService;
 import jakarta.validation.constraints.PastOrPresent;
 import org.slf4j.MDC;
@@ -14,6 +15,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.time.LocalDate;
+import java.util.List;
 
 /**
  * 后台经营报表接口。
@@ -55,5 +57,27 @@ public class ReportingAdminController {
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
         // 日期格式由 Spring 转换器校验，日期范围由 Bean Validation 和服务层双重兜底。
         return ApiResponse.success(reportingDashboardService.queryMetrics(date), MDC.get("requestId"));
+    }
+
+    /**
+     * 查询后台销售趋势。
+     *
+     * @param startDate 开始日期，格式为yyyy-MM-dd，默认结束日期前六天
+     * @param endDate 结束日期，格式为yyyy-MM-dd，默认当天
+     * @return 每日销售趋势列表
+     * @author Henfon
+     * @date 2026-08-31
+     */
+    @GetMapping({"/sales-trend", "/dashboard/sales-trend"})
+    @PreAuthorize("hasAuthority('reporting:overview:query')")
+    public ApiResponse<List<ReportingSalesTrendPoint>> salesTrend(
+            @RequestParam(required = false)
+            @PastOrPresent(message = "销售趋势开始日期不能晚于今天")
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
+            @RequestParam(required = false)
+            @PastOrPresent(message = "销售趋势结束日期不能晚于今天")
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate) {
+        // 服务层负责补齐空日期并执行最大30天范围校验，控制器只负责参数绑定和权限控制。
+        return ApiResponse.success(reportingDashboardService.querySalesTrend(startDate, endDate), MDC.get("requestId"));
     }
 }
