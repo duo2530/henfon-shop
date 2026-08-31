@@ -21,6 +21,8 @@ import org.springframework.util.StringUtils;
 @Service
 public class SysUserService {
 
+    private static final long MAX_PAGE_SIZE = 200L;
+
     private final SysUserMapper sysUserMapper;
     private final PasswordEncoder passwordEncoder;
 
@@ -53,6 +55,8 @@ public class SysUserService {
     public IPage<SysUser> page(Long tenantId, String keyword, Long deptId, Integer status,
                                long current, long size) {
         // 查询统一限定未删除数据，数据范围过滤将在认证上下文建立后补充。
+        long safeCurrent = Math.max(current, 1L);
+        long safeSize = Math.min(Math.max(size, 1L), MAX_PAGE_SIZE);
         LambdaQueryWrapper<SysUser> wrapper = new LambdaQueryWrapper<SysUser>()
                 .eq(tenantId != null, SysUser::getTenantId, tenantId)
                 .eq(deptId != null, SysUser::getDeptId, deptId)
@@ -62,7 +66,7 @@ public class SysUserService {
                         .or().like(SysUser::getRealName, keyword)
                         .or().like(SysUser::getPhone, keyword))
                 .orderByDesc(SysUser::getCreatedAt);
-        return sysUserMapper.selectPage(new Page<>(current, size), wrapper);
+        return sysUserMapper.selectPage(new Page<>(safeCurrent, safeSize), wrapper);
     }
 
     /**
