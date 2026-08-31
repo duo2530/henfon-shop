@@ -330,6 +330,18 @@ public class IdentityDataInitializer implements ApplicationRunner {
             }
             menus.add(menu);
         }
+        // 审计日志查询权限挂在系统设置菜单下，仅允许具备审计权限的管理员查看敏感操作记录。
+        String[][] auditButtons = {
+                {"登录日志查询", "system:audit:login"}, {"操作审计查询", "system:audit:operation"}
+        };
+        for (String[] button : auditButtons) {
+            SysMenu menu = ensureMenu(button[0], "BUTTON", button[1], null, 104);
+            if (!settings.getId().equals(menu.getParentId())) {
+                menu.setParentId(settings.getId());
+                sysMenuMapper.updateById(menu);
+            }
+            menus.add(menu);
+        }
         // 发票查询和状态维护权限挂在财务目录下，供后台开票流程使用。
         String[][] invoiceButtons = {
                 {"发票查询", "payment:invoice:query"}, {"发票状态维护", "payment:invoice:status"}

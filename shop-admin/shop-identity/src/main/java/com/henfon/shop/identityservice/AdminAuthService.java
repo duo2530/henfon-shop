@@ -28,6 +28,7 @@ public class AdminAuthService {
     private final SysUserRoleMapper sysUserRoleMapper;
     private final PasswordEncoder passwordEncoder;
     private final JwtTokenService jwtTokenService;
+    private final AuditLogService auditLogService;
 
     /**
      * 创建管理端登录服务。
@@ -40,11 +41,13 @@ public class AdminAuthService {
      * @date 2026-08-29
      */
     public AdminAuthService(SysUserMapper sysUserMapper, SysUserRoleMapper sysUserRoleMapper,
-                            PasswordEncoder passwordEncoder, JwtTokenService jwtTokenService) {
+                            PasswordEncoder passwordEncoder, JwtTokenService jwtTokenService,
+                            AuditLogService auditLogService) {
         this.sysUserMapper = sysUserMapper;
         this.sysUserRoleMapper = sysUserRoleMapper;
         this.passwordEncoder = passwordEncoder;
         this.jwtTokenService = jwtTokenService;
+        this.auditLogService = auditLogService;
     }
 
     /**
@@ -64,9 +67,11 @@ public class AdminAuthService {
                 .eq(SysUser::getUsername, request.username())
                 .last("LIMIT 1"));
         if (user == null || !passwordEncoder.matches(request.password(), user.getPasswordHash())) {
+            auditLogService.recordLogin(user == null ? null : user.getId(), request.username(), 0, loginIp, "用户名或密码错误");
             throw new BusinessException("AUTH_INVALID", "用户名或密码错误");
         }
         if (!Integer.valueOf(1).equals(user.getStatus())) {
+            auditLogService.recordLogin(user.getId(), request.username(), 0, loginIp, "账号已被停用");
             throw new BusinessException("AUTH_DISABLED", "账号已被停用");
         }
         List<String> permissions = sysUserRoleMapper.selectPermissionCodesByUserId(user.getId());
@@ -74,6 +79,7 @@ public class AdminAuthService {
         user.setLastLoginIp(loginIp);
         sysUserMapper.updateById(user);
         String token = jwtTokenService.generate(user, permissions);
+        auditLogService.recordLogin(user.getId(), request.username(), 1, loginIp, null);
         return new AdminLoginResponse(token, jwtTokenService.getExpirationSeconds(), user.getId(),
                 user.getUsername(), user.getRealName(), permissions);
     }
