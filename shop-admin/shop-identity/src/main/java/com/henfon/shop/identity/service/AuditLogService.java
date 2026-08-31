@@ -101,4 +101,40 @@ public class AuditLogService {
         log.setFailureReason(failureReason);
         loginLogMapper.insert(log);
     }
+
+    /**
+     * 记录管理端业务操作审计日志。
+     *
+     * @param traceId 请求链路ID
+     * @param userId 用户ID
+     * @param username 用户名
+     * @param moduleKey 业务模块标识
+     * @param operation 操作描述
+     * @param requestMethod 请求方法
+     * @param requestUri 请求地址
+     * @param requestParams 请求参数摘要
+     * @param responseStatus 响应状态码
+     * @param clientIp 客户端IP
+     * @param durationMs 请求耗时
+     * @author Henfon
+     * @date 2026-08-31
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void recordOperation(String traceId, Long userId, String username, String moduleKey,
+                                String operation, String requestMethod, String requestUri,
+                                String requestParams, int responseStatus, String clientIp, long durationMs) {
+        SysOperLog log = new SysOperLog();
+        log.setTraceId(traceId);
+        log.setUserId(userId);
+        log.setUsername(username);
+        log.setModuleKey(moduleKey);
+        log.setOperation(operation);
+        log.setRequestMethod(requestMethod);
+        log.setRequestUri(requestUri);
+        log.setRequestParams(requestParams);
+        log.setResponseStatus(responseStatus);
+        log.setClientIp(clientIp);
+        log.setDurationMs(Math.max(durationMs, 0));
+        operLogMapper.insert(log);
+    }
 }
