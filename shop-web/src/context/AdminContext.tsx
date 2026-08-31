@@ -825,7 +825,7 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       createdAt: new Date().toISOString().split('T')[0]
     };
     setRoles((prev) => [...prev, newRole]);
-    showToast(`角色「${newRole.roleName}」创建成功`, 'success');
+    showToast(`正在创建角色「${newRole.roleName}」`, 'info');
     void saveSystemRole({
       roleKey: newRole.roleKey.toUpperCase(),
       roleName: newRole.roleName,
@@ -835,7 +835,11 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       description: newRole.description
     }).then((id) => {
       setRoles((prev) => prev.map((role) => role.id === newRole.id ? { ...role, id: String(id) } : role));
-    }).catch(() => showToast('角色已加入当前页面，但服务端保存失败', 'warning'));
+      showToast(`角色「${newRole.roleName}」创建成功`, 'success');
+    }).catch(() => {
+      setRoles((prev) => prev.filter((role) => role.id !== newRole.id));
+      showToast('角色创建失败，已回滚本地状态', 'error');
+    });
   };
 
   const updateRole = (id: string, updates: Partial<Role>) => {
@@ -935,7 +939,7 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       };
       setMenuItems((prev) => addChild(prev));
     }
-    showToast(`菜单「${newItem.title}」已添加`, 'success');
+    showToast(`正在添加菜单「${newItem.title}」`, 'info');
     void saveSystemMenu({
       parentId: newItem.parentId ? Number(newItem.parentId) : 0,
       menuName: newItem.title,
@@ -952,7 +956,14 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         ? { ...item, id: String(id) }
         : { ...item, children: item.children ? replaceId(item.children) : undefined });
       setMenuItems((prev) => replaceId(prev));
-    }).catch(() => showToast('菜单已加入当前页面，但服务端保存失败', 'warning'));
+      showToast(`菜单「${newItem.title}」已添加`, 'success');
+    }).catch(() => {
+      const removeItem = (items: MenuItem[]): MenuItem[] => items
+        .filter((item) => item.id !== newItem.id)
+        .map((item) => ({ ...item, children: item.children ? removeItem(item.children) : undefined }));
+      setMenuItems((prev) => removeItem(prev));
+      showToast('菜单创建失败，已回滚本地状态', 'error');
+    });
   };
 
   const updateMenuItem = (id: string, updates: Partial<MenuItem>) => {
@@ -1016,7 +1027,7 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       lastLoginIp: '-'
     };
     setSystemUsers((prev) => [newUser, ...prev]);
-    showToast(`系统用户「${newUser.username}」已开通`, 'success');
+    showToast(`正在开通系统用户「${newUser.username}」`, 'info');
     void createSystemUser({
       username: newUser.username,
       password: '123456',
@@ -1029,7 +1040,11 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       setSystemUsers((prev) => prev.map((user) => user.id === newUser.id ? { ...user, id: String(id) } : user));
       const roleIds = newUser.roles.map(Number).filter((roleId) => Number.isFinite(roleId));
       if (roleIds.length) await replaceUserRoles(id, roleIds);
-    }).catch(() => showToast('系统用户已加入当前页面，但服务端保存失败', 'warning'));
+      showToast(`系统用户「${newUser.username}」已开通`, 'success');
+    }).catch(() => {
+      setSystemUsers((prev) => prev.filter((user) => user.id !== newUser.id));
+      showToast('系统用户创建失败，已回滚本地状态', 'error');
+    });
   };
 
   const updateSystemUser = (id: string, updates: Partial<SystemUser>) => {
@@ -1097,7 +1112,7 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       updatedAt: new Date().toISOString().split('T')[0]
     };
     setDataRules((prev) => [newRule, ...prev]);
-    showToast(`数据权限规则「${newRule.ruleName}」已添加`, 'success');
+    showToast(`正在添加数据权限规则「${newRule.ruleName}」`, 'info');
     void saveSystemDataRule({
       ruleName: newRule.ruleName,
       moduleKey: newRule.module,
@@ -1112,7 +1127,11 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         const existingRuleIds = await listRoleDataRuleIds(Number(newRule.roleId)).catch(() => []);
         await replaceRoleDataRules(Number(newRule.roleId), Array.from(new Set([...existingRuleIds, id])));
       }
-    }).catch(() => showToast('规则已加入当前页面，但服务端保存失败', 'warning'));
+      showToast(`数据权限规则「${newRule.ruleName}」已添加`, 'success');
+    }).catch(() => {
+      setDataRules((prev) => prev.filter((rule) => rule.id !== newRule.id));
+      showToast('数据权限规则创建失败，已回滚本地状态', 'error');
+    });
   };
 
   const updateDataRule = (id: string, updates: Partial<DataRule>) => {
