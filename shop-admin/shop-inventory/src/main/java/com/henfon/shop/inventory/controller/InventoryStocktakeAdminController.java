@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.henfon.shop.common.api.ApiResponse;
 import com.henfon.shop.inventory.dto.InventoryStocktakeCompleteRequest;
 import com.henfon.shop.inventory.dto.InventoryStocktakeCreateRequest;
+import com.henfon.shop.inventory.dto.InventoryStocktakeImportRequest;
 import com.henfon.shop.inventory.entity.InventoryStocktake;
 import com.henfon.shop.inventory.entity.InventoryStocktakeItem;
 import com.henfon.shop.inventory.service.InventoryStocktakeService;
@@ -80,6 +81,23 @@ public class InventoryStocktakeAdminController {
     @PreAuthorize("hasAuthority('inventory:stocktake:query')")
     public ApiResponse<List<InventoryStocktakeItem>> items(@PathVariable Long id) {
         return ApiResponse.success(stocktakeService.listItems(id), MDC.get("requestId"));
+    }
+
+    /**
+     * 批量导入盘点实盘数量。
+     *
+     * @param id 盘点单ID
+     * @param request 批量导入请求
+     * @return 导入后的盘点明细
+     * @author Henfon
+     * @date 2026-08-31
+     */
+    @org.springframework.web.bind.annotation.PutMapping("/{id}/items/import")
+    @PreAuthorize("hasAuthority('inventory:stocktake:import')")
+    public ApiResponse<List<InventoryStocktakeItem>> importItems(
+            @PathVariable Long id,
+            @Valid @RequestBody InventoryStocktakeImportRequest request) {
+        return ApiResponse.success(stocktakeService.importCounts(id, request), MDC.get("requestId"));
     }
 
     /**

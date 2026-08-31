@@ -280,7 +280,8 @@ public class IdentityDataInitializer implements ApplicationRunner {
         String[][] stocktakeButtons = {
                 {"库存盘点查询", "inventory:stocktake:query"},
                 {"库存盘点创建", "inventory:stocktake:create"},
-                {"库存盘点完成", "inventory:stocktake:complete"}
+                {"库存盘点完成", "inventory:stocktake:complete"},
+                {"库存盘点导入", "inventory:stocktake:import"}
         };
         for (String[] button : stocktakeButtons) {
             SysMenu menu = ensureMenu(button[0], "BUTTON", button[1], null, 102);
@@ -312,6 +313,19 @@ public class IdentityDataInitializer implements ApplicationRunner {
             SysMenu menu = ensureMenu(button[0], "BUTTON", button[1], null, 103);
             if (!inventory.getId().equals(menu.getParentId())) {
                 menu.setParentId(inventory.getId());
+                sysMenuMapper.updateById(menu);
+            }
+            menus.add(menu);
+        }
+        // 秒杀活动权限挂在营销目录下，控制活动保存、启停和删除操作。
+        String[][] flashSaleButtons = {
+                {"秒杀活动保存", "marketing:flash:save"}, {"秒杀活动启停", "marketing:flash:status"},
+                {"秒杀活动删除", "marketing:flash:delete"}
+        };
+        for (String[] button : flashSaleButtons) {
+            SysMenu menu = ensureMenu(button[0], "BUTTON", button[1], null, 103);
+            if (!marketing.getId().equals(menu.getParentId())) {
+                menu.setParentId(marketing.getId());
                 sysMenuMapper.updateById(menu);
             }
             menus.add(menu);

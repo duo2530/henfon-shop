@@ -7,6 +7,7 @@ import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.henfon.shop.common.exception.BusinessException;
 import com.henfon.shop.inventory.dto.InventoryStocktakeCompleteRequest;
 import com.henfon.shop.inventory.dto.InventoryStocktakeCreateRequest;
+import com.henfon.shop.inventory.dto.InventoryStocktakeImportRequest;
 import com.henfon.shop.inventory.entity.InventoryStock;
 import com.henfon.shop.inventory.entity.InventoryStockLog;
 import com.henfon.shop.inventory.entity.InventoryStocktake;
@@ -25,6 +26,7 @@ import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * 库存盘点应用服务。
@@ -146,6 +148,56 @@ public class InventoryStocktakeService {
             itemMapper.insert(item);
         }
         return stocktake;
+    }
+
+    /**
+     * 批量导入盘点实盘数量，不改变盘点单状态。
+     *
+     * @param id 盘点单ID
+     * @param request 批量导入请求
+     * @return 导入后的盘点明细
+     * @author Henfon
+     * @date 2026-08-31
+     */
+    @Transactional
+    public List<InventoryStocktakeItem> importCounts(Long id, InventoryStocktakeImportRequest request) {
+        InventoryStocktake stocktake = requireStocktake(id);
+        if (!Integer.valueOf(STATUS_OPEN).equals(stocktake.getStatus())) {
+            throw new BusinessException("INVENTORY_STOCKTAKE_STATUS_INVALID", "盘点单已完成，不能导入实盘数量");
+        }
+        List<InventoryStocktakeItem> items = listItemsWithoutRequire(id);
+        Map<Long, InventoryStocktakeItem> itemMap = new HashMap<>();
+        for (InventoryStocktakeItem item : items) {
+            itemMap.put(item.getId(), item);
+        }
+        Map<Long, InventoryStocktakeImportRequest.InventoryStocktakeImportItem> submitted = new HashMap<>();
+        for (InventoryStocktakeImportRequest.InventoryStocktakeImportItem count : request.items()) {
+            if (submitted.put(count.itemId(), count) != null) {
+                throw new BusinessException("INVENTORY_STOCKTAKE_IMPORT_DUPLICATE", "导入明细不能重复");
+            }
+            InventoryStocktakeItem item = itemMap.get(count.itemId());
+            if (item == null || !Objects.equals(item.getStocktakeId(), stocktake.getId())) {
+                throw new BusinessException("INVENTORY_STOCKTAKE_IMPORT_ITEM_INVALID", "导入明细不属于当前盘点单");
+            }
+            if (!Objects.equals(item.getSkuId(), count.skuId())) {
+                throw new BusinessException("INVENTORY_STOCKTAKE_IMPORT_SKU_INVALID", "导入明细SKU与盘点记录不匹配");
+            }
+            if (!Objects.equals(item.getVersion(), count.version())) {
+                throw new BusinessException("INVENTORY_STOCKTAKE_IMPORT_CONCURRENT", "盘点明细已被其他操作修改，请重新导出");
+            }
+        }
+        for (InventoryStocktakeImportRequest.InventoryStocktakeImportItem count : submitted.values()) {
+            InventoryStocktakeItem item = itemMap.get(count.itemId());
+            int book = item.getBookQuantity() == null ? 0 : item.getBookQuantity();
+            item.setActualQuantity(count.actualQuantity());
+            item.setDifferenceQuantity(count.actualQuantity() - book);
+            item.setRemark(trimToNull(count.remark()));
+            // 更新使用明细版本进行乐观锁保护，重复导入同一版本将被拒绝。
+            if (itemMapper.updateById(item) == 0) {
+                throw new BusinessException("INVENTORY_STOCKTAKE_IMPORT_CONCURRENT", "盘点明细已被其他操作修改，请重试");
+            }
+        }
+        return listItemsWithoutRequire(id);
     }
 
     /**
