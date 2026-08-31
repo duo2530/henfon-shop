@@ -8,6 +8,7 @@ import com.henfon.shop.identity.entity.SysUser;
 import com.henfon.shop.identity.mapper.SysUserMapper;
 import com.henfon.shop.identity.mapper.SysUserRoleMapper;
 import com.henfon.shop.identity.security.JwtTokenService;
+import com.henfon.shop.identity.security.LoginRateLimiter;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -29,6 +30,7 @@ public class AdminAuthService {
     private final PasswordEncoder passwordEncoder;
     private final JwtTokenService jwtTokenService;
     private final AuditLogService auditLogService;
+    private final LoginRateLimiter loginRateLimiter;
 
     /**
      * 创建管理端登录服务。
@@ -42,12 +44,13 @@ public class AdminAuthService {
      */
     public AdminAuthService(SysUserMapper sysUserMapper, SysUserRoleMapper sysUserRoleMapper,
                             PasswordEncoder passwordEncoder, JwtTokenService jwtTokenService,
-                            AuditLogService auditLogService) {
+                            AuditLogService auditLogService, LoginRateLimiter loginRateLimiter) {
         this.sysUserMapper = sysUserMapper;
         this.sysUserRoleMapper = sysUserRoleMapper;
         this.passwordEncoder = passwordEncoder;
         this.jwtTokenService = jwtTokenService;
         this.auditLogService = auditLogService;
+        this.loginRateLimiter = loginRateLimiter;
     }
 
     /**
@@ -61,6 +64,10 @@ public class AdminAuthService {
      */
     @Transactional
     public AdminLoginResponse login(AdminLoginRequest request, String loginIp) {
+        if (!loginRateLimiter.allow(loginIp)) {
+            auditLogService.recordLogin(null, request.username(), 0, loginIp, "登录尝试过于频繁");
+            throw new BusinessException("AUTH_RATE_LIMITED", "登录尝试过于频繁，请稍后再试");
+        }
         long tenantId = request.tenantId() == null ? 0L : request.tenantId();
         SysUser user = sysUserMapper.selectOne(new LambdaQueryWrapper<SysUser>()
                 .eq(SysUser::getTenantId, tenantId)
@@ -80,6 +87,7 @@ public class AdminAuthService {
         sysUserMapper.updateById(user);
         String token = jwtTokenService.generate(user, permissions);
         auditLogService.recordLogin(user.getId(), request.username(), 1, loginIp, null);
+        loginRateLimiter.reset(loginIp);
         return new AdminLoginResponse(token, jwtTokenService.getExpirationSeconds(), user.getId(),
                 user.getUsername(), user.getRealName(), permissions);
     }
