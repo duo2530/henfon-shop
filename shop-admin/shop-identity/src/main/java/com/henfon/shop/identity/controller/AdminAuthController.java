@@ -5,6 +5,7 @@ import com.henfon.shop.identity.dto.AdminLoginRequest;
 import com.henfon.shop.identity.dto.AdminLoginResponse;
 import com.henfon.shop.identity.dto.AdminPasswordChangeRequest;
 import com.henfon.shop.identity.security.AuthenticatedUser;
+import com.henfon.shop.identity.security.MemberTokenStore;
 import com.henfon.shop.identity.entity.SysMenu;
 import com.henfon.shop.identity.mapper.SysUserRoleMapper;
 import com.henfon.shop.identity.service.AdminAuthService;
@@ -32,17 +33,22 @@ public class AdminAuthController {
 
     private final AdminAuthService adminAuthService;
     private final SysUserRoleMapper sysUserRoleMapper;
+    private final MemberTokenStore memberTokenStore;
 
     /**
      * 创建认证控制器。
      *
      * @param adminAuthService 管理端认证服务
+     * @param sysUserRoleMapper 用户角色数据访问对象
+     * @param memberTokenStore 访问令牌黑名单存储
      * @author Henfon
      * @date 2026-08-29
      */
-    public AdminAuthController(AdminAuthService adminAuthService, SysUserRoleMapper sysUserRoleMapper) {
+    public AdminAuthController(AdminAuthService adminAuthService, SysUserRoleMapper sysUserRoleMapper,
+                               MemberTokenStore memberTokenStore) {
         this.adminAuthService = adminAuthService;
         this.sysUserRoleMapper = sysUserRoleMapper;
+        this.memberTokenStore = memberTokenStore;
     }
 
     /**
@@ -73,6 +79,23 @@ public class AdminAuthController {
     public ApiResponse<Void> changePassword(@Valid @RequestBody AdminPasswordChangeRequest request,
                                              Authentication authentication) {
         adminAuthService.changePassword(authentication, request);
+        return ApiResponse.success(requestId());
+    }
+
+    /**
+     * 注销当前管理员并吊销访问令牌。
+     *
+     * @param authentication 当前认证信息
+     * @return 空响应
+     * @author Henfon
+     * @date 2026-08-31
+     */
+    @PostMapping("/logout")
+    public ApiResponse<Void> logout(Authentication authentication) {
+        if (authentication != null && authentication.getPrincipal() instanceof AuthenticatedUser user) {
+            // 黑名单 TTL 与 JWT 自然过期时间一致，重复退出保持幂等。
+            memberTokenStore.revokeAccessToken(user.tokenId());
+        }
         return ApiResponse.success(requestId());
     }
 

@@ -1151,6 +1151,11 @@ export function changeAdminPassword(oldPassword: string, newPassword: string): P
   });
 }
 
+/** 注销当前管理员会话并吊销访问令牌。 */
+export function logoutAdmin(): Promise<void> {
+  return request<void>('/api/admin/auth/logout', { method: 'POST' });
+}
+
 export function getCurrentAdmin(): Promise<AdminUser> {
   return request<AdminUser>('/api/admin/auth/me');
 }

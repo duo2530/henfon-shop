@@ -59,7 +59,7 @@ HTTP 状态：成功 2xx；参数/业务错误 400；认证失败 401；无权�
 
 ### shop-identity（认证、会员、RBAC、审计）
 
-- 管理认证：`POST /api/admin/auth/login`、`POST /api/admin/auth/password`、`GET /api/admin/auth/me`、`GET /api/admin/auth/menus`。修改密码请求体为 `{ "oldPassword": "...", "newPassword": "..." }`，新密码长度 6～64 位。
+- 管理认证：`POST /api/admin/auth/login`、`POST /api/admin/auth/password`、`POST /api/admin/auth/logout`、`GET /api/admin/auth/me`、`GET /api/admin/auth/menus`。修改密码请求体为 `{ "oldPassword": "...", "newPassword": "..." }`，新密码长度 6～64 位；退出会将当前 JWT 加入黑名单。
 - 会员认证：`POST /api/portal/auth/login|register|refresh|logout`。
 - 会员门户：`GET /api/portal/member/profile|addresses|favorites|compare/history`；地址 `POST /addresses`、`PUT/DELETE /addresses/{id}`、`PUT /addresses/{id}/default`；收藏 `POST /favorites/{productId}/toggle`；对比历史 `POST /compare/history`。
 - 会员管理：`GET /api/admin/member/users`（分页）、`PUT /users/{id}`、`PUT /users/{id}/status`、`PUT /users/{id}/assets`、标签 `GET/PUT /tags`、`PUT /tags/{id}`、`PUT /users/{id}/tags`。

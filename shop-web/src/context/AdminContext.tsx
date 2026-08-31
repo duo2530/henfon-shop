@@ -30,6 +30,7 @@ import {
   getAdminMenus,
   getAdminToken,
   getCurrentAdmin,
+  logoutAdmin,
   listMemberUsers,
   updateMemberStatus,
   updateMemberProfile,
@@ -83,7 +84,7 @@ interface AdminContextType {
   isAuthenticated: boolean;
   currentUser: AdminUser | null;
   login: (username: string, password: string) => Promise<void>;
-  logout: () => void;
+  logout: () => Promise<void>;
   currentTab: NavigationTab;
   setCurrentTab: (tab: NavigationTab) => void;
   /** 判断当前管理员是否拥有指定按钮权限（支持超级管理员通配符）。 */
@@ -454,11 +455,18 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     await hydrateTradeMetadata();
   };
 
-  const logout = () => {
-    clearAdminToken();
-    setCurrentUser(null);
-    setMenuItems([]);
-    setAuthorizedMenuItems([]);
+  const logout = async () => {
+    try {
+      // 先通知服务端吊销当前 JWT，网络失败仍清理本地会话避免残留登录态。
+      await logoutAdmin();
+    } catch (error) {
+      console.warn('管理员退出接口调用失败，已清理本地会话', error);
+    } finally {
+      clearAdminToken();
+      setCurrentUser(null);
+      setMenuItems([]);
+      setAuthorizedMenuItems([]);
+    }
   };
 
   const removeToast = (id: string) => {
