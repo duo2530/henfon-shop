@@ -25,6 +25,7 @@ import {
   redeemPortalCoupon,
   rollbackPortalCoupon,
   clearPortalMemberToken,
+  hasPortalMemberSession,
   deletePortalCartItem,
   fetchPortalAddresses,
   fetchPortalBanners,
@@ -347,7 +348,9 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState<UserProfile | null>(() => {
     try {
       const saved = localStorage.getItem('aurora_user_session');
-      return saved ? JSON.parse(saved) : DEMO_MODE ? PRESET_TEST_USERS[0].user : null;
+      // 生产模式仅恢复仍持有访问令牌的会话，避免历史缓存绕过登录拦截。
+      return DEMO_MODE ? (saved ? JSON.parse(saved) : PRESET_TEST_USERS[0].user)
+        : (saved && hasPortalMemberSession() ? JSON.parse(saved) : null);
     } catch {
       return DEMO_MODE ? PRESET_TEST_USERS[0].user : null;
     }
@@ -667,6 +670,27 @@ export default function App() {
       console.error(e);
     }
   }, [currentUser]);
+
+  // 统一拦截 API 返回的会员会话失效事件，清理本地 JWT 并回到未登录状态。
+  useEffect(() => {
+    const handleSessionExpired = () => {
+      setCurrentUser(null);
+      setPaymentPolling(null);
+      clearPortalMemberToken();
+      showToast('登录已过期，请重新登录', 'error');
+    };
+    window.addEventListener('henfon:member-session-expired', handleSessionExpired);
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key === 'henfon_shop_member_token' && !event.newValue) {
+        handleSessionExpired();
+      }
+    };
+    window.addEventListener('storage', handleStorage);
+    return () => {
+      window.removeEventListener('henfon:member-session-expired', handleSessionExpired);
+      window.removeEventListener('storage', handleStorage);
+    };
+  }, []);
 
   // Auth Handlers
   const handleOpenAuth = (mode: AuthMode = 'login-pwd') => {

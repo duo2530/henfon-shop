@@ -7,6 +7,10 @@ import com.henfon.shop.inventory.entity.InventoryStockLog;
 import com.henfon.shop.inventory.mapper.InventoryStockLockMapper;
 import com.henfon.shop.inventory.mapper.InventoryStockLogMapper;
 import com.henfon.shop.inventory.mapper.InventoryStockMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -22,10 +26,12 @@ import java.util.List;
 @Service
 public class InventoryReservationExpiryService {
     private static final int LOCKED = 0;
+    private static final Logger log = LoggerFactory.getLogger(InventoryReservationExpiryService.class);
 
     private final InventoryStockLockMapper lockMapper;
     private final InventoryStockMapper stockMapper;
     private final InventoryStockLogMapper logMapper;
+    private final TransactionTemplate transactionTemplate;
 
     /**
      * 创建库存预占过期补偿服务。
@@ -33,15 +39,20 @@ public class InventoryReservationExpiryService {
      * @param lockMapper 锁定流水数据访问对象
      * @param stockMapper 库存台账数据访问对象
      * @param logMapper 库存流水数据访问对象
+     * @param transactionManager 事务管理器
      * @author Henfon
-     * @date 2026-08-30
+     * @date 2026-08-31
      */
     public InventoryReservationExpiryService(InventoryStockLockMapper lockMapper,
                                              InventoryStockMapper stockMapper,
-                                             InventoryStockLogMapper logMapper) {
+                                             InventoryStockLogMapper logMapper,
+                                             PlatformTransactionManager transactionManager) {
         this.lockMapper = lockMapper;
         this.stockMapper = stockMapper;
         this.logMapper = logMapper;
+        // 每条补偿都使用独立事务，避免单条异常回滚本批次其他成功释放。
+        this.transactionTemplate = new TransactionTemplate(transactionManager);
+        this.transactionTemplate.setPropagationBehaviorName("PROPAGATION_REQUIRES_NEW");
     }
 
     /**
@@ -52,7 +63,6 @@ public class InventoryReservationExpiryService {
      * @author Henfon
      * @date 2026-08-30
      */
-    @Transactional
     public int compensate(int limit) {
         int safeLimit = Math.min(Math.max(limit, 1), 500);
         List<InventoryStockLock> locks = lockMapper.selectList(new LambdaQueryWrapper<InventoryStockLock>()
@@ -64,8 +74,14 @@ public class InventoryReservationExpiryService {
                 .last("LIMIT " + safeLimit));
         int released = 0;
         for (InventoryStockLock lock : locks) {
-            if (releaseOne(lock.getId())) {
-                released++;
+            try {
+                Boolean success = transactionTemplate.execute(status -> releaseOne(lock.getId()));
+                if (Boolean.TRUE.equals(success)) {
+                    released++;
+                }
+            } catch (RuntimeException ex) {
+                // 当前锁释放失败时保留锁定状态，下一轮扫描可继续重试，不影响其他锁。
+                log.warn("库存预占过期补偿失败，lockId={}，将在下一轮重试", lock.getId(), ex);
             }
         }
         return released;
@@ -82,7 +98,8 @@ public class InventoryReservationExpiryService {
     @Transactional
     public boolean releaseOne(Long lockId) {
         InventoryStockLock lock = lockMapper.selectById(lockId);
-        if (lock == null || !Integer.valueOf(LOCKED).equals(lock.getStatus())) {
+        if (lock == null || !Integer.valueOf(LOCKED).equals(lock.getStatus())
+                || lock.getExpireAt() == null || lock.getExpireAt().isAfter(LocalDateTime.now())) {
             return false;
         }
         InventoryStock stock = stockMapper.selectById(lock.getStockId());

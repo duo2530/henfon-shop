@@ -3,6 +3,9 @@ import { Coupon, Product, ProductSku, ProductVariant } from '../types/ecommerce'
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080').replace(/\/$/, '');
 const MEMBER_TOKEN_KEY = 'henfon_shop_member_token';
 const MEMBER_REFRESH_TOKEN_KEY = 'henfon_shop_member_refresh_token';
+const MEMBER_SESSION_EXPIRED_EVENT = 'henfon:member-session-expired';
+let memberRefreshPromise: Promise<MemberAuthResponse> | null = null;
+let memberSessionExpiredNotified = false;
 
 interface ApiResponse<T> {
   code: string;
@@ -106,7 +109,10 @@ export interface PortalReviewPage {
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const method = (options.method || 'GET').toUpperCase();
   const retryable = method === 'GET' || method === 'HEAD';
-  const maxAttempts = retryable ? 3 : 1;
+  // 写请求仅在首次访问返回401且刷新令牌成功时重试一次，避免重复提交业务数据。
+  const maxAttempts = retryable ? 3 : 2;
+  const authEndpoint = path.startsWith('/api/portal/auth/');
+  let refreshed = false;
   let lastError: unknown;
 
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
@@ -120,6 +126,31 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
           ...(options.headers || {}),
         },
       });
+      if (response.status === 401) {
+        const refreshToken = localStorage.getItem(MEMBER_REFRESH_TOKEN_KEY);
+        if (!authEndpoint && !refreshed && refreshToken) {
+          try {
+            // 多个接口同时返回401时共享一次刷新请求，避免刷新令牌轮换导致互相注销。
+            if (!memberRefreshPromise) {
+              memberRefreshPromise = refreshPortalMember(refreshToken).finally(() => {
+                memberRefreshPromise = null;
+              });
+            }
+            await memberRefreshPromise;
+            refreshed = true;
+            continue;
+          } catch (refreshError) {
+            clearPortalMemberToken();
+            notifyMemberSessionExpired();
+            throw refreshError;
+          }
+        }
+        if (!authEndpoint) {
+          clearPortalMemberToken();
+          notifyMemberSessionExpired();
+        }
+        throw new Error('会员登录已过期，请重新登录');
+      }
       // 仅对幂等查询的 5xx 响应重试，写请求始终由调用方显式处理。
       if (response.status >= 500 && retryable && attempt < maxAttempts - 1) {
         await delay(300 * 2 ** attempt);
@@ -145,6 +176,13 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     throw new Error('当前网络不可用，请检查网络连接后重试');
   }
   throw lastError instanceof Error ? lastError : new Error('门户接口请求失败，请稍后重试');
+}
+
+function notifyMemberSessionExpired(): void {
+  if (typeof window !== 'undefined' && !memberSessionExpiredNotified) {
+    memberSessionExpiredNotified = true;
+    window.dispatchEvent(new Event(MEMBER_SESSION_EXPIRED_EVENT));
+  }
 }
 
 function delay(milliseconds: number): Promise<void> {
@@ -278,6 +316,7 @@ export async function registerPortalMember(payload: {
 }
 
 function saveMemberTokens(response: MemberAuthResponse): void {
+  memberSessionExpiredNotified = false;
   localStorage.setItem(MEMBER_TOKEN_KEY, response.accessToken);
   if (response.refreshToken) {
     localStorage.setItem(MEMBER_REFRESH_TOKEN_KEY, response.refreshToken);

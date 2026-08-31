@@ -803,17 +803,43 @@ export function deleteInventorySupplier(id: number): Promise<void> {
 }
 
 export async function uploadStorageFile(file: File): Promise<BackendStorageUploadResult> {
+  const maxFileSize = 10 * 1024 * 1024;
+  const allowedContentTypes = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'video/mp4']);
+  if (!file || file.size === 0) {
+    throw new Error('上传文件不能为空');
+  }
+  if (file.size > maxFileSize) {
+    throw new Error('文件大小不能超过10MB');
+  }
+  if (!allowedContentTypes.has(file.type.toLowerCase())) {
+    throw new Error('仅支持 JPG、PNG、WEBP、GIF 和 MP4 文件');
+  }
+
   const formData = new FormData();
   formData.append('file', file);
   const headers = new Headers();
   const accessToken = getAdminToken();
   if (accessToken) headers.set('Authorization', `Bearer ${accessToken}`);
-  const response = await fetch(`${API_BASE_URL}/api/admin/storage/upload`, { method: 'POST', headers, body: formData });
-  const body = await response.json().catch(() => null) as ApiEnvelope<BackendStorageUploadResult> | null;
-  if (!response.ok || !body || body.code !== '0') {
-    throw new Error(body?.message || `上传失败（${response.status}）`);
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/admin/storage/upload`, { method: 'POST', headers, body: formData });
+      if (response.status >= 500 && attempt < 2) {
+        await delay(300 * 2 ** attempt);
+        continue;
+      }
+      const body = await response.json().catch(() => null) as ApiEnvelope<BackendStorageUploadResult> | null;
+      if (!response.ok || !body || body.code !== '0') {
+        throw new Error(body?.message || `上传失败（${response.status}）`);
+      }
+      return body.data;
+    } catch (error) {
+      lastError = error;
+      if (!(error instanceof TypeError) || attempt >= 2) break;
+      await delay(300 * 2 ** attempt);
+    }
   }
-  return body.data;
+  throw lastError instanceof Error ? lastError : new Error('上传失败，请稍后重试');
 }
 
 export function deleteStorageFile(objectKey: string): Promise<void> {

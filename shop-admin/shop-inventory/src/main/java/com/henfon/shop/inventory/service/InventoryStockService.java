@@ -33,8 +33,6 @@ import java.util.Map;
 public class InventoryStockService {
 
     private static final int LOCKED = 0;
-    private static final int RELEASED = 1;
-    private static final int DEDUCTED = 2;
 
     private final InventoryWarehouseMapper warehouseMapper;
     private final InventoryStockMapper stockMapper;
@@ -168,16 +166,20 @@ public class InventoryStockService {
                 .eq(InventoryStockLock::getOrderId, orderId)
                 .eq(InventoryStockLock::getStatus, LOCKED));
         for (InventoryStockLock lock : locks) {
+            // 先原子标记锁定流水，和发货/过期补偿并发时只有一个流程可以继续。
+            if (lockMapper.markReleasedIfLocked(lock.getId(), LocalDateTime.now()) == 0) {
+                continue;
+            }
             InventoryStock stock = stockMapper.selectById(lock.getStockId());
-            if (stock == null || stockMapper.release(stock.getId(), lock.getQuantity()) == 0) {
-                throw new BusinessException("INVENTORY_RELEASE_FAILED", "库存释放失败，请稍后重试");
+            if (stock == null) {
+                throw new BusinessException("INVENTORY_RELEASE_FAILED", "库存台账不存在，库存释放失败");
             }
             int beforeAvailable = stock.getAvailableStock();
             int beforeLocked = stock.getLockedStock();
+            if (stockMapper.release(stock.getId(), lock.getQuantity()) == 0) {
+                throw new BusinessException("INVENTORY_RELEASE_FAILED", "库存释放失败，请稍后重试");
+            }
             InventoryStock afterStock = stockMapper.selectById(stock.getId());
-            lock.setStatus(RELEASED);
-            lock.setReleasedAt(LocalDateTime.now());
-            lockMapper.updateById(lock);
             saveLog(stock, "RELEASE", orderNo, lock.getQuantity(), beforeAvailable,
                     afterStock.getAvailableStock(), beforeLocked, afterStock.getLockedStock(), "订单取消释放库存");
         }
@@ -197,16 +199,20 @@ public class InventoryStockService {
                 .eq(InventoryStockLock::getOrderId, orderId)
                 .eq(InventoryStockLock::getStatus, LOCKED));
         for (InventoryStockLock lock : locks) {
+            // 先原子标记锁定流水，和取消/过期补偿并发时只有一个流程可以继续。
+            if (lockMapper.markDeductedIfLocked(lock.getId(), LocalDateTime.now()) == 0) {
+                continue;
+            }
             InventoryStock stock = stockMapper.selectById(lock.getStockId());
-            if (stock == null || stockMapper.deduct(stock.getId(), lock.getQuantity()) == 0) {
-                throw new BusinessException("INVENTORY_DEDUCT_FAILED", "发货扣减库存失败，请刷新后重试");
+            if (stock == null) {
+                throw new BusinessException("INVENTORY_DEDUCT_FAILED", "库存台账不存在，发货扣减失败");
             }
             int beforeAvailable = stock.getAvailableStock();
             int beforeLocked = stock.getLockedStock();
+            if (stockMapper.deduct(stock.getId(), lock.getQuantity()) == 0) {
+                throw new BusinessException("INVENTORY_DEDUCT_FAILED", "发货扣减库存失败，请刷新后重试");
+            }
             InventoryStock afterStock = stockMapper.selectById(stock.getId());
-            lock.setStatus(DEDUCTED);
-            lock.setDeductedAt(LocalDateTime.now());
-            lockMapper.updateById(lock);
             saveLog(stock, "DEDUCT", orderNo, 0, beforeAvailable, afterStock.getAvailableStock(),
                     beforeLocked, afterStock.getLockedStock(), "订单发货扣减锁定库存");
         }

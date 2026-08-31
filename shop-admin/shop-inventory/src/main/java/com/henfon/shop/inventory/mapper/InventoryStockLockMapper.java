@@ -28,4 +28,18 @@ public interface InventoryStockLockMapper extends BaseMapper<InventoryStockLock>
             + "updated_at = CURRENT_TIMESTAMP(3), version = version + 1 "
             + "WHERE id = #{lockId} AND status = 0 AND is_deleted = 0")
     int markReleasedIfLocked(@Param("lockId") Long lockId, @Param("releasedAt") java.time.LocalDateTime releasedAt);
+
+    /**
+     * 原子将锁定流水标记为已扣减，避免取消订单与发货并发重复处理。
+     *
+     * @param lockId 锁定流水ID
+     * @param deductedAt 扣减时间
+     * @return 更新行数
+     * @author Henfon
+     * @date 2026-08-31
+     */
+    @Update("UPDATE inventory_stock_lock SET status = 2, deducted_at = #{deductedAt}, "
+            + "updated_at = CURRENT_TIMESTAMP(3), version = version + 1 "
+            + "WHERE id = #{lockId} AND status = 0 AND is_deleted = 0")
+    int markDeductedIfLocked(@Param("lockId") Long lockId, @Param("deductedAt") java.time.LocalDateTime deductedAt);
 }
