@@ -25,6 +25,7 @@ import {
   PackageCheck,
   Tag
 } from 'lucide-react';
+import { PermissionGate } from '../common/PermissionGate';
 
 export const OrderManagementView: React.FC = () => {
   const { 
@@ -37,7 +38,8 @@ export const OrderManagementView: React.FC = () => {
     updateOrderRemark,
     processOrderRefund,
     showToast, 
-    products 
+    products,
+    requirePermission
   } = useAdmin();
 
   // Tab filter
@@ -132,6 +134,7 @@ export const OrderManagementView: React.FC = () => {
 
   const handleConfirmShipment = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!requirePermission('order:ship', '订单发货')) return;
     if (!shippingOrder) return;
     if (!trackingNumber.trim()) {
       showToast('请填写物流运单号', 'error');
@@ -143,6 +146,7 @@ export const OrderManagementView: React.FC = () => {
   };
 
   const handleBatchShip = () => {
+    if (!requirePermission('order:ship', '批量发货')) return;
     const pendingOrdersToShip = orders.filter((o) => selectedOrderIds.includes(o.id) && o.status === 'pending_shipment');
     if (pendingOrdersToShip.length === 0) {
       showToast('选中的订单中没有待发货订单', 'warning');
@@ -160,6 +164,7 @@ export const OrderManagementView: React.FC = () => {
 
   const handleCreateOrder = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!requirePermission('order:add', '代客录单')) return;
     const product = products.find((p) => p.id === selectedProductId) || products[0];
     if (!product) return;
 
@@ -209,6 +214,7 @@ export const OrderManagementView: React.FC = () => {
 
   const handleSaveRemark = () => {
     if (!remarkOrder) return;
+    if (!requirePermission('order:remark', '订单备注')) return;
     updateOrderRemark(remarkOrder.id, remarkText, remarkFlag);
     setRemarkOrder(null);
   };
@@ -221,11 +227,13 @@ export const OrderManagementView: React.FC = () => {
 
   const handleConfirmRefund = () => {
     if (!refundOrder) return;
+    if (!requirePermission('order:refund', '订单退款')) return;
     processOrderRefund(refundOrder.id, refundAmount, refundReason);
     setRefundOrder(null);
   };
 
   const handleExportOrders = () => {
+    if (!requirePermission('order:export', '导出订单报表')) return;
     const csvContent =
       'data:text/csv;charset=utf-8,\uFEFF' +
       '订单号,下单时间,客户姓名,联系电话,支付方式,实付金额,优惠减免,标旗,状态,承运商,运单号,卖家备注,收货地址\n' +
@@ -278,22 +286,26 @@ export const OrderManagementView: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-3">
-          <button
-            onClick={handleExportOrders}
-            className="h-[36px] px-3.5 rounded-lg border border-[#E2E8F0] bg-white text-gray-700 hover:bg-gray-50 flex items-center gap-2 text-xs font-semibold shadow-2xs transition-colors cursor-pointer"
-          >
-            <Download className="w-4 h-4 text-gray-500" />
-            <span>导出订单表</span>
-          </button>
+          <PermissionGate permission="order:export">
+            <button
+              onClick={handleExportOrders}
+              className="h-[36px] px-3.5 rounded-lg border border-[#E2E8F0] bg-white text-gray-700 hover:bg-gray-50 flex items-center gap-2 text-xs font-semibold shadow-2xs transition-colors cursor-pointer"
+            >
+              <Download className="w-4 h-4 text-gray-500" />
+              <span>导出订单表</span>
+            </button>
+          </PermissionGate>
 
-          <button
-            id="btn-create-order"
-            onClick={() => setIsNewOrderModalOpen(true)}
-            className="h-[36px] px-4 rounded-lg bg-[#2563EB] text-white hover:bg-blue-700 flex items-center justify-center gap-2 text-xs font-semibold shadow-xs transition-colors cursor-pointer"
-          >
-            <Plus className="w-4 h-4" />
-            <span>代客录单 (New Order)</span>
-          </button>
+          <PermissionGate permission="order:add">
+            <button
+              id="btn-create-order"
+              onClick={() => setIsNewOrderModalOpen(true)}
+              className="h-[36px] px-4 rounded-lg bg-[#2563EB] text-white hover:bg-blue-700 flex items-center justify-center gap-2 text-xs font-semibold shadow-xs transition-colors cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              <span>代客录单 (New Order)</span>
+            </button>
+          </PermissionGate>
         </div>
       </div>
 
@@ -530,25 +542,29 @@ export const OrderManagementView: React.FC = () => {
               <span className="text-xs font-semibold text-blue-700 bg-blue-50 px-2 py-1 rounded-md">
                 已选中 {selectedOrderIds.length} 笔订单
               </span>
-              <button
-                onClick={() => setIsBatchShipModalOpen(true)}
-                className="h-[34px] px-3 rounded-lg bg-orange-600 text-white hover:bg-orange-700 text-xs font-semibold flex items-center gap-1.5 shadow-xs transition-colors"
-              >
-                <Truck className="w-3.5 h-3.5" />
-                <span>批量发货出库</span>
-              </button>
-              <button
-                onClick={() => {
-                  if (window.confirm(`确认批量取消选中的 ${selectedOrderIds.length} 笔订单吗？`)) {
-                    batchCancelOrders(selectedOrderIds);
-                    setSelectedOrderIds([]);
-                  }
-                }}
-                className="h-[34px] px-3 rounded-lg border border-red-200 text-red-600 hover:bg-red-50 text-xs font-semibold flex items-center gap-1 transition-colors"
-              >
-                <Ban className="w-3.5 h-3.5" />
-                <span>批量取消</span>
-              </button>
+              <PermissionGate permission="order:ship">
+                <button
+                  onClick={() => setIsBatchShipModalOpen(true)}
+                  className="h-[34px] px-3 rounded-lg bg-orange-600 text-white hover:bg-orange-700 text-xs font-semibold flex items-center gap-1.5 shadow-xs transition-colors"
+                >
+                  <Truck className="w-3.5 h-3.5" />
+                  <span>批量发货出库</span>
+                </button>
+              </PermissionGate>
+              <PermissionGate permission="order:cancel">
+                <button
+                  onClick={() => {
+                    if (window.confirm(`确认批量取消选中的 ${selectedOrderIds.length} 笔订单吗？`)) {
+                      if (requirePermission('order:cancel', '批量取消订单')) batchCancelOrders(selectedOrderIds);
+                      setSelectedOrderIds([]);
+                    }
+                  }}
+                  className="h-[34px] px-3 rounded-lg border border-red-200 text-red-600 hover:bg-red-50 text-xs font-semibold flex items-center gap-1 transition-colors"
+                >
+                  <Ban className="w-3.5 h-3.5" />
+                  <span>批量取消</span>
+                </button>
+              </PermissionGate>
             </div>
           )}
         </div>
@@ -698,14 +714,14 @@ export const OrderManagementView: React.FC = () => {
                             <div className="font-semibold text-gray-900 text-xs">
                               {order.customerName}
                             </div>
-                            <div className="text-[11px] text-gray-500 font-mono">
-                              {order.customerPhone}
-                            </div>
+                            <PermissionGate permission="order:pii:view" fallback={<div className="text-[11px] text-gray-400 font-mono">手机号已脱敏</div>}>
+                              <div className="text-[11px] text-gray-500 font-mono">{order.customerPhone}</div>
+                            </PermissionGate>
                           </div>
                         </div>
-                        <div className="text-[11px] text-gray-400 line-clamp-1 mt-1 max-w-[180px]">
-                          {order.shippingAddress}
-                        </div>
+                        <PermissionGate permission="order:pii:view" fallback={<div className="text-[11px] text-gray-400 mt-1">收货地址已脱敏</div>}>
+                          <div className="text-[11px] text-gray-400 line-clamp-1 mt-1 max-w-[180px]">{order.shippingAddress}</div>
+                        </PermissionGate>
                       </td>
 
                       {/* Items Preview */}
@@ -757,44 +773,56 @@ export const OrderManagementView: React.FC = () => {
                           </button>
 
                           {order.status === 'pending_shipment' && (
-                            <button
-                              onClick={() => {
-                                setShippingOrder(order);
-                                setTrackingNumber(`SF${Math.floor(10000000000 + Math.random() * 90000000000)}`);
-                              }}
-                              className="px-2 py-1 text-xs font-semibold bg-orange-50 text-orange-700 hover:bg-orange-100 rounded border border-orange-200 transition-colors"
-                              title="单笔发货"
-                            >
-                              发货
-                            </button>
+                            <PermissionGate permission="order:ship">
+                              <button
+                                onClick={() => {
+                                  setShippingOrder(order);
+                                  setTrackingNumber(`SF${Math.floor(10000000000 + Math.random() * 90000000000)}`);
+                                }}
+                                className="px-2 py-1 text-xs font-semibold bg-orange-50 text-orange-700 hover:bg-orange-100 rounded border border-orange-200 transition-colors"
+                                title="单笔发货"
+                              >
+                                发货
+                              </button>
+                            </PermissionGate>
                           )}
 
                           {order.status === 'shipped' && !order.refundStatus && (
-                            <button
-                              onClick={() => handleOpenRefund(order)}
-                              className="p-1.5 text-gray-500 hover:text-purple-600 hover:bg-purple-50 rounded transition-colors"
-                              title="售后退款处理"
-                            >
-                              <RotateCcw className="w-4 h-4" />
-                            </button>
+                            <PermissionGate permission="order:refund">
+                              <button
+                                onClick={() => handleOpenRefund(order)}
+                                className="p-1.5 text-gray-500 hover:text-purple-600 hover:bg-purple-50 rounded transition-colors"
+                                title="售后退款处理"
+                              >
+                                <RotateCcw className="w-4 h-4" />
+                              </button>
+                            </PermissionGate>
                           )}
 
-                          <button
-                            onClick={() => handleOpenRemark(order)}
-                            className="p-1.5 text-gray-500 hover:text-amber-600 hover:bg-amber-50 rounded transition-colors"
-                            title="修改卖家备注"
-                          >
-                            <FileText className="w-4 h-4" />
-                          </button>
+                          <PermissionGate permission="order:remark">
+                            <button
+                              onClick={() => handleOpenRemark(order)}
+                              className="p-1.5 text-gray-500 hover:text-amber-600 hover:bg-amber-50 rounded transition-colors"
+                              title="修改卖家备注"
+                            >
+                              <FileText className="w-4 h-4" />
+                            </button>
+                          </PermissionGate>
 
                           {order.status !== 'cancelled' && order.status !== 'completed' && order.status !== 'refunded' && order.status !== 'refunding' && (
-                            <button
-                              onClick={() => cancelOrder(order.id)}
-                              className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
-                              title="取消订单"
-                            >
-                              <Ban className="w-4 h-4" />
-                            </button>
+                            <PermissionGate permission="order:cancel">
+                              <button
+                                onClick={() => {
+                                  if (window.confirm(`确认取消订单 ${order.orderNumber} 吗？`)) {
+                                    if (requirePermission('order:cancel', '取消订单')) cancelOrder(order.id);
+                                  }
+                                }}
+                                className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                                title="取消订单"
+                              >
+                                <Ban className="w-4 h-4" />
+                              </button>
+                            </PermissionGate>
                           )}
                         </div>
                       </td>

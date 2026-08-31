@@ -347,6 +347,16 @@ export const Navbar: React.FC<NavbarProps> = ({
               onCategorySelect('all');
               onSearchChange('');
             }}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                onCategorySelect('all');
+                onSearchChange('');
+              }
+            }}
+            role="button"
+            tabIndex={0}
+            aria-label="返回商城首页"
             className="flex items-center gap-2.5 cursor-pointer select-none shrink-0"
           >
             <div className="w-10 h-10 rounded-xl bg-zinc-900 flex items-center justify-center text-white shadow-sm font-bold text-lg tracking-wider">
@@ -378,6 +388,9 @@ export const Navbar: React.FC<NavbarProps> = ({
               <input
                 ref={searchInputRef}
                 type="text"
+                aria-label="搜索商品、品牌或型号"
+                aria-autocomplete="list"
+                aria-expanded={isSearchFocused}
                 placeholder="搜索精选好物、品牌或型号..."
                 value={searchQuery}
                 onFocus={() => {
@@ -400,6 +413,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                   }}
                   className="absolute right-3 p-1 rounded-full text-zinc-400 hover:text-zinc-700 transition"
                   title="清除搜索内容"
+                  aria-label="清除搜索内容"
                 >
                   <X className="w-3.5 h-3.5" />
                 </button>
@@ -652,6 +666,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             {/* Orders History Button */}
             <button
               onClick={onOpenOrders}
+              aria-label={`打开我的订单${ordersCount > 0 ? `，${ordersCount} 个待处理订单` : ''}`}
               className="relative p-2 sm:px-3 sm:py-2 rounded-xl text-zinc-700 hover:bg-zinc-100 transition flex items-center gap-1.5 text-xs font-medium"
               title="我的订单"
             >
@@ -663,6 +678,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             {/* Wishlist Button */}
             <button
               onClick={onOpenWishlist}
+              aria-label={`打开收藏夹${wishlistCount > 0 ? `，${wishlistCount} 件商品` : ''}`}
               className="relative p-2 sm:px-3 sm:py-2 rounded-xl text-zinc-700 hover:bg-zinc-100 transition flex items-center gap-1.5 text-xs font-medium"
               title="收藏夹"
             >
@@ -678,6 +694,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             {/* Cart Drawer Trigger */}
             <button
               onClick={onOpenCart}
+              aria-label={`打开购物车，共 ${cartCount} 件商品，合计 ¥${cartTotal.toFixed(2)}`}
               className="relative flex items-center gap-2.5 px-3 sm:px-3.5 py-2 rounded-xl bg-zinc-900 text-white hover:bg-zinc-800 transition shadow-xs"
               title="购物车"
             >
@@ -701,6 +718,9 @@ export const Navbar: React.FC<NavbarProps> = ({
               <div className="relative" ref={userMenuRef}>
                 <button
                   onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
+                  aria-label="打开用户中心"
+                  aria-expanded={isUserMenuOpen}
+                  aria-haspopup="menu"
                   className="flex items-center gap-2 pl-1.5 pr-2.5 py-1.5 rounded-2xl bg-zinc-100 hover:bg-zinc-200/80 border border-zinc-200 transition select-none"
                   title="用户中心"
                 >

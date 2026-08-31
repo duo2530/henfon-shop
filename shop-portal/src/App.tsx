@@ -1632,6 +1632,12 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-zinc-50/70 text-zinc-900 flex flex-col font-sans selection:bg-zinc-900 selection:text-white">
+      <a
+        href="#portal-main-content"
+        className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-2 focus:z-[100] focus:rounded-md focus:bg-zinc-900 focus:px-4 focus:py-2 focus:text-sm focus:font-semibold focus:text-white"
+      >
+        跳转到主要内容
+      </a>
       {/* Toast Notification Layer */}
       <ToastContainer toasts={toasts} onDismiss={handleDismissToast} />
 
@@ -1658,7 +1664,7 @@ export default function App() {
         onLogout={handleLogout}
       />
 
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-6 md:py-8">
+      <main id="portal-main-content" tabIndex={-1} aria-label="商城主要内容" className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-6 md:py-8">
         {/* Promotional Hero Carousel & Benefits (show only when no active text search query) */}
         {!searchQuery && selectedCategory === 'all' && (
           <HeroBanner
@@ -1735,6 +1741,7 @@ export default function App() {
                       : 'bg-white text-zinc-700 border-zinc-200 hover:bg-zinc-50'
                   }`}
                   title="开启/关闭商品对比模式"
+                  aria-pressed={isCompareMode}
                 >
                   <Scale className="w-3.5 h-3.5" />
                   <span>对比模式</span>
@@ -1765,6 +1772,8 @@ export default function App() {
               {/* Only In Stock Toggle */}
               <button
                 onClick={() => setOnlyInStock(!onlyInStock)}
+                aria-pressed={onlyInStock}
+                aria-label="仅看现货"
                 className={`px-3 py-1.5 rounded-xl text-xs font-medium border transition flex items-center gap-1.5 ${
                   onlyInStock
                     ? 'bg-zinc-900 text-white border-zinc-900'
@@ -1778,6 +1787,8 @@ export default function App() {
               {/* Only Discount Toggle */}
               <button
                 onClick={() => setOnlyDiscount(!onlyDiscount)}
+                aria-pressed={onlyDiscount}
+                aria-label="限时特惠"
                 className={`px-3 py-1.5 rounded-xl text-xs font-medium border transition flex items-center gap-1.5 ${
                   onlyDiscount
                     ? 'bg-zinc-900 text-white border-zinc-900'
@@ -1809,6 +1820,8 @@ export default function App() {
               <div className="flex items-center border border-zinc-200 rounded-xl p-0.5 bg-zinc-50">
                 <button
                   onClick={() => setViewMode('grid')}
+                  aria-pressed={viewMode === 'grid'}
+                  aria-label="网格视图"
                   className={`p-1.5 rounded-lg transition ${
                     viewMode === 'grid'
                       ? 'bg-white text-zinc-900 shadow-xs'
@@ -1820,6 +1833,8 @@ export default function App() {
                 </button>
                 <button
                   onClick={() => setViewMode('list')}
+                  aria-pressed={viewMode === 'list'}
+                  aria-label="列表视图"
                   className={`p-1.5 rounded-lg transition ${
                     viewMode === 'list'
                       ? 'bg-white text-zinc-900 shadow-xs'

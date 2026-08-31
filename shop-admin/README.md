@@ -61,6 +61,16 @@ java -jar shop-boot/target/shop-boot-0.0.1-SNAPSHOT.jar
 
 基础接口：`GET http://127.0.0.1:8080/api/health`。
 
+## 测试与质量基线
+
+执行后端单元测试、JWT 安全回归测试和订单状态机性能基线：
+
+```powershell
+mvn -pl shop-identity,shop-trade,shop-boot -am test
+```
+
+`shop-boot` 中的外部依赖冒烟测试默认跳过，不会要求开发机启动 MySQL、Redis、RocketMQ 或 MinIO。测试环境准备好依赖后，设置 `SHOP_IT_ENABLED=true` 再执行上述命令即可；主机、端口通过 `SHOP_TEST_*` 环境变量覆盖，支付回调地址通过 `SHOP_TEST_PAYMENT_CALLBACK_URL` 配置。性能基线默认要求 10 万次状态转换在 5 秒内完成，可使用 `-Dshop.performance.maxMillis=10000` 调整阈值。集成测试仅验证依赖连通性，真实数据库读写、消息收发和支付签名联调需在隔离测试环境执行。
+
 身份认证接口：
 
 - `POST /api/admin/auth/login`：管理员登录，JSON 请求体 `{ "username": "admin", "password": "123456" }`

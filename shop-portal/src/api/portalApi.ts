@@ -1,6 +1,7 @@
 import { Coupon, Product, ProductSku, ProductVariant } from '../types/ecommerce';
 
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080').replace(/\/$/, '');
+// 在 Vite 浏览器环境读取环境变量；SSR/Node 冒烟测试中 import.meta.env 可能不存在。
+const API_BASE_URL = ((import.meta.env?.VITE_API_BASE_URL as string | undefined) || 'http://localhost:8080').replace(/\/$/, '');
 const MEMBER_TOKEN_KEY = 'henfon_shop_member_token';
 const MEMBER_REFRESH_TOKEN_KEY = 'henfon_shop_member_refresh_token';
 const MEMBER_SESSION_EXPIRED_EVENT = 'henfon:member-session-expired';

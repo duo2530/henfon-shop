@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { AdminProvider, useAdmin } from './context/AdminContext';
 import { Sidebar } from './components/layout/Sidebar';
 import { TopNavbar } from './components/layout/TopNavbar';
@@ -30,14 +30,33 @@ import { SettingsView } from './components/settings/SettingsView';
 import { NotificationDrawer } from './components/common/NotificationDrawer';
 import { ToastContainer } from './components/common/ToastContainer';
 import { AdminLogin } from './components/auth/AdminLogin';
+import { PermissionDenied } from './components/common/PermissionGate';
+import { containsMenuTab, firstMenuTab } from './navigation/menuAdapter';
 
 const AdminLayoutContent: React.FC = () => {
-  const { currentTab } = useAdmin();
+  const { currentTab, authorizedMenuItems, setCurrentTab } = useAdmin();
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
 
+  useEffect(() => {
+    // 菜单加载完成后纠正可能来自旧状态/深链的未授权页面。
+    if (authorizedMenuItems.length > 0 && !containsMenuTab(authorizedMenuItems, currentTab)) {
+      const fallbackTab = firstMenuTab(authorizedMenuItems);
+      if (fallbackTab) setCurrentTab(fallbackTab);
+    }
+  }, [authorizedMenuItems, currentTab, setCurrentTab]);
+
+  // 菜单加载完成后严格按服务端授权判断；空菜单代表账号没有可访问页面。
+  const hasCurrentTab = authorizedMenuItems.length > 0 && containsMenuTab(authorizedMenuItems, currentTab);
+
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-[#191C1E] font-sans antialiased flex flex-col">
+      <a
+        href="#main-content-canvas"
+        className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-2 focus:z-[100] focus:rounded-md focus:bg-blue-600 focus:px-4 focus:py-2 focus:text-sm focus:font-semibold focus:text-white"
+      >
+        跳转到主要内容
+      </a>
       {/* Toast Feedback */}
       <ToastContainer />
 
@@ -62,40 +81,43 @@ const AdminLayoutContent: React.FC = () => {
       {/* Main Content Area */}
       <main
         id="main-content-canvas"
+        tabIndex={-1}
+        aria-label="后台主要内容"
         className="flex-1 md:ml-[240px] mt-[56px] p-4 sm:p-6 lg:p-8 overflow-x-hidden min-h-[calc(100vh-56px)]"
       >
-        {currentTab === 'dashboard' && <DashboardView />}
-        {currentTab === 'products' && <ProductManagementView />}
-        {currentTab === 'orders' && <OrderManagementView />}
-        {currentTab === 'users' && <UserManagementView />}
+        {!hasCurrentTab && <PermissionDenied />}
+        {hasCurrentTab && currentTab === 'dashboard' && <DashboardView />}
+        {hasCurrentTab && currentTab === 'products' && <ProductManagementView />}
+        {hasCurrentTab && currentTab === 'orders' && <OrderManagementView />}
+        {hasCurrentTab && currentTab === 'users' && <UserManagementView />}
         
         {/* Marketing Views */}
-        {currentTab === 'coupons' && <CouponManagementView />}
-        {currentTab === 'flash_sales' && <FlashSaleManagementView />}
+        {hasCurrentTab && currentTab === 'coupons' && <CouponManagementView />}
+        {hasCurrentTab && currentTab === 'flash_sales' && <FlashSaleManagementView />}
 
         {/* Inventory Views */}
-        {currentTab === 'inventory_stock' && <WarehouseStockView />}
-        {currentTab === 'inventory_suppliers' && <SupplierManagementView />}
+        {hasCurrentTab && currentTab === 'inventory_stock' && <WarehouseStockView />}
+        {hasCurrentTab && currentTab === 'inventory_suppliers' && <SupplierManagementView />}
 
         {/* Finance Views */}
-        {currentTab === 'finance_transactions' && <TransactionReconciliationView />}
-        {currentTab === 'finance_invoices' && <InvoiceManagementView />}
+        {hasCurrentTab && currentTab === 'finance_transactions' && <TransactionReconciliationView />}
+        {hasCurrentTab && currentTab === 'finance_invoices' && <InvoiceManagementView />}
 
         {/* Analytics Views */}
-        {currentTab === 'analytics_overview' && <AnalyticsOverviewView />}
-        {currentTab === 'analytics_products' && <ProductAnalyticsView />}
+        {hasCurrentTab && currentTab === 'analytics_overview' && <AnalyticsOverviewView />}
+        {hasCurrentTab && currentTab === 'analytics_products' && <ProductAnalyticsView />}
 
         {/* Content Views */}
-        {currentTab === 'content_banners' && <BannerManagementView />}
-        {currentTab === 'content_reviews' && <ReviewManagementView />}
+        {hasCurrentTab && currentTab === 'content_banners' && <BannerManagementView />}
+        {hasCurrentTab && currentTab === 'content_reviews' && <ReviewManagementView />}
 
         {/* RBAC & System */}
-        {currentTab === 'roles' && <RoleManagementView />}
-        {currentTab === 'menus' && <MenuManagementView />}
-        {currentTab === 'system_users' && <SystemUserManagementView />}
-        {currentTab === 'authorization' && <AuthorizationView />}
-        {currentTab === 'data_permissions' && <DataPermissionView />}
-        {currentTab === 'settings' && <SettingsView />}
+        {hasCurrentTab && currentTab === 'roles' && <RoleManagementView />}
+        {hasCurrentTab && currentTab === 'menus' && <MenuManagementView />}
+        {hasCurrentTab && currentTab === 'system_users' && <SystemUserManagementView />}
+        {hasCurrentTab && currentTab === 'authorization' && <AuthorizationView />}
+        {hasCurrentTab && currentTab === 'data_permissions' && <DataPermissionView />}
+        {hasCurrentTab && currentTab === 'settings' && <SettingsView />}
       </main>
     </div>
   );

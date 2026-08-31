@@ -95,6 +95,9 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
             <button
               id="btn-admin-profile"
               onClick={() => setProfileOpen(!profileOpen)}
+              aria-label="打开管理员菜单"
+              aria-expanded={profileOpen}
+              aria-haspopup="menu"
               className="flex items-center gap-2 p-1 rounded-full hover:ring-2 hover:ring-blue-500/30 transition-all cursor-pointer"
             >
               <div className="w-8 h-8 rounded-full overflow-hidden border border-gray-300 bg-gray-200 shadow-2xs">
@@ -167,6 +170,7 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
               <button
                 onClick={() => setHelpModalOpen(false)}
                 className="text-gray-400 hover:text-gray-600 p-1 rounded"
+                aria-label="关闭操作指南"
               >
                 ✕
               </button>

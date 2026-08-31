@@ -86,6 +86,10 @@ interface AdminContextType {
   logout: () => void;
   currentTab: NavigationTab;
   setCurrentTab: (tab: NavigationTab) => void;
+  /** 判断当前管理员是否拥有指定按钮权限（支持超级管理员通配符）。 */
+  hasPermission: (permission: string) => boolean;
+  /** 在执行写操作前统一校验权限，并在拒绝时给出可理解的提示。 */
+  requirePermission: (permission: string, actionLabel?: string) => boolean;
   products: Product[];
   orders: Order[];
   users: User[];
@@ -252,7 +256,7 @@ function backendOrdersToFrontend(records: BackendTradeOrder[]): Order[] {
 export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [authLoading, setAuthLoading] = useState(true);
   const [currentUser, setCurrentUser] = useState<AdminUser | null>(null);
-  const [currentTab, setCurrentTab] = useState<NavigationTab>('dashboard');
+  const [currentTab, setCurrentTabState] = useState<NavigationTab>('dashboard');
   const [products, setProducts] = useState<Product[]>(initialProducts);
   const [orders, setOrders] = useState<Order[]>(initialOrders);
   const [users, setUsers] = useState<User[]>(initialUsers);
@@ -269,6 +273,51 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   const [systemUsers, setSystemUsers] = useState<SystemUser[]>(initialSystemUsers);
   const [departments, setDepartmentsState] = useState<Department[]>(initialDepartments);
   const [dataRules, setDataRules] = useState<DataRule[]>(initialDataRules);
+
+  const showToast = useCallback((message: string, type: 'success' | 'info' | 'warning' | 'error' = 'success') => {
+    const id = Date.now().toString() + Math.random().toString(36).substring(2, 5);
+    setToasts((prev) => [...prev, { id, message, type }]);
+    setTimeout(() => setToasts((prev) => prev.filter((toast) => toast.id !== id)), 3500);
+  }, []);
+
+  const hasPermission = useCallback((permission: string): boolean => {
+    const permissions = currentUser?.permissions || [];
+    if (permissions.includes('*:*:*') || permissions.includes(permission)) return true;
+    // 兼容后端当前以模块查询权限保护商品/订单列表的实现，后续补充细粒度按钮权限后自动优先使用精确值。
+    const aliases: Record<string, string[]> = {
+      'product:add': ['catalog:product:save', 'catalog:product:query'],
+      'product:edit': ['catalog:product:save', 'catalog:product:query'],
+      'product:delete': ['catalog:product:delete', 'catalog:product:query'],
+      'product:status': ['catalog:product:status', 'catalog:product:query'],
+      'product:export': ['catalog:product:export', 'catalog:product:query'],
+      'product:cost:view': ['catalog:product:cost:view', 'catalog:product:query'],
+      'inventory:stock:adjust': ['inventory:stock:adjust'],
+      'order:add': ['trade:order:create', 'trade:order:query'],
+      'order:export': ['trade:order:export', 'trade:order:query'],
+      'order:pii:view': ['trade:order:pii:view', 'trade:order:query'],
+      'order:ship': ['trade:order:ship'],
+      'order:cancel': ['trade:order:cancel'],
+      'order:remark': ['trade:order:remark'],
+      'order:refund': ['trade:order:refund'],
+      'system:config:save': ['system:config:save', 'system:config:view']
+    };
+    return (aliases[permission] || []).some((candidate) => permissions.includes(candidate));
+  }, [currentUser]);
+
+  const requirePermission = useCallback((permission: string, actionLabel = '该操作'): boolean => {
+    if (hasPermission(permission)) return true;
+    showToast(`暂无${actionLabel}权限，请联系管理员`, 'warning');
+    return false;
+  }, [hasPermission]);
+
+  /** 仅允许跳转到后端菜单返回的页面，避免手工篡改状态访问未授权路由。 */
+  const setCurrentTab = useCallback((tab: NavigationTab) => {
+    if (authorizedMenuItems.length > 0 && !containsMenuTab(authorizedMenuItems, tab)) {
+      showToast('暂无该页面访问权限，请联系管理员', 'warning');
+      return;
+    }
+    setCurrentTabState(tab);
+  }, [authorizedMenuItems, showToast]);
 
   const hydrateIdentityMetadata = async (authorizedMenus: BackendMenu[]) => {
     const [usersResult, memberResult, deptsResult, rolesResult, menusResult, rulesResult] = await Promise.allSettled([
@@ -377,7 +426,7 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       setCurrentUser(user);
       const menuTree = backendMenusToTree(menus);
       setAuthorizedMenuItems(menuTree);
-      setCurrentTab((previousTab) => containsMenuTab(menuTree, previousTab) ? previousTab : (firstMenuTab(menuTree) || 'dashboard'));
+      setCurrentTabState((previousTab) => containsMenuTab(menuTree, previousTab) ? previousTab : (firstMenuTab(menuTree) || 'dashboard'));
       await hydrateIdentityMetadata(menus);
       await hydrateCatalogMetadata();
       await hydrateTradeMetadata();
@@ -411,14 +460,6 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     setMenuItems([]);
     setAuthorizedMenuItems([]);
   };
-
-  const showToast = useCallback((message: string, type: 'success' | 'info' | 'warning' | 'error' = 'success') => {
-    const id = Date.now().toString() + Math.random().toString(36).substring(2, 5);
-    setToasts((prev) => [...prev, { id, message, type }]);
-    setTimeout(() => {
-      setToasts((prev) => prev.filter((toast) => toast.id !== id));
-    }, 3500);
-  }, []);
 
   const removeToast = (id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
@@ -1220,6 +1261,8 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         logout,
         currentTab,
         setCurrentTab,
+        hasPermission,
+        requirePermission,
         products,
         orders,
         users,

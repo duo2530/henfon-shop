@@ -8,7 +8,10 @@
     "build": "vite build",
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "test:a11y": "tsx tests/a11y-smoke.ts",
+    "test:flow": "tsx tests/flow-smoke.ts",
+    "test": "npm run test:a11y && npm run test:flow"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

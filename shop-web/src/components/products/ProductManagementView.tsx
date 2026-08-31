@@ -30,6 +30,7 @@ import {
   uploadStorageFile,
   deleteStorageFile
 } from '../../api/adminApi';
+import { PermissionGate } from '../common/PermissionGate';
 
 type ProductContentDraft = {
   features: string[];
@@ -75,7 +76,8 @@ export const ProductManagementView: React.FC = () => {
     batchDeleteProducts,
     batchUpdateProductCategory,
     adjustProductStock,
-    showToast 
+    showToast,
+    requirePermission
   } = useAdmin();
 
   // 类目名称和ID由后端提供；接口暂不可用时保留本地选项，避免页面无法录入商品。
@@ -220,6 +222,7 @@ export const ProductManagementView: React.FC = () => {
   };
 
   const handleOpenAddModal = () => {
+    if (!requirePermission('product:add', '新建商品')) return;
     setEditingProduct(null);
     setProductContent(emptyProductContent);
     setFormData({
@@ -241,6 +244,7 @@ export const ProductManagementView: React.FC = () => {
   };
 
   const handleOpenEditModal = async (product: Product) => {
+    if (!requirePermission('product:edit', '编辑商品')) return;
     setEditingProduct(product);
     setProductContent(emptyProductContent);
     setFormData({
@@ -342,6 +346,7 @@ export const ProductManagementView: React.FC = () => {
 
     let persistedProductId: number | null = null;
     if (editingProduct) {
+      if (!requirePermission('product:edit', '编辑商品')) return;
       updateProduct(editingProduct.id, {
         name: formData.name,
         categoryId: categoryId(formData.category),
@@ -360,6 +365,7 @@ export const ProductManagementView: React.FC = () => {
       });
       persistedProductId = Number.isFinite(Number(editingProduct.id)) ? Number(editingProduct.id) : null;
     } else {
+      if (!requirePermission('product:add', '新建商品')) return;
       persistedProductId = await addProduct({
         name: formData.name,
         categoryId: categoryId(formData.category),
@@ -409,6 +415,7 @@ export const ProductManagementView: React.FC = () => {
   };
 
   const handleExportData = () => {
+    if (!requirePermission('product:export', '导出商品报表')) return;
     const csvContent =
       'data:text/csv;charset=utf-8,\uFEFF' +
       '商品编号,商品名称,分类,售价,成本价,毛利率,库存,安全库存,销量,标签,状态\n' +
@@ -431,6 +438,7 @@ export const ProductManagementView: React.FC = () => {
   };
 
   const handleConfirmBatchCategory = () => {
+    if (!requirePermission('product:edit', '批量变更商品类目')) return;
     batchUpdateProductCategory(selectedIds, targetBatchCategory, categoryName(targetBatchCategory));
     setBatchCategoryOpen(false);
     setSelectedIds([]);
@@ -438,6 +446,7 @@ export const ProductManagementView: React.FC = () => {
 
   const handleConfirmStockAdjust = () => {
     if (!stockAdjustProduct) return;
+    if (!requirePermission('inventory:stock:adjust', '调整库存')) return;
     adjustProductStock(stockAdjustProduct.id, adjustedStockValue, stockAdjustReason);
     setStockAdjustProduct(null);
   };
@@ -461,23 +470,27 @@ export const ProductManagementView: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-3">
-          <button
-            id="btn-export-products"
-            onClick={handleExportData}
-            className="h-[36px] px-3.5 rounded-lg border border-[#E2E8F0] bg-white text-gray-700 hover:bg-gray-50 flex items-center gap-2 text-xs font-semibold shadow-2xs transition-colors cursor-pointer"
-          >
-            <Download className="w-4 h-4 text-gray-500" />
-            <span>导出报表</span>
-          </button>
+          <PermissionGate permission="product:export">
+            <button
+              id="btn-export-products"
+              onClick={handleExportData}
+              className="h-[36px] px-3.5 rounded-lg border border-[#E2E8F0] bg-white text-gray-700 hover:bg-gray-50 flex items-center gap-2 text-xs font-semibold shadow-2xs transition-colors cursor-pointer"
+            >
+              <Download className="w-4 h-4 text-gray-500" />
+              <span>导出报表</span>
+            </button>
+          </PermissionGate>
 
-          <button
-            id="btn-add-product"
-            onClick={handleOpenAddModal}
-            className="h-[36px] px-4 rounded-lg bg-[#2563EB] text-white hover:bg-blue-700 flex items-center justify-center gap-2 text-xs font-semibold shadow-xs transition-colors cursor-pointer"
-          >
-            <Plus className="w-4 h-4" />
-            <span>新建商品 (New SKU)</span>
-          </button>
+          <PermissionGate permission="product:add">
+            <button
+              id="btn-add-product"
+              onClick={handleOpenAddModal}
+              className="h-[36px] px-4 rounded-lg bg-[#2563EB] text-white hover:bg-blue-700 flex items-center justify-center gap-2 text-xs font-semibold shadow-xs transition-colors cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              <span>新建商品 (New SKU)</span>
+            </button>
+          </PermissionGate>
         </div>
       </div>
 
@@ -621,43 +634,53 @@ export const ProductManagementView: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
-            <button
-              onClick={() => {
-                batchUpdateProductStatus(selectedIds, 'active');
-                setSelectedIds([]);
-              }}
-              className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold shadow-xs transition-colors"
-            >
-              批量上架
-            </button>
-            <button
-              onClick={() => {
-                batchUpdateProductStatus(selectedIds, 'inactive');
-                setSelectedIds([]);
-              }}
-              className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-semibold shadow-xs transition-colors"
-            >
-              批量下架
-            </button>
-            <button
-              onClick={() => setBatchCategoryOpen(true)}
-              className="px-3 py-1.5 bg-blue-700 hover:bg-blue-600 text-white rounded-lg text-xs font-semibold shadow-xs transition-colors flex items-center gap-1.5"
-            >
-              <Layers className="w-3.5 h-3.5" />
-              <span>变更类目</span>
-            </button>
-            <button
-              onClick={() => {
-                if (window.confirm(`确认删除选中的 ${selectedIds.length} 件商品吗？此操作无法撤销。`)) {
-                  batchDeleteProducts(selectedIds);
-                  setSelectedIds([]);
-                }
-              }}
-              className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-semibold shadow-xs transition-colors flex items-center gap-1.5"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-              <span>批量删除</span>
-            </button>
+            <PermissionGate permission="product:status">
+              <button
+                onClick={() => {
+                  if (window.confirm(`确认批量上架选中的 ${selectedIds.length} 件商品吗？`)) {
+                    batchUpdateProductStatus(selectedIds, 'active');
+                    setSelectedIds([]);
+                  }
+                }}
+                className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold shadow-xs transition-colors"
+              >
+                批量上架
+              </button>
+              <button
+                onClick={() => {
+                  if (window.confirm(`确认批量下架选中的 ${selectedIds.length} 件商品吗？`)) {
+                    batchUpdateProductStatus(selectedIds, 'inactive');
+                    setSelectedIds([]);
+                  }
+                }}
+                className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-semibold shadow-xs transition-colors"
+              >
+                批量下架
+              </button>
+            </PermissionGate>
+            <PermissionGate permission="product:edit">
+              <button
+                onClick={() => setBatchCategoryOpen(true)}
+                className="px-3 py-1.5 bg-blue-700 hover:bg-blue-600 text-white rounded-lg text-xs font-semibold shadow-xs transition-colors flex items-center gap-1.5"
+              >
+                <Layers className="w-3.5 h-3.5" />
+                <span>变更类目</span>
+              </button>
+            </PermissionGate>
+            <PermissionGate permission="product:delete">
+              <button
+                onClick={() => {
+                  if (window.confirm(`确认删除选中的 ${selectedIds.length} 件商品吗？此操作无法撤销。`)) {
+                    batchDeleteProducts(selectedIds);
+                    setSelectedIds([]);
+                  }
+                }}
+                className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-semibold shadow-xs transition-colors flex items-center gap-1.5"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>批量删除</span>
+              </button>
+            </PermissionGate>
             <button
               onClick={() => setSelectedIds([])}
               className="px-2.5 py-1.5 text-blue-200 hover:text-white text-xs transition-colors"
@@ -806,12 +829,14 @@ export const ProductManagementView: React.FC = () => {
                         <div className="font-semibold text-gray-900 text-sm">
                           ¥{product.price.toFixed(2)}
                         </div>
-                        <div className="flex items-center gap-1.5 text-xs text-gray-500 mt-0.5">
-                          <span>成本 ¥{cost.toFixed(2)}</span>
-                          <span className="text-emerald-700 bg-emerald-50 px-1 py-0.2 rounded font-medium text-[11px]">
-                            毛利 {grossMargin}%
-                          </span>
-                        </div>
+                        <PermissionGate permission="product:cost:view" fallback={<span className="text-xs text-gray-400">成本及毛利率已隐藏</span>}>
+                          <div className="flex items-center gap-1.5 text-xs text-gray-500 mt-0.5">
+                            <span>成本 ¥{cost.toFixed(2)}</span>
+                            <span className="text-emerald-700 bg-emerald-50 px-1 py-0.2 rounded font-medium text-[11px]">
+                              毛利 {grossMargin}%
+                            </span>
+                          </div>
+                        </PermissionGate>
                       </td>
 
                       {/* Stock & Warning */}
@@ -830,16 +855,18 @@ export const ProductManagementView: React.FC = () => {
                           </span>
                           
                           {/* Stock adjustment trigger */}
-                          <button
-                            onClick={() => {
-                              setStockAdjustProduct(product);
-                              setAdjustedStockValue(product.stock);
-                            }}
-                            className="text-xs text-blue-600 hover:underline hover:text-blue-800 font-medium"
-                            title="快捷调整库存"
-                          >
-                            调库
-                          </button>
+                          <PermissionGate permission="inventory:stock:adjust">
+                            <button
+                              onClick={() => {
+                                setStockAdjustProduct(product);
+                                setAdjustedStockValue(product.stock);
+                              }}
+                              className="text-xs text-blue-600 hover:underline hover:text-blue-800 font-medium"
+                              title="快捷调整库存"
+                            >
+                              调库
+                            </button>
+                          </PermissionGate>
                         </div>
 
                         <div className="text-[11px] text-gray-400 mt-0.5">
@@ -890,27 +917,35 @@ export const ProductManagementView: React.FC = () => {
                           >
                             <Eye className="w-4 h-4" />
                           </button>
-                          <button
-                            onClick={() => toggleProductStatus(product.id)}
-                            className="px-2 py-1 text-xs font-medium rounded border border-gray-200 hover:bg-gray-100 text-gray-700 transition-colors"
-                            title={product.status === 'active' ? '下架商品' : '上架商品'}
-                          >
-                            {product.status === 'active' ? '下架' : '上架'}
-                          </button>
-                          <button
-                            onClick={() => handleOpenEditModal(product)}
-                            className="p-1.5 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
-                            title="编辑商品"
-                          >
-                            <Edit3 className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => setDeleteConfirmId(product.id)}
-                            className="p-1.5 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
-                            title="删除商品"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
+                          <PermissionGate permission="product:status">
+                            <button
+                              onClick={() => {
+                                if (window.confirm(`确认${product.status === 'active' ? '下架' : '上架'}商品「${product.name}」吗？`)) toggleProductStatus(product.id);
+                              }}
+                              className="px-2 py-1 text-xs font-medium rounded border border-gray-200 hover:bg-gray-100 text-gray-700 transition-colors"
+                              title={product.status === 'active' ? '下架商品' : '上架商品'}
+                            >
+                              {product.status === 'active' ? '下架' : '上架'}
+                            </button>
+                          </PermissionGate>
+                          <PermissionGate permission="product:edit">
+                            <button
+                              onClick={() => handleOpenEditModal(product)}
+                              className="p-1.5 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                              title="编辑商品"
+                            >
+                              <Edit3 className="w-4 h-4" />
+                            </button>
+                          </PermissionGate>
+                          <PermissionGate permission="product:delete">
+                            <button
+                              onClick={() => setDeleteConfirmId(product.id)}
+                              className="p-1.5 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                              title="删除商品"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </PermissionGate>
                         </div>
                       </td>
                     </tr>
@@ -1015,15 +1050,17 @@ export const ProductManagementView: React.FC = () => {
                   <div className="text-base font-bold text-gray-900 mt-0.5">¥{detailProduct.price.toFixed(2)}</div>
                   <div className="text-[11px] text-gray-400 line-through">原价 ¥{(detailProduct.originalPrice || detailProduct.price * 1.2).toFixed(2)}</div>
                 </div>
-                <div>
-                  <div className="text-xs text-gray-500">采购成本 / 毛利率</div>
-                  <div className="text-base font-bold text-emerald-700 mt-0.5">
-                    ¥{(detailProduct.costPrice || detailProduct.price * 0.55).toFixed(2)}
+                <PermissionGate permission="product:cost:view" fallback={<div className="flex items-center justify-center text-xs text-gray-400">成本信息已隐藏</div>}>
+                  <div>
+                    <div className="text-xs text-gray-500">采购成本 / 毛利率</div>
+                    <div className="text-base font-bold text-emerald-700 mt-0.5">
+                      ¥{(detailProduct.costPrice || detailProduct.price * 0.55).toFixed(2)}
+                    </div>
+                    <div className="text-[11px] text-emerald-600 font-medium">
+                      毛利率 {Math.max(0, (((detailProduct.price - (detailProduct.costPrice || detailProduct.price * 0.55)) / detailProduct.price) * 100)).toFixed(1)}%
+                    </div>
                   </div>
-                  <div className="text-[11px] text-emerald-600 font-medium">
-                    毛利率 {Math.max(0, (((detailProduct.price - (detailProduct.costPrice || detailProduct.price * 0.55)) / detailProduct.price) * 100)).toFixed(1)}%
-                  </div>
-                </div>
+                </PermissionGate>
                 <div>
                   <div className="text-xs text-gray-500">现存可用库存</div>
                   <div className="text-base font-bold text-blue-600 mt-0.5">{detailProduct.stock} 件</div>
@@ -1251,21 +1288,12 @@ export const ProductManagementView: React.FC = () => {
                     />
                   </div>
 
-                  <div>
-                    <label className="block text-[11px] font-medium text-gray-600 mb-1">
-                      采购成本 (¥)
-                    </label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      value={formData.costPrice}
-                      onChange={(e) =>
-                        setFormData({ ...formData, costPrice: parseFloat(e.target.value) || 0 })
-                      }
-                      className="w-full h-[34px] px-2.5 rounded-lg border border-gray-300 focus:border-blue-500 outline-none text-sm font-semibold bg-white"
-                    />
-                  </div>
+                  <PermissionGate permission="product:cost:view" fallback={<div className="text-xs text-gray-400 pt-5">无成本字段权限</div>}>
+                    <div>
+                      <label className="block text-[11px] font-medium text-gray-600 mb-1">采购成本 (¥)</label>
+                      <input type="number" step="0.01" min="0" value={formData.costPrice} onChange={(e) => setFormData({ ...formData, costPrice: parseFloat(e.target.value) || 0 })} className="w-full h-[34px] px-2.5 rounded-lg border border-gray-300 focus:border-blue-500 outline-none text-sm font-semibold bg-white" />
+                    </div>
+                  </PermissionGate>
 
                   <div>
                     <label className="block text-[11px] font-medium text-gray-600 mb-1">
@@ -1489,8 +1517,10 @@ export const ProductManagementView: React.FC = () => {
               </button>
               <button
                 onClick={() => {
-                  deleteProduct(deleteConfirmId);
-                  setDeleteConfirmId(null);
+                  if (requirePermission('product:delete', '删除商品')) {
+                    deleteProduct(deleteConfirmId);
+                    setDeleteConfirmId(null);
+                  }
                 }}
                 className="px-4 py-1.5 rounded-lg bg-red-600 text-white hover:bg-red-700 text-xs font-semibold cursor-pointer"
               >
