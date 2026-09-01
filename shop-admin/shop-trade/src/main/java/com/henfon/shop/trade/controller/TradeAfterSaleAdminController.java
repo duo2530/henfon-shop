@@ -90,4 +90,21 @@ public class TradeAfterSaleAdminController {
                                                @Valid @RequestBody(required = false) TradeAfterSaleAuditRequest request) {
         return ApiResponse.success(afterSaleService.reject(afterSaleId, request), MDC.get("requestId"));
     }
+
+    /**
+     * 确认退货入库并触发退款。
+     *
+     * @param afterSaleId 售后单ID
+     * @param request 入库备注
+     * @return 更新后的售后单
+     * @author Henfon
+     * @date 2026-09-01
+     */
+    @PutMapping("/{afterSaleId}/return-received")
+    @PreAuthorize("hasAuthority('trade:after-sale:audit')")
+    public ApiResponse<TradeAfterSale> confirmReturn(@PathVariable Long afterSaleId,
+                                                       @Valid @RequestBody(required = false) TradeAfterSaleAuditRequest request) {
+        return ApiResponse.success(afterSaleService.confirmReturn(afterSaleId, request == null ? null : request.remark()),
+                MDC.get("requestId"));
+    }
 }

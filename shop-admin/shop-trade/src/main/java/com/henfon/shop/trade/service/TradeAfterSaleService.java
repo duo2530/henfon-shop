@@ -188,6 +188,36 @@ public class TradeAfterSaleService {
     }
 
     /**
+     * 后台确认退货入库并触发原路退款。
+     *
+     * @param afterSaleId 售后单ID
+     * @param remark 入库备注
+     * @return 更新后的售后单
+     * @author Henfon
+     * @date 2026-09-01
+     */
+    @Transactional
+    public TradeAfterSale confirmReturn(Long afterSaleId, String remark) {
+        TradeAfterSale afterSale = requireAfterSale(afterSaleId);
+        if (afterSale.getAfterSaleType() == null || afterSale.getAfterSaleType() != TYPE_RETURN_REFUND) {
+            throw new BusinessException("TRADE_AFTER_SALE_TYPE_INVALID", "仅退货退款售后单支持退货入库确认");
+        }
+        if (!Integer.valueOf(STATUS_PROCESSING).equals(afterSale.getStatus())) {
+            throw new BusinessException("TRADE_AFTER_SALE_STATUS_INVALID", "仅处理中退货退款售后单允许确认入库");
+        }
+        // 入库确认后复用订单退款状态机，退款单由支付领域事件消费者幂等创建。
+        tradeOrderService.refund(afterSale.getOrderId(), new TradeOrderRefundRequest(
+                afterSale.getRefundAmount(), StringUtils.hasText(remark) ? remark.trim() : "退货入库确认"));
+        afterSale.setRemark(StringUtils.hasText(remark) ? remark.trim() : "退货入库确认");
+        updateAfterSale(afterSale);
+        if (tradeEventOutboxService != null) {
+            tradeEventOutboxService.recordAfterSaleEvent(afterSale, "AFTER_SALE_RETURN_RECEIVED",
+                    RocketMqTopics.AFTER_SALE_RETURN_RECEIVED);
+        }
+        return afterSale;
+    }
+
+    /**
      * 后台驳回售后单。
      *
      * @param afterSaleId 售后单ID

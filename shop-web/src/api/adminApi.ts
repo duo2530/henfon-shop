@@ -1346,6 +1346,13 @@ export function rejectTradeAfterSale(afterSaleId: number, remark?: string): Prom
   });
 }
 
+export function confirmTradeAfterSaleReturn(afterSaleId: number, remark?: string): Promise<BackendTradeAfterSale> {
+  return request<BackendTradeAfterSale>(`/api/admin/trade/after-sales/${afterSaleId}/return-received`, {
+    method: 'PUT',
+    body: JSON.stringify({ remark }),
+  });
+}
+
 export function listInventoryStocks(params: { current?: number; size?: number; skuId?: number } = {}): Promise<BackendPage<BackendInventoryStock>> {
   const query = new URLSearchParams({ current: String(params.current || 1), size: String(params.size || 200) });
   if (params.skuId !== undefined) query.set('skuId', String(params.skuId));

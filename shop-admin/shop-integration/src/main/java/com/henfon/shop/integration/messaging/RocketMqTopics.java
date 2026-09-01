@@ -22,6 +22,7 @@ public final class RocketMqTopics {
     public static final String REFUND_SUCCEEDED = "shop.refund.succeeded";
     public static final String AFTER_SALE_CREATED = "shop.after-sale.created";
     public static final String AFTER_SALE_APPROVED = "shop.after-sale.approved";
+    public static final String AFTER_SALE_RETURN_RECEIVED = "shop.after-sale.return-received";
     public static final String AFTER_SALE_REJECTED = "shop.after-sale.rejected";
     public static final String AFTER_SALE_CANCELLED = "shop.after-sale.cancelled";
     public static final String AFTER_SALE_COMPLETED = "shop.after-sale.completed";
