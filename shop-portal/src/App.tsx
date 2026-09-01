@@ -30,6 +30,7 @@ import {
   fetchPortalAddresses,
   fetchPortalBanners,
   fetchPortalCategories,
+  fetchPortalFlashSales,
   fetchPortalProductsPage,
   fetchPortalCart,
   fetchPortalCoupons,
@@ -58,6 +59,7 @@ import {
   PortalOrderLogisticsRecord,
   PortalAfterSaleRecord,
   PortalCategoryRecord,
+  PortalFlashSaleRecord,
 } from './api/portalApi';
 import {
   Product,
@@ -83,6 +85,7 @@ import {
   Truck,
   Heart,
   Scale,
+  Zap,
 } from 'lucide-react';
 
 const DEMO_MODE = import.meta.env.VITE_DEMO_MODE === 'true';
@@ -327,6 +330,7 @@ export default function App() {
   const [afterSalesLoading, setAfterSalesLoading] = useState(false);
   const [afterSalesError, setAfterSalesError] = useState<string | null>(null);
   const [paymentPolling, setPaymentPolling] = useState<PaymentPollingTask | null>(null);
+  const [flashSales, setFlashSales] = useState<PortalFlashSaleRecord[]>([]);
 
   const [appliedCoupon, setAppliedCoupon] = useState<Coupon | null>(null);
 
@@ -337,8 +341,9 @@ export default function App() {
       fetchPortalCoupons(),
       fetchPortalBanners(),
       fetchPortalCategories(),
+      fetchPortalFlashSales(),
     ])
-      .then(([couponResult, bannerResult, categoryResult]) => {
+      .then(([couponResult, bannerResult, categoryResult, flashSaleResult]) => {
         if (!active) return;
         if (couponResult.status === 'fulfilled' && couponResult.value.length > 0) {
           setCoupons(couponResult.value);
@@ -348,6 +353,9 @@ export default function App() {
         }
         if (categoryResult.status === 'fulfilled') {
           setPortalCategories(categoryResult.value);
+        }
+        if (flashSaleResult.status === 'fulfilled') {
+          setFlashSales(flashSaleResult.value);
         }
       })
       .catch((error) => console.warn('门户基础数据接口暂不可用，继续使用演示数据', error));
@@ -1825,6 +1833,35 @@ export default function App() {
               if (p) openProduct(p);
             }}
           />
+        )}
+
+        {!searchQuery && selectedCategory === 'all' && flashSales.length > 0 && (
+          <section className="mb-8 rounded-2xl border border-orange-200 bg-gradient-to-br from-orange-50 via-white to-rose-50 p-4 sm:p-5 shadow-xs" aria-label="限时秒杀活动">
+            <div className="flex items-center justify-between gap-3 mb-4">
+              <div className="flex items-center gap-2">
+                <span className="rounded-xl bg-orange-500 p-2 text-white"><Zap className="h-4 w-4" /></span>
+                <div><h2 className="text-base font-bold text-zinc-900">限时秒杀</h2><p className="text-xs text-zinc-500">活动库存实时更新，先到先得</p></div>
+              </div>
+              <span className="text-xs font-semibold text-orange-600">{flashSales.length} 场进行中</span>
+            </div>
+            <div className="grid gap-3 md:grid-cols-2">
+              {flashSales.map((sale) => (
+                <article key={sale.id} className="rounded-xl border border-orange-100 bg-white/90 p-3">
+                  <div className="flex items-center justify-between gap-2"><h3 className="truncate text-sm font-semibold text-zinc-900">{sale.activityName}</h3><span className="shrink-0 rounded-full bg-orange-100 px-2 py-0.5 text-[11px] text-orange-700">限购 {sale.limitPerMember} 件</span></div>
+                  <div className="mt-2 flex gap-2 overflow-x-auto pb-1">
+                    {sale.items.slice(0, 4).map((item) => {
+                      const product = products.find((candidate) => candidate.id === `prod-${item.productId}`);
+                      return <button key={item.id} type="button" onClick={() => product && openProduct(product)} disabled={!product} className="min-w-[132px] rounded-lg border border-zinc-100 bg-zinc-50 p-2 text-left disabled:cursor-default">
+                        <div className="truncate text-xs text-zinc-700">{product?.title || `商品 #${item.productId}`}</div>
+                        <div className="mt-1 text-sm font-bold text-orange-600">¥{Number(item.activityPrice || 0).toFixed(2)}</div>
+                        <div className="mt-1 text-[10px] text-zinc-400">剩余 {item.remainingStock} 件</div>
+                      </button>;
+                    })}
+                  </div>
+                </article>
+              ))}
+            </div>
+          </section>
         )}
 
         {/* Homepage Coupon Claiming Center (领券中心) */}
