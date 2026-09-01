@@ -866,10 +866,37 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   };
 
   const batchUpdateUserStatus = (ids: string[], status: UserStatus) => {
+    const previousStatuses = new Map(
+      users.filter((user) => ids.includes(user.id)).map((user) => [user.id, user.status])
+    );
     setUsers((prev) =>
       prev.map((u) => (ids.includes(u.id) ? { ...u, status } : u))
     );
-    showToast(`已批量${status === 'active' ? '解冻' : '冻结'} ${ids.length} 位会员账号`, 'info');
+    const numericIds = ids
+      .map((id) => Number(id))
+      .filter((id) => Number.isFinite(id));
+    if (numericIds.length === 0) {
+      showToast('当前选中的会员尚未同步到服务端，状态仅在本地演示数据中更新', 'info');
+      return;
+    }
+    showToast(`正在批量${status === 'active' ? '解冻' : '冻结'} ${numericIds.length} 位会员账号`, 'info');
+    void Promise.allSettled(
+      numericIds.map((id) => updateMemberStatus(id, status === 'active' ? 1 : 0))
+    ).then((results) => {
+      const failedIds = results
+        .map((result, index) => result.status === 'rejected' ? String(numericIds[index]) : null)
+        .filter((id): id is string => Boolean(id));
+      if (failedIds.length > 0) {
+        // 仅回滚服务端失败的记录，成功项保留乐观更新结果，避免批量操作整体误回滚。
+        setUsers((prev) => prev.map((user) => {
+          const previous = previousStatuses.get(user.id);
+          return failedIds.includes(user.id) && previous ? { ...user, status: previous } : user;
+        }));
+        showToast(`${failedIds.length} 位会员状态保存失败，已回滚失败项`, 'warning');
+        return;
+      }
+      showToast(`已批量${status === 'active' ? '解冻' : '冻结'} ${numericIds.length} 位会员账号`, 'success');
+    });
   };
 
   const adjustUserBalanceAndPoints = (id: string, pointsDelta: number, balanceDelta: number, note: string) => {

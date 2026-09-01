@@ -143,12 +143,17 @@ public class IdentityDataInitializer implements ApplicationRunner {
      */
     private List<SysMenu> ensureSystemMenus() {
         List<SysMenu> menus = new ArrayList<>();
-        SysMenu root = ensureMenu("系统管理", "DIRECTORY", null, "system", 10);
+        SysMenu root = ensureMenu("系统管理", "DIRECTORY", null, "system", 10,
+                0L, null, "Shield");
         menus.add(root);
-        menus.add(ensureMenu("用户管理", "MENU", "system:user:query", "/system/users", 10));
-        menus.add(ensureMenu("角色管理", "MENU", "system:role:query", "/system/roles", 20));
-        menus.add(ensureMenu("菜单管理", "MENU", "system:menu:query", "/system/menus", 30));
-        menus.add(ensureMenu("数据权限", "MENU", "system:data-rule:query", "/system/data-rules", 40));
+        menus.add(ensureMenu("用户管理", "MENU", "system:user:query", "/system/users", 10,
+                root.getId(), null, "Users"));
+        menus.add(ensureMenu("角色管理", "MENU", "system:role:query", "/system/roles", 20,
+                root.getId(), null, "ShieldCheck"));
+        menus.add(ensureMenu("菜单管理", "MENU", "system:menu:query", "/system/menus", 30,
+                root.getId(), null, "Menu"));
+        menus.add(ensureMenu("数据权限", "MENU", "system:data-rule:query", "/system/data-rules", 40,
+                root.getId(), null, "Lock"));
         // 将系统菜单挂到目录节点下，便于前端按树形结构渲染侧边栏。
         for (int i = 1; i < menus.size(); i++) {
             SysMenu menu = menus.get(i);
@@ -427,6 +432,11 @@ public class IdentityDataInitializer implements ApplicationRunner {
                 .last("LIMIT 1");
         SysMenu menu = sysMenuMapper.selectOne(wrapper);
         if (menu != null) {
+            if (icon != null && !icon.equals(menu.getIcon())) {
+                // 初始化阶段补齐历史菜单的图标，避免旧库继续使用前端默认图标。
+                menu.setIcon(icon);
+                sysMenuMapper.updateById(menu);
+            }
             return menu;
         }
         menu = new SysMenu();
