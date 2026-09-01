@@ -1577,6 +1577,37 @@ export default function App() {
     }
   };
 
+  /**
+   * 为支付失败或超时订单重新创建支付单并恢复状态轮询。
+   *
+   * @param order 待重试订单
+   * @author Henfon
+   * @date 2026-09-01
+   */
+  const handleRetryPayment = async (order: Order) => {
+    const memberId = resolveMemberId(currentUser);
+    const orderId = Number(order.id);
+    if (!memberId || !Number.isFinite(orderId)) {
+      showToast('当前订单尚未同步到服务端，暂不能重新支付', 'error');
+      return;
+    }
+    try {
+      const payment = await createPortalPayment(memberId, orderId, order.paymentMethod || 'wechat');
+      const pendingOrder = {
+        ...order,
+        paymentNo: payment.paymentNo,
+        paymentStatus: payment.status,
+        paymentState: mapPaymentState(payment.status),
+        statusLabel: '待支付',
+      };
+      setOrders((previous) => previous.map((item) => item.id === order.id ? pendingOrder : item));
+      setPaymentPolling({ memberId, paymentNo: payment.paymentNo, order: pendingOrder, expiresAt: Date.now() + 2 * 60 * 1000 });
+      showToast('支付单已重新生成，请完成支付', 'info');
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : '重新支付失败，请稍后重试', 'error');
+    }
+  };
+
   const handleApplyInvoice = async (order: Order) => {
     const orderId = Number(order.id);
     if (!resolveMemberId(currentUser) || !Number.isFinite(orderId)) {
@@ -2280,6 +2311,7 @@ export default function App() {
         onClose={() => setIsOrdersOpen(false)}
         onCancelOrder={handleCancelOrder}
         onConfirmOrder={handleConfirmOrder}
+        onRetryPayment={handleRetryPayment}
         afterSales={afterSales}
         afterSalesLoading={afterSalesLoading}
         afterSalesError={afterSalesError}

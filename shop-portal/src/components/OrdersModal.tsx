@@ -10,6 +10,7 @@ interface OrdersModalProps {
   onClose: () => void;
   onCancelOrder?: (order: Order) => Promise<void> | void;
   onConfirmOrder?: (order: Order) => Promise<void> | void;
+  onRetryPayment?: (order: Order) => Promise<void> | void;
   afterSales?: PortalAfterSaleRecord[];
   afterSalesLoading?: boolean;
   afterSalesError?: string | null;
@@ -24,6 +25,7 @@ export const OrdersModal: React.FC<OrdersModalProps> = ({
   onClose,
   onCancelOrder,
   onConfirmOrder,
+  onRetryPayment,
   afterSales = [],
   afterSalesLoading = false,
   afterSalesError,
@@ -192,6 +194,16 @@ export const OrdersModal: React.FC<OrdersModalProps> = ({
                       </div>
 
                       <div className="flex justify-end gap-2 border-t border-zinc-200/80 pt-3">
+                        {(ord.paymentState === 'failed' || ord.paymentState === 'expired') && onRetryPayment && (
+                          <button
+                            type="button"
+                            disabled={actioningOrderId === ord.id}
+                            onClick={() => void runOrderAction(ord, onRetryPayment)}
+                            className="px-3 py-1.5 rounded-lg bg-orange-600 text-white text-xs font-semibold hover:bg-orange-700 disabled:opacity-50"
+                          >
+                            {actioningOrderId === ord.id ? '处理中…' : '重新支付'}
+                          </button>
+                        )}
                         {canApplyAfterSale && onApplyAfterSale && (
                           <button
                             type="button"
