@@ -105,13 +105,8 @@ public class MarketingPortalService {
      */
     @org.springframework.transaction.annotation.Transactional
     public MarketingMemberCoupon claim(Long memberId, Long couponId) {
-        MarketingMemberCoupon existed = memberCouponMapper.selectOne(new LambdaQueryWrapper<MarketingMemberCoupon>()
-                .eq(MarketingMemberCoupon::getMemberId, memberId)
-                .eq(MarketingMemberCoupon::getCouponId, couponId));
-        if (existed != null) {
-            return existed;
-        }
-        MarketingCoupon coupon = couponMapper.selectById(couponId);
+        // 先锁定优惠券主记录，再统计会员领取数量，避免并发请求突破单会员上限。
+        MarketingCoupon coupon = couponMapper.selectByIdForUpdate(couponId);
         if (coupon == null) {
             throw new BusinessException("MARKETING_COUPON_NOT_FOUND", "优惠券不存在");
         }
@@ -141,19 +136,7 @@ public class MarketingPortalService {
         record.setMemberId(memberId);
         record.setReceiveStatus(0);
         record.setReceivedAt(now);
-        try {
-            memberCouponMapper.insert(record);
-        } catch (org.springframework.dao.DuplicateKeyException duplicate) {
-            // 并发重复领取时回滚数量并返回已存在记录，保证接口幂等。
-            couponMapper.decrementClaimed(couponId);
-            MarketingMemberCoupon concurrent = memberCouponMapper.selectOne(new LambdaQueryWrapper<MarketingMemberCoupon>()
-                    .eq(MarketingMemberCoupon::getMemberId, memberId)
-                    .eq(MarketingMemberCoupon::getCouponId, couponId));
-            if (concurrent != null) {
-                return concurrent;
-            }
-            throw duplicate;
-        }
+        memberCouponMapper.insert(record);
         return record;
     }
 
@@ -175,15 +158,22 @@ public class MarketingPortalService {
         }
         MarketingMemberCoupon record = memberCouponMapper.selectOne(new LambdaQueryWrapper<MarketingMemberCoupon>()
                 .eq(MarketingMemberCoupon::getMemberId, memberId)
-                .eq(MarketingMemberCoupon::getCouponId, request.couponId()));
+                .eq(MarketingMemberCoupon::getCouponId, request.couponId())
+                .eq(MarketingMemberCoupon::getReceiveStatus, 0)
+                .orderByAsc(MarketingMemberCoupon::getReceivedAt)
+                .last("LIMIT 1"));
         if (record == null) {
-            throw new BusinessException("MARKETING_MEMBER_COUPON_NOT_FOUND", "会员未领取该优惠券");
-        }
-        if (Integer.valueOf(1).equals(record.getReceiveStatus()) && request.orderId().equals(record.getOrderId())) {
-            return record;
-        }
-        if (!Integer.valueOf(0).equals(record.getReceiveStatus())) {
-            throw new BusinessException("MARKETING_COUPON_ALREADY_USED", "优惠券已使用或已失效");
+            // 多张同券场景优先寻找当前订单已核销记录，保证重复请求仍然幂等。
+            record = memberCouponMapper.selectOne(new LambdaQueryWrapper<MarketingMemberCoupon>()
+                    .eq(MarketingMemberCoupon::getMemberId, memberId)
+                    .eq(MarketingMemberCoupon::getCouponId, request.couponId())
+                    .eq(MarketingMemberCoupon::getReceiveStatus, 1)
+                    .eq(MarketingMemberCoupon::getOrderId, request.orderId())
+                    .last("LIMIT 1"));
+            if (record != null) {
+                return record;
+            }
+            throw new BusinessException("MARKETING_MEMBER_COUPON_NOT_FOUND", "会员未领取可用的该优惠券");
         }
         MarketingCoupon coupon = couponMapper.selectById(record.getCouponId());
         LocalDateTime now = LocalDateTime.now();

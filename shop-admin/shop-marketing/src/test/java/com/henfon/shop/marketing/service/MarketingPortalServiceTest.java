@@ -20,6 +20,7 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
@@ -123,12 +124,36 @@ class MarketingPortalServiceTest {
 
         // 模拟当前会员已经拥有一张该优惠券，但逻辑删除记录不应被重复计算由 Mapper 过滤。
         when(memberCouponMapper.selectOne(any())).thenReturn(null);
-        when(couponMapper.selectById(couponId)).thenReturn(coupon);
+        when(couponMapper.selectByIdForUpdate(couponId)).thenReturn(coupon);
         when(memberCouponMapper.selectCount(any())).thenReturn(1L);
 
         assertThrows(BusinessException.class, () -> service.claim(memberId, couponId));
         // 达到上限时应在库存递增前失败，避免错误消耗发行库存。
         verify(couponMapper, never()).incrementClaimed(org.mockito.ArgumentMatchers.eq(couponId), any());
+    }
+
+    /**
+     * 验证单会员领取上限为两张时可以成功领取第二张。
+     *
+     * @author Henfon
+     * @date 2026-09-01
+     */
+    @Test
+    void shouldAllowSecondClaimWhenPerMemberLimitIsTwo() {
+        long memberId = 7L;
+        long couponId = 11L;
+        MarketingCoupon coupon = activeCategoryCoupon(couponId, "DIGITAL");
+        coupon.setPerMemberLimit(2);
+        when(couponMapper.selectByIdForUpdate(couponId)).thenReturn(coupon);
+        when(memberCouponMapper.selectCount(any())).thenReturn(1L);
+        when(couponMapper.incrementClaimed(org.mockito.ArgumentMatchers.eq(couponId), any())).thenReturn(1);
+        when(memberCouponMapper.insert(any(MarketingMemberCoupon.class))).thenReturn(1);
+
+        MarketingMemberCoupon result = service.claim(memberId, couponId);
+
+        assertEquals(couponId, result.getCouponId());
+        assertEquals(memberId, result.getMemberId());
+        verify(memberCouponMapper).insert(any(MarketingMemberCoupon.class));
     }
 
     /**
