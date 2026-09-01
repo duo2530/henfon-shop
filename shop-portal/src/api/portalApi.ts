@@ -806,6 +806,7 @@ export interface PortalAfterSaleRecord {
   refundAmount: number;
   createdAt: string;
   updatedAt: string;
+  evidenceUrls?: string | string[];
 }
 
 export interface PortalAfterSaleCreatePayload {
@@ -813,6 +814,7 @@ export interface PortalAfterSaleCreatePayload {
   afterSaleType: 1 | 2 | 3;
   refundAmount?: number;
   reason: string;
+  evidenceUrls?: string[];
 }
 
 /**

@@ -6,6 +6,7 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
 import java.math.BigDecimal;
+import java.util.List;
 
 /**
  * 门户售后申请请求。
@@ -21,5 +22,7 @@ public record TradeAfterSaleCreateRequest(
         BigDecimal refundAmount,
         @NotBlank(message = "售后原因不能为空")
         @Size(max = 500, message = "售后原因长度不能超过500个字符")
-        String reason) {
+        String reason,
+        @Size(max = 9, message = "售后凭证最多上传9张")
+        List<@Size(max = 512, message = "售后凭证地址不能超过512个字符") String> evidenceUrls) {
 }

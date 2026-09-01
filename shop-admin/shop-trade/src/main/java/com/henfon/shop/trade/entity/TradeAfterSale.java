@@ -29,6 +29,8 @@ public class TradeAfterSale {
     private Integer afterSaleType;
     private Integer status;
     private String reason;
+    /** 售后凭证 URL JSON 数组。 */
+    private String evidenceUrls;
     private BigDecimal refundAmount;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;

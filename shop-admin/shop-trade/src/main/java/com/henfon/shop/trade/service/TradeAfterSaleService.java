@@ -22,6 +22,7 @@ import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.stream.Collectors;
 
 /**
  * 交易售后应用服务，负责会员申请、后台审核和售后状态流转。
@@ -112,6 +113,7 @@ public class TradeAfterSaleService {
         afterSale.setAfterSaleType(request.afterSaleType());
         afterSale.setStatus(STATUS_PENDING_AUDIT);
         afterSale.setReason(request.reason().trim());
+        afterSale.setEvidenceUrls(serializeEvidenceUrls(request.evidenceUrls()));
         afterSale.setRefundAmount(refundAmount);
         afterSaleMapper.insert(afterSale);
         if (tradeEventOutboxService != null) {
@@ -470,6 +472,25 @@ public class TradeAfterSaleService {
         if (afterSaleMapper.updateById(afterSale) == 0) {
             throw new BusinessException("TRADE_AFTER_SALE_CONCURRENT_UPDATE", "售后单已被其他操作修改，请刷新后重试");
         }
+    }
+
+    /**
+     * 将售后凭证地址序列化为 JSON 数组字符串。
+     *
+     * @param evidenceUrls 凭证地址列表
+     * @return JSON 数组字符串
+     * @author Henfon
+     * @date 2026-09-01
+     */
+    private String serializeEvidenceUrls(List<String> evidenceUrls) {
+        if (evidenceUrls == null || evidenceUrls.isEmpty()) {
+            return null;
+        }
+        return evidenceUrls.stream()
+                .filter(StringUtils::hasText)
+                .map(String::trim)
+                .map(url -> "\"" + url.replace("\\", "\\\\").replace("\"", "\\\"") + "\"")
+                .collect(Collectors.joining(",", "[", "]"));
     }
 
     /**
