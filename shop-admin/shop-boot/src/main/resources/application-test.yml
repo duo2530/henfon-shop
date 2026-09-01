@@ -35,6 +35,8 @@ shop:
     order-timeout-initial-delay-ms: ${SHOP_TEST_ORDER_TIMEOUT_INITIAL_DELAY_MS:15000}
     outbox-scan-ms: ${SHOP_TEST_OUTBOX_SCAN_MS:5000}
     outbox-initial-delay-ms: ${SHOP_TEST_OUTBOX_INITIAL_DELAY_MS:10000}
+    logistics-sync-scan-ms: ${SHOP_TEST_LOGISTICS_SYNC_SCAN_MS:600000}
+    logistics-sync-initial-delay-ms: ${SHOP_TEST_LOGISTICS_SYNC_INITIAL_DELAY_MS:30000}
   integration:
     logistics:
       kuaidi100:
