@@ -65,6 +65,7 @@ import {
   saveCatalogProductContent,
   listTradeOrders,
   shipTradeOrder,
+  batchShipTradeOrders,
   syncTradeOrderLogistics,
   cancelTradeOrder,
   updateTradeOrderRemark,
@@ -695,15 +696,16 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     const requests = shipments
       .map((shipment) => ({ ...shipment, numericId: Number(shipment.orderId) }))
       .filter((shipment) => Number.isFinite(shipment.numericId))
-      .map((shipment) => shipTradeOrder(shipment.numericId, {
+    if (requests.length > 0) {
+      void batchShipTradeOrders(requests.map((shipment) => ({
+        orderId: shipment.numericId,
         logisticsCompany: shipment.carrier,
         trackingNo: shipment.trackingNumber
-      }));
-    if (requests.length > 0) {
-      void Promise.allSettled(requests).then((results) => {
-        if (results.some((result) => result.status === 'rejected')) {
-          showToast('部分订单服务端发货失败，已重新同步订单', 'warning');
-        }
+      }))).then(() => {
+        showToast(`服务端已批量发货 ${requests.length} 笔订单`, 'success');
+        void hydrateTradeMetadata();
+      }).catch(() => {
+        showToast('批量发货失败，整批订单已回滚', 'error');
         void hydrateTradeMetadata();
       });
     }

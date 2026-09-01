@@ -1209,6 +1209,17 @@ export function shipTradeOrder(orderId: number, payload: { logisticsCompany: str
   return request<void>(`/api/admin/trade/orders/${orderId}/ship`, { method: 'PUT', body: JSON.stringify(payload) });
 }
 
+export function batchShipTradeOrders(shipments: Array<{
+  orderId: number;
+  logisticsCompany: string;
+  trackingNo: string;
+}>): Promise<number> {
+  return request<number>('/api/admin/trade/orders/batch-ship', {
+    method: 'POST',
+    body: JSON.stringify({ shipments })
+  });
+}
+
 export function syncTradeOrderLogistics(orderId: number): Promise<{
   success: boolean;
   provider: string;

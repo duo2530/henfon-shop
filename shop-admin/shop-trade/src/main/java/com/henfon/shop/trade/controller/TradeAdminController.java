@@ -11,6 +11,7 @@ import com.henfon.shop.trade.dto.TradeOrderRemarkRequest;
 import com.henfon.shop.trade.dto.TradeOrderRefundRequest;
 import com.henfon.shop.trade.dto.TradeOrderLogisticsRequest;
 import com.henfon.shop.trade.dto.TradeOrderLogisticsSyncResult;
+import com.henfon.shop.trade.dto.TradeOrderBatchShipRequest;
 import jakarta.validation.Valid;
 import com.henfon.shop.trade.service.TradeOrderService;
 import org.slf4j.MDC;
@@ -161,6 +162,20 @@ public class TradeAdminController {
                                   @Valid @RequestBody TradeOrderShipRequest request) {
         tradeOrderService.ship(orderId, request);
         return ApiResponse.success(MDC.get("requestId"));
+    }
+
+    /**
+     * 后台订单批量发货。
+     *
+     * @param request 批量发货信息
+     * @return 成功发货订单数
+     * @author Henfon
+     * @date 2026-09-01
+     */
+    @PostMapping("/orders/batch-ship")
+    @PreAuthorize("hasAuthority('trade:order:ship')")
+    public ApiResponse<Integer> batchShip(@Valid @RequestBody TradeOrderBatchShipRequest request) {
+        return ApiResponse.success(tradeOrderService.batchShip(request), MDC.get("requestId"));
     }
 
     /**

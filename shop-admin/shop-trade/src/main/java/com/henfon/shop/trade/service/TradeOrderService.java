@@ -29,6 +29,7 @@ import com.henfon.shop.integration.logistics.LogisticsTrackNode;
 import com.henfon.shop.integration.logistics.LogisticsTrackResult;
 import com.henfon.shop.identity.service.MemberAdminService;
 import com.henfon.shop.trade.dto.TradeOrderLogisticsSyncResult;
+import com.henfon.shop.trade.dto.TradeOrderBatchShipRequest;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -39,6 +40,7 @@ import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.util.Locale;
 import java.util.List;
+import java.util.HashSet;
 import java.util.Set;
 
 /**
@@ -334,6 +336,40 @@ public class TradeOrderService {
      */
     @Transactional
     public void ship(Long orderId, TradeOrderShipRequest request) {
+        shipInternal(orderId, request);
+    }
+
+    /**
+     * 批量发货并保证整批订单事务一致性。
+     *
+     * @param request 批量发货请求
+     * @return 成功发货订单数
+     * @author Henfon
+     * @date 2026-09-01
+     */
+    @Transactional
+    public int batchShip(TradeOrderBatchShipRequest request) {
+        Set<Long> orderIds = new HashSet<>();
+        for (TradeOrderBatchShipRequest.Item item : request.shipments()) {
+            if (!orderIds.add(item.orderId())) {
+                throw new BusinessException("TRADE_BATCH_SHIP_DUPLICATE", "批量发货中存在重复订单");
+            }
+        }
+        for (TradeOrderBatchShipRequest.Item item : request.shipments()) {
+            shipInternal(item.orderId(), new TradeOrderShipRequest(item.logisticsCompany(), item.trackingNo()));
+        }
+        return request.shipments().size();
+    }
+
+    /**
+     * 执行单笔发货的订单、库存和物流节点写入。
+     *
+     * @param orderId 订单ID
+     * @param request 发货请求
+     * @author Henfon
+     * @date 2026-09-01
+     */
+    private void shipInternal(Long orderId, TradeOrderShipRequest request) {
         // 先读取订单并校验状态，避免已发货订单被重复覆盖物流信息。
         TradeOrder order = requireOrder(orderId);
         TradeOrderStateMachine.requireTransition(order.getOrderStatus(), TradeOrderStateMachine.STATUS_SHIPPED);
