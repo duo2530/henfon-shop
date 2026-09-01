@@ -5,6 +5,7 @@ import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
+import java.util.List;
 
 /**
  * 门户会员提交评价请求。
@@ -21,6 +22,8 @@ public record ContentReviewSubmitRequest(
         @Size(max = 2000, message = "评价内容不能超过2000个字符")
         String reviewContent,
         @Size(max = 500, message = "购买规格不能超过500个字符")
-        String variantSummary
+        String variantSummary,
+        @Size(max = 9, message = "评价图片最多上传9张")
+        List<@Size(max = 512, message = "评价图片地址不能超过512个字符") String> imageUrls
 ) {
 }

@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Product, ProductReview } from '../types/ecommerce';
-import { fetchPortalProductReviews, hasPortalMemberSession, submitPortalProductReview } from '../api/portalApi';
+import { fetchPortalProductReviews, hasPortalMemberSession, submitPortalProductReview, uploadPortalMedia } from '../api/portalApi';
 import {
   X,
   Star,
@@ -24,6 +24,17 @@ import {
 } from 'lucide-react';
 
 function mapPortalReview(review: Awaited<ReturnType<typeof fetchPortalProductReviews>>['records'][number]): ProductReview {
+  const imageUrls = Array.isArray(review.imageUrls)
+    ? review.imageUrls
+    : (() => {
+      if (!review.imageUrls) return [];
+      try {
+        const parsed = JSON.parse(review.imageUrls);
+        return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string') : [];
+      } catch {
+        return [];
+      }
+    })();
   return {
     id: String(review.id),
     userName: review.memberName,
@@ -35,6 +46,7 @@ function mapPortalReview(review: Awaited<ReturnType<typeof fetchPortalProductRev
     helpfulCount: review.helpfulCount,
     replyContent: review.replyContent,
     replyDate: review.repliedAt ? review.repliedAt.slice(0, 10) : undefined,
+    imageUrls,
   };
 }
 
@@ -70,6 +82,8 @@ const ProductQuickViewContent: React.FC<Omit<ProductQuickViewProps, 'product'> &
   const [reviewRating, setReviewRating] = useState(5);
   const [reviewContent, setReviewContent] = useState('');
   const [reviewVariant, setReviewVariant] = useState('');
+  const [reviewImages, setReviewImages] = useState<string[]>([]);
+  const [reviewUploading, setReviewUploading] = useState(false);
   const [reviewSubmitting, setReviewSubmitting] = useState(false);
 
   // Reset state when a new product is selected
@@ -154,15 +168,41 @@ const ProductQuickViewContent: React.FC<Omit<ProductQuickViewProps, 'product'> &
         rating: reviewRating,
         reviewContent: reviewContent.trim(),
         variantSummary: reviewVariant.trim() || undefined,
+        imageUrls: reviewImages,
       });
       setReviewContent('');
       setReviewVariant('');
+      setReviewImages([]);
       setReviewNotice('评价已提交，审核通过后展示');
     } catch (error) {
       setReviewError(error instanceof Error ? error.message : '评价提交失败，请稍后重试');
     } finally {
       setReviewSubmitting(false);
     }
+  };
+
+  const handleReviewImagesChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files || []) as File[];
+    event.target.value = '';
+    if (!files.length) return;
+    if (reviewImages.length + files.length > 9) {
+      setReviewError('评价图片最多上传9张');
+      return;
+    }
+    setReviewUploading(true);
+    setReviewError(null);
+    try {
+      const uploaded: Array<{ url: string }> = await Promise.all(files.map((file) => uploadPortalMedia(file)));
+      setReviewImages((current) => [...current, ...uploaded.map((item) => item.url)]);
+    } catch (error) {
+      setReviewError(error instanceof Error ? error.message : '评价图片上传失败，请稍后重试');
+    } finally {
+      setReviewUploading(false);
+    }
+  };
+
+  const removeReviewImage = (url: string) => {
+    setReviewImages((current) => current.filter((item) => item !== url));
   };
 
   // Video playback & viewport states
@@ -975,6 +1015,15 @@ const ProductQuickViewContent: React.FC<Omit<ProductQuickViewProps, 'product'> &
                       <div className="flex items-center gap-1 text-amber-500">{Array.from({ length: rev.rating }).map((_, i) => <Star key={i} className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />)}</div>
                     </div>
                     <p className="text-xs sm:text-sm text-zinc-700 leading-relaxed pt-1">{rev.comment}</p>
+                    {rev.imageUrls && rev.imageUrls.length > 0 && (
+                      <div className="flex flex-wrap gap-2 pt-1">
+                        {rev.imageUrls.map((url) => (
+                          <a key={url} href={url} target="_blank" rel="noreferrer" className="block">
+                            <img src={url} alt="评价图片" className="w-16 h-16 rounded-lg object-cover border border-zinc-200" loading="lazy" />
+                          </a>
+                        ))}
+                      </div>
+                    )}
                     {rev.replyContent && <div className="text-xs text-zinc-600 bg-white border border-zinc-100 rounded-lg px-3 py-2"><span className="font-bold text-zinc-800">商家回复：</span>{rev.replyContent}{rev.replyDate && <span className="ml-2 text-[11px] text-zinc-400">{rev.replyDate}</span>}</div>}
                     <div className="flex items-center justify-between text-[11px] text-zinc-400 pt-1"><span>评价时间：{rev.date || '—'}</span><span>赞同 ({rev.helpfulCount})</span></div>
                   </div>
@@ -995,7 +1044,23 @@ const ProductQuickViewContent: React.FC<Omit<ProductQuickViewProps, 'product'> &
                   <div className="flex items-center gap-2"><span className="text-xs text-zinc-500">评分</span>{[1, 2, 3, 4, 5].map((score) => <button type="button" key={score} onClick={() => setReviewRating(score)} className="p-0.5"><Star className={`w-4 h-4 ${score <= reviewRating ? 'fill-amber-400 text-amber-400' : 'text-zinc-300'}`} /></button>)}</div>
                   <input value={reviewVariant} onChange={(event) => setReviewVariant(event.target.value)} placeholder="购买规格（可选）" maxLength={500} className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-xs outline-none focus:border-zinc-400" />
                   <textarea value={reviewContent} onChange={(event) => setReviewContent(event.target.value)} placeholder="分享你的使用体验…" maxLength={2000} rows={3} className="w-full rounded-lg border border-zinc-200 px-3 py-2 text-xs outline-none focus:border-zinc-400 resize-none" />
-                  <button type="button" disabled={reviewSubmitting} onClick={() => void submitReview()} className="rounded-lg bg-zinc-900 px-4 py-2 text-xs font-bold text-white disabled:opacity-50">{reviewSubmitting ? '提交中…' : '提交评价'}</button>
+                  <div className="space-y-2">
+                    <label className="inline-flex cursor-pointer items-center rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-600 hover:bg-zinc-50">
+                      <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" multiple className="hidden" disabled={reviewUploading || reviewSubmitting} onChange={(event) => void handleReviewImagesChange(event)} />
+                      {reviewUploading ? '图片上传中…' : `上传图片（${reviewImages.length}/9）`}
+                    </label>
+                    {reviewImages.length > 0 && (
+                      <div className="flex flex-wrap gap-2">
+                        {reviewImages.map((url) => (
+                          <button type="button" key={url} onClick={() => removeReviewImage(url)} className="relative group" title="移除图片">
+                            <img src={url} alt="待提交评价图片" className="w-14 h-14 rounded-lg object-cover border border-zinc-200" />
+                            <span className="absolute inset-0 hidden items-center justify-center rounded-lg bg-black/55 text-[10px] text-white group-hover:flex">移除</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <button type="button" disabled={reviewSubmitting || reviewUploading} onClick={() => void submitReview()} className="rounded-lg bg-zinc-900 px-4 py-2 text-xs font-bold text-white disabled:opacity-50">{reviewSubmitting ? '提交中…' : '提交评价'}</button>
                 </div>
               </div>
             )}

@@ -27,6 +27,8 @@ public class ContentReview {
     private Integer rating;
     private String reviewContent;
     private String variantSummary;
+    /** 评价图片 URL JSON 数组。 */
+    private String imageUrls;
     private Integer helpfulCount;
     private Integer status;
     private LocalDateTime reviewedAt;

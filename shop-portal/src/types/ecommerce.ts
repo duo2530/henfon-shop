@@ -9,6 +9,7 @@ export interface ProductReview {
   helpfulCount: number;
   replyContent?: string;
   replyDate?: string;
+  imageUrls?: string[];
 }
 
 export interface ProductVariant {

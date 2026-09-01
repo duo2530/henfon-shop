@@ -134,6 +134,7 @@ export interface PortalReviewRecord {
   rating: number;
   reviewContent: string;
   variantSummary?: string;
+  imageUrls?: string | string[];
   helpfulCount: number;
   status: number;
   reviewedAt?: string;
@@ -163,10 +164,11 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
     try {
       const token = localStorage.getItem(MEMBER_TOKEN_KEY);
+      const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData;
       const response = await fetch(`${API_BASE_URL}${path}`, {
         ...options,
         headers: {
-          'Content-Type': 'application/json',
+          ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
           ...(options.headers || {}),
         },
@@ -520,10 +522,31 @@ export async function submitPortalProductReview(payload: {
   rating: number;
   reviewContent: string;
   variantSummary?: string;
+  imageUrls?: string[];
 }): Promise<number> {
   return request<number>(`/api/portal/content/products/${payload.productId}/reviews`, {
     method: 'POST',
-    body: JSON.stringify({ rating: payload.rating, reviewContent: payload.reviewContent, variantSummary: payload.variantSummary }),
+    body: JSON.stringify({
+      rating: payload.rating,
+      reviewContent: payload.reviewContent,
+      variantSummary: payload.variantSummary,
+      imageUrls: payload.imageUrls,
+    }),
+  });
+}
+
+/**
+ * 上传门户会员评价图片。
+ *
+ * @param file 待上传图片
+ * @return 文件对象及临时访问地址
+ */
+export async function uploadPortalMedia(file: File): Promise<{ objectKey: string; url: string; size: number; contentType: string }> {
+  const formData = new FormData();
+  formData.append('file', file);
+  return request<{ objectKey: string; url: string; size: number; contentType: string }>('/api/portal/storage/upload', {
+    method: 'POST',
+    body: formData,
   });
 }
 

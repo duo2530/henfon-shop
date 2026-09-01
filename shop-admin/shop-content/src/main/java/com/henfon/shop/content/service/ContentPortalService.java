@@ -16,6 +16,7 @@ import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.stream.Collectors;
 
 /**
  * 门户内容查询服务。
@@ -129,9 +130,29 @@ public class ContentPortalService {
         review.setRating(request.rating());
         review.setReviewContent(request.reviewContent().trim());
         review.setVariantSummary(StringUtils.hasText(request.variantSummary()) ? request.variantSummary().trim() : null);
+        review.setImageUrls(serializeImageUrls(request.imageUrls()));
         review.setHelpfulCount(0);
         review.setStatus(0);
         reviewMapper.insert(review);
         return review.getId();
+    }
+
+    /**
+     * 将评价图片地址安全序列化为 JSON 数组字符串。
+     *
+     * @param imageUrls 图片地址列表
+     * @return JSON 数组字符串
+     * @author Henfon
+     * @date 2026-09-01
+     */
+    private String serializeImageUrls(List<String> imageUrls) {
+        if (imageUrls == null || imageUrls.isEmpty()) {
+            return null;
+        }
+        return imageUrls.stream()
+                .filter(StringUtils::hasText)
+                .map(String::trim)
+                .map(url -> "\"" + url.replace("\\", "\\\\").replace("\"", "\\\"") + "\"")
+                .collect(Collectors.joining(",", "[", "]"));
     }
 }
