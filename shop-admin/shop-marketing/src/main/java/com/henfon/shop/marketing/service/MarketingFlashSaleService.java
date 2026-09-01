@@ -1,14 +1,19 @@
 package com.henfon.shop.marketing.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.henfon.shop.common.exception.BusinessException;
+import com.henfon.shop.common.marketing.FlashSaleReservationItem;
+import com.henfon.shop.common.marketing.FlashSaleReservationService;
 import com.henfon.shop.marketing.dto.MarketingFlashSaleSaveRequest;
 import com.henfon.shop.marketing.entity.MarketingFlashSale;
 import com.henfon.shop.marketing.entity.MarketingFlashSaleItem;
 import com.henfon.shop.marketing.mapper.MarketingFlashSaleItemMapper;
 import com.henfon.shop.marketing.mapper.MarketingFlashSaleMapper;
+import com.henfon.shop.marketing.mapper.MarketingFlashSaleReservationMapper;
+import com.henfon.shop.marketing.entity.MarketingFlashSaleReservation;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -27,10 +32,11 @@ import java.util.Set;
  * @date 2026-08-31
  */
 @Service
-public class MarketingFlashSaleService {
+public class MarketingFlashSaleService implements FlashSaleReservationService {
 
     private final MarketingFlashSaleMapper activityMapper;
     private final MarketingFlashSaleItemMapper itemMapper;
+    private final MarketingFlashSaleReservationMapper reservationMapper;
 
     /**
      * 创建秒杀活动服务。
@@ -40,9 +46,103 @@ public class MarketingFlashSaleService {
      * @author Henfon
      * @date 2026-08-31
      */
-    public MarketingFlashSaleService(MarketingFlashSaleMapper activityMapper, MarketingFlashSaleItemMapper itemMapper) {
+    public MarketingFlashSaleService(MarketingFlashSaleMapper activityMapper, MarketingFlashSaleItemMapper itemMapper,
+                                     MarketingFlashSaleReservationMapper reservationMapper) {
         this.activityMapper = activityMapper;
         this.itemMapper = itemMapper;
+        this.reservationMapper = reservationMapper;
+    }
+
+    /**
+     * 预占秒杀活动库存并校验会员限购。
+     *
+     * @param activityId 活动ID
+     * @param memberId 会员ID
+     * @param orderId 订单ID
+     * @param items 活动商品
+     * @author Henfon
+     * @date 2026-09-01
+     */
+    @Override
+    @Transactional
+    public void reserve(Long activityId, Long memberId, Long orderId, List<FlashSaleReservationItem> items) {
+        if (activityId == null || memberId == null || orderId == null || items == null || items.isEmpty()) {
+            throw new BusinessException("MARKETING_FLASH_SALE_REQUEST_INVALID", "秒杀活动和商品不能为空");
+        }
+        MarketingFlashSale activity = activityMapper.selectById(activityId);
+        LocalDateTime now = LocalDateTime.now();
+        if (activity == null || !Integer.valueOf(1).equals(activity.getStatus())
+                || now.isBefore(activity.getStartAt()) || now.isAfter(activity.getEndAt())) {
+            throw new BusinessException("MARKETING_FLASH_SALE_NOT_ACTIVE", "秒杀活动未开始或已结束");
+        }
+        for (FlashSaleReservationItem requestItem : items) {
+            if (requestItem == null || requestItem.quantity() < 1) {
+                throw new BusinessException("MARKETING_FLASH_SALE_QUANTITY_INVALID", "秒杀购买数量必须大于 0");
+            }
+            MarketingFlashSaleItem item = itemMapper.selectOne(new LambdaQueryWrapper<MarketingFlashSaleItem>()
+                    .eq(MarketingFlashSaleItem::getActivityId, activityId)
+                    .eq(MarketingFlashSaleItem::getProductId, requestItem.productId())
+                    .eq(requestItem.skuId() != null, MarketingFlashSaleItem::getSkuId, requestItem.skuId())
+                    .isNull(requestItem.skuId() == null, MarketingFlashSaleItem::getSkuId)
+                    .eq(MarketingFlashSaleItem::getStatus, 1)
+                    .last("LIMIT 1 FOR UPDATE"));
+            if (item == null) {
+                throw new BusinessException("MARKETING_FLASH_SALE_ITEM_INVALID", "商品不在当前秒杀活动中");
+            }
+            int memberBought = reservationMapper.selectList(new LambdaQueryWrapper<MarketingFlashSaleReservation>()
+                    .eq(MarketingFlashSaleReservation::getActivityId, activityId)
+                    .eq(MarketingFlashSaleReservation::getActivityItemId, item.getId())
+                    .eq(MarketingFlashSaleReservation::getMemberId, memberId)
+                    .eq(MarketingFlashSaleReservation::getStatus, 0)).stream()
+                    .mapToInt(MarketingFlashSaleReservation::getQuantity).sum();
+            int limit = Math.min(activity.getLimitPerMember(), item.getLimitPerMember());
+            if (memberBought + requestItem.quantity() > limit) {
+                throw new BusinessException("MARKETING_FLASH_SALE_LIMIT_EXCEEDED", "已超过该活动的会员限购数量");
+            }
+            int updated = itemMapper.update(null, new LambdaUpdateWrapper<MarketingFlashSaleItem>()
+                    .setSql("sold_stock = sold_stock + " + requestItem.quantity())
+                    .eq(MarketingFlashSaleItem::getId, item.getId())
+                    .apply("sold_stock + {0} <= total_stock", requestItem.quantity()));
+            if (updated == 0) {
+                throw new BusinessException("MARKETING_FLASH_SALE_STOCK_NOT_ENOUGH", "秒杀活动库存不足");
+            }
+            MarketingFlashSaleReservation reservation = new MarketingFlashSaleReservation();
+            reservation.setActivityId(activityId);
+            reservation.setActivityItemId(item.getId());
+            reservation.setMemberId(memberId);
+            reservation.setOrderId(orderId);
+            reservation.setQuantity(requestItem.quantity());
+            reservation.setStatus(0);
+            reservationMapper.insert(reservation);
+        }
+    }
+
+    /**
+     * 释放取消订单的秒杀库存。
+     *
+     * @param orderId 订单ID
+     * @author Henfon
+     * @date 2026-09-01
+     */
+    @Override
+    @Transactional
+    public void release(Long orderId) {
+        if (orderId == null) {
+            return;
+        }
+        List<MarketingFlashSaleReservation> reservations = reservationMapper.selectList(
+                new LambdaQueryWrapper<MarketingFlashSaleReservation>()
+                        .eq(MarketingFlashSaleReservation::getOrderId, orderId)
+                        .eq(MarketingFlashSaleReservation::getStatus, 0)
+                        .last("FOR UPDATE"));
+        for (MarketingFlashSaleReservation reservation : reservations) {
+            itemMapper.update(null, new LambdaUpdateWrapper<MarketingFlashSaleItem>()
+                    .setSql("sold_stock = GREATEST(sold_stock - " + reservation.getQuantity() + ", 0)")
+                    .eq(MarketingFlashSaleItem::getId, reservation.getActivityItemId()));
+            reservation.setStatus(1);
+            reservation.setReleasedAt(LocalDateTime.now());
+            reservationMapper.updateById(reservation);
+        }
     }
 
     /**

@@ -256,6 +256,7 @@ public class IdentityDataInitializer implements ApplicationRunner {
         String[][] tradeButtons = {
                 {"订单发货", "trade:order:ship"}, {"订单取消", "trade:order:cancel"},
                 {"订单备注", "trade:order:remark"}, {"订单退款", "trade:order:refund"},
+                {"订单审核", "trade:order:audit"},
                 {"售后查询", "trade:after-sale:query"}, {"售后审核", "trade:after-sale:audit"}
         };
         for (String[] button : tradeButtons) {

@@ -17,6 +17,8 @@ import com.henfon.shop.trade.dto.TradeOrderRefundRequest;
 import com.henfon.shop.trade.dto.TradeOrderLogisticsRequest;
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.henfon.shop.common.exception.BusinessException;
+import com.henfon.shop.common.marketing.FlashSaleReservationItem;
+import com.henfon.shop.common.marketing.FlashSaleReservationService;
 import com.henfon.shop.inventory.dto.InventoryReservationItem;
 import com.henfon.shop.inventory.service.InventoryStockService;
 import com.henfon.shop.catalog.entity.CatalogProduct;
@@ -30,9 +32,11 @@ import com.henfon.shop.integration.logistics.LogisticsTrackResult;
 import com.henfon.shop.identity.service.MemberAdminService;
 import com.henfon.shop.trade.dto.TradeOrderLogisticsSyncResult;
 import com.henfon.shop.trade.dto.TradeOrderBatchShipRequest;
+import com.henfon.shop.trade.dto.TradeOrderAuditRequest;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.dao.DuplicateKeyException;
 
 import java.math.BigDecimal;
@@ -63,6 +67,7 @@ public class TradeOrderService {
     private final CatalogSkuMapper catalogSkuMapper;
     private final MemberAdminService memberAdminService;
     private final LogisticsProvider logisticsProvider;
+    private final ObjectProvider<FlashSaleReservationService> flashSaleReservationServiceProvider;
 
     /**
      * 创建交易订单服务。
@@ -78,7 +83,8 @@ public class TradeOrderService {
                              CatalogProductMapper catalogProductMapper,
                              CatalogSkuMapper catalogSkuMapper,
                              MemberAdminService memberAdminService,
-                             LogisticsProvider logisticsProvider) {
+                             LogisticsProvider logisticsProvider,
+                             ObjectProvider<FlashSaleReservationService> flashSaleReservationServiceProvider) {
         this.tradeOrderMapper = tradeOrderMapper;
         this.tradeOrderItemMapper = tradeOrderItemMapper;
         this.tradeOrderLogisticsMapper = tradeOrderLogisticsMapper;
@@ -88,6 +94,7 @@ public class TradeOrderService {
         this.catalogSkuMapper = catalogSkuMapper;
         this.memberAdminService = memberAdminService;
         this.logisticsProvider = logisticsProvider;
+        this.flashSaleReservationServiceProvider = flashSaleReservationServiceProvider;
     }
 
     /**
@@ -403,6 +410,10 @@ public class TradeOrderService {
         // 先读取订单并校验状态，避免已发货订单被重复覆盖物流信息。
         TradeOrder order = requireOrder(orderId);
         TradeOrderStateMachine.requireTransition(order.getOrderStatus(), TradeOrderStateMachine.STATUS_SHIPPED);
+        if (order.getAuditStatus() != null
+                && !Integer.valueOf(TradeOrderStateMachine.AUDIT_APPROVED).equals(order.getAuditStatus())) {
+            throw new BusinessException("TRADE_ORDER_AUDIT_REQUIRED", "订单需审核通过后才能发货");
+        }
         LocalDateTime now = LocalDateTime.now();
         order.setOrderStatus(TradeOrderStateMachine.STATUS_SHIPPED);
         order.setLogisticsCompany(request.logisticsCompany().trim());
@@ -444,6 +455,7 @@ public class TradeOrderService {
         updateOrder(order);
         // 取消待付款或待发货订单时释放已预占库存，库存与订单状态保持一致。
         inventoryStockService.release(order.getId(), order.getOrderNo());
+        releaseFlashSaleReservation(order.getId());
         tradeEventOutboxService.recordOrderCancelled(order, false);
     }
 
@@ -467,6 +479,7 @@ public class TradeOrderService {
         updateOrder(order);
         // 买家取消同样释放订单创建时预占的库存。
         inventoryStockService.release(order.getId(), order.getOrderNo());
+        releaseFlashSaleReservation(order.getId());
         tradeEventOutboxService.recordOrderCancelled(order, false);
     }
 
@@ -525,6 +538,10 @@ public class TradeOrderService {
         TradeOrderStateMachine.requireTransition(order.getOrderStatus(),
                 TradeOrderStateMachine.STATUS_PENDING_SHIPMENT);
         order.setOrderStatus(TradeOrderStateMachine.STATUS_PENDING_SHIPMENT);
+        if (order.getAuditStatus() == null) {
+            // 兼容历史订单：首次支付成功后进入新的待审核状态。
+            order.setAuditStatus(TradeOrderStateMachine.AUDIT_PENDING);
+        }
         order.setPaymentStatus(1);
         order.setPaymentMethod(paymentMethod);
         order.setPaidAmount(paidAmount);
@@ -589,6 +606,52 @@ public class TradeOrderService {
         order.setSellerRemark(normalizeOptional(request.sellerRemark()));
         order.setFlagColor(normalizeFlagColor(request.flagColor()));
         updateOrder(order);
+        return order;
+    }
+
+    /**
+     * 审核已支付待发货订单。
+     *
+     * <p>审核状态独立于履约状态，驳回订单不会直接伪造退款成功；资金侧仍由退款单和渠道回调推进。</p>
+     *
+     * @param orderId 订单ID
+     * @param approved 是否审核通过
+     * @param request 审核备注和乐观锁版本
+     * @param auditor 审核管理员
+     * @return 更新后的订单
+     * @author Henfon
+     * @date 2026-09-01
+     */
+    @Transactional
+    public TradeOrder audit(Long orderId, boolean approved, TradeOrderAuditRequest request, String auditor) {
+        TradeOrder order = requireOrder(orderId);
+        // 只有支付成功且尚未发货的订单需要人工审核，避免修改历史履约事实。
+        if (!Integer.valueOf(TradeOrderStateMachine.STATUS_PENDING_SHIPMENT).equals(order.getOrderStatus())
+                || !Integer.valueOf(1).equals(order.getPaymentStatus())) {
+            throw new BusinessException("TRADE_ORDER_AUDIT_STATUS_INVALID", "仅已支付待发货订单允许审核");
+        }
+        int currentAuditStatus = order.getAuditStatus() == null
+                ? TradeOrderStateMachine.AUDIT_PENDING : order.getAuditStatus();
+        if (currentAuditStatus != TradeOrderStateMachine.AUDIT_PENDING) {
+            throw new BusinessException("TRADE_ORDER_AUDIT_ALREADY_PROCESSED", "订单已审核，请勿重复操作");
+        }
+        if (request == null || request.version() == null || !request.version().equals(order.getVersion())) {
+            throw new BusinessException("TRADE_ORDER_CONCURRENT_UPDATE", "订单已被其他操作修改，请刷新后重试");
+        }
+        int nextStatus = approved ? TradeOrderStateMachine.AUDIT_APPROVED : TradeOrderStateMachine.AUDIT_REJECTED;
+        String remark = normalizeOptional(request.remark());
+        order.setAuditStatus(nextStatus);
+        order.setAuditRemark(remark == null ? (approved ? "审核通过" : "审核驳回") : remark);
+        order.setAuditedAt(LocalDateTime.now());
+        order.setAuditedBy(normalizeOptional(auditor));
+        // 驳回仅阻断后续发货，退款需单独走退款单，确保支付状态与渠道事实一致。
+        if (!approved) {
+            order.setRemark("订单审核驳回：" + order.getAuditRemark());
+        }
+        updateOrder(order);
+        tradeEventOutboxService.recordOrderEvent(order,
+                approved ? "ORDER_AUDIT_APPROVED" : "ORDER_AUDIT_REJECTED",
+                approved ? RocketMqTopics.ORDER_AUDIT_APPROVED : RocketMqTopics.ORDER_AUDIT_REJECTED);
         return order;
     }
 
@@ -743,6 +806,7 @@ public class TradeOrderService {
         order.setMemberId(request.memberId());
         // 下单阶段只完成库存预占，必须等待支付回调后再进入待发货和已支付状态。
         order.setOrderStatus(TradeOrderStateMachine.STATUS_PENDING_PAYMENT);
+        order.setAuditStatus(TradeOrderStateMachine.AUDIT_PENDING);
         order.setPaymentStatus(0);
         order.setPaymentMethod(request.paymentMethod());
         order.setSubtotalAmount(request.subtotalAmount());
@@ -792,6 +856,16 @@ public class TradeOrderService {
         inventoryStockService.reserve(order.getId(), order.getOrderNo(), request.items().stream()
                 .map(item -> new InventoryReservationItem(item.productId(), item.skuId(), item.quantity()))
                 .toList());
+        // 秒杀活动在普通库存预占后追加活动库存与会员限购校验，失败时由事务统一回滚。
+        if (request.flashSaleId() != null) {
+            FlashSaleReservationService reservationService = flashSaleReservationServiceProvider.getIfAvailable();
+            if (reservationService == null) {
+                throw new BusinessException("MARKETING_FLASH_SALE_UNAVAILABLE", "秒杀服务暂不可用，请稍后重试");
+            }
+            reservationService.reserve(request.flashSaleId(), request.memberId(), order.getId(), request.items().stream()
+                    .map(item -> new FlashSaleReservationItem(item.productId(), item.skuId(), item.quantity()))
+                    .toList());
+        }
         tradeEventOutboxService.recordOrderCreated(order);
         return order;
     }
@@ -823,6 +897,7 @@ public class TradeOrderService {
                 continue;
             }
             inventoryStockService.release(order.getId(), order.getOrderNo());
+            releaseFlashSaleReservation(order.getId());
             tradeEventOutboxService.recordOrderCancelled(order, true);
             closedCount++;
         }
@@ -908,5 +983,19 @@ public class TradeOrderService {
      */
     private BigDecimal money(BigDecimal amount) {
         return (amount == null ? BigDecimal.ZERO : amount).setScale(2, RoundingMode.HALF_UP);
+    }
+
+    /**
+     * 释放订单关联的秒杀预占，营销模块未启用时安全跳过。
+     *
+     * @param orderId 订单ID
+     * @author Henfon
+     * @date 2026-09-01
+     */
+    private void releaseFlashSaleReservation(Long orderId) {
+        FlashSaleReservationService reservationService = flashSaleReservationServiceProvider.getIfAvailable();
+        if (reservationService != null) {
+            reservationService.release(orderId);
+        }
     }
 }

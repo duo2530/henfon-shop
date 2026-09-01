@@ -12,9 +12,11 @@ import com.henfon.shop.trade.dto.TradeOrderRefundRequest;
 import com.henfon.shop.trade.dto.TradeOrderLogisticsRequest;
 import com.henfon.shop.trade.dto.TradeOrderLogisticsSyncResult;
 import com.henfon.shop.trade.dto.TradeOrderBatchShipRequest;
+import com.henfon.shop.trade.dto.TradeOrderAuditRequest;
 import jakarta.validation.Valid;
 import com.henfon.shop.trade.service.TradeOrderService;
 import org.slf4j.MDC;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -209,6 +211,65 @@ public class TradeAdminController {
     public ApiResponse<TradeOrder> updateRemark(@PathVariable Long orderId,
                                                 @Valid @RequestBody TradeOrderRemarkRequest request) {
         return ApiResponse.success(tradeOrderService.updateRemark(orderId, request), MDC.get("requestId"));
+    }
+
+    /**
+     * 审核订单并记录审核管理员及备注。
+     *
+     * @param orderId 订单ID
+     * @param approved 是否通过审核
+     * @param request 审核备注和乐观锁版本
+     * @param authentication 当前管理员认证信息
+     * @return 更新后的订单
+     * @author Henfon
+     * @date 2026-09-01
+     */
+    @PutMapping("/orders/{orderId}/audit")
+    @PreAuthorize("hasAuthority('trade:order:audit')")
+    public ApiResponse<TradeOrder> audit(@PathVariable Long orderId,
+                                         @RequestParam boolean approved,
+                                         @Valid @RequestBody TradeOrderAuditRequest request,
+                                         Authentication authentication) {
+        String auditor = authentication == null ? null : authentication.getName();
+        return ApiResponse.success(tradeOrderService.audit(orderId, approved, request, auditor), MDC.get("requestId"));
+    }
+
+    /**
+     * 通过订单审核的快捷接口。
+     *
+     * @param orderId 订单ID
+     * @param request 审核备注和乐观锁版本
+     * @param authentication 当前管理员认证信息
+     * @return 更新后的订单
+     * @author Henfon
+     * @date 2026-09-01
+     */
+    @PutMapping("/orders/{orderId}/audit/approve")
+    @PreAuthorize("hasAuthority('trade:order:audit')")
+    public ApiResponse<TradeOrder> approve(@PathVariable Long orderId,
+                                           @Valid @RequestBody TradeOrderAuditRequest request,
+                                           Authentication authentication) {
+        String auditor = authentication == null ? null : authentication.getName();
+        return ApiResponse.success(tradeOrderService.audit(orderId, true, request, auditor), MDC.get("requestId"));
+    }
+
+    /**
+     * 驳回订单审核的快捷接口。
+     *
+     * @param orderId 订单ID
+     * @param request 审核备注和乐观锁版本
+     * @param authentication 当前管理员认证信息
+     * @return 更新后的订单
+     * @author Henfon
+     * @date 2026-09-01
+     */
+    @PutMapping("/orders/{orderId}/audit/reject")
+    @PreAuthorize("hasAuthority('trade:order:audit')")
+    public ApiResponse<TradeOrder> reject(@PathVariable Long orderId,
+                                           @Valid @RequestBody TradeOrderAuditRequest request,
+                                           Authentication authentication) {
+        String auditor = authentication == null ? null : authentication.getName();
+        return ApiResponse.success(tradeOrderService.audit(orderId, false, request, auditor), MDC.get("requestId"));
     }
 
     /**

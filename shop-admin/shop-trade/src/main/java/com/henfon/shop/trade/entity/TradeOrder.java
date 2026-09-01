@@ -27,6 +27,11 @@ public class TradeOrder {
     private Long memberId;
     private String memberName;
     private Integer orderStatus;
+    /** 订单审核状态：10待审核、20已通过、30已驳回。 */
+    private Integer auditStatus;
+    private String auditRemark;
+    private LocalDateTime auditedAt;
+    private String auditedBy;
     private Integer paymentStatus;
     private String paymentMethod;
     private BigDecimal subtotalAmount;

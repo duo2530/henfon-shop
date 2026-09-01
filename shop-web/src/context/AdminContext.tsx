@@ -70,6 +70,7 @@ import {
   cancelTradeOrder,
   updateTradeOrderRemark,
   refundTradeOrder
+  ,auditTradeOrder
 } from '../api/adminApi';
 import { backendMenusToTree, containsMenuTab, firstMenuTab } from '../navigation/menuAdapter';
 import { backendDataRulesToFrontend, backendDepartmentsToFrontend, backendMembersToFrontend, backendMenusToFrontend, backendRolesToFrontend, backendUsersToFrontend } from '../navigation/identityAdapter';
@@ -124,6 +125,7 @@ interface AdminContextType {
   batchCancelOrders: (ids: string[], reason?: string) => void;
   updateOrderRemark: (id: string, sellerNote: string, flagColor?: Order['flagColor'] | null) => void;
   processOrderRefund: (id: string, refundAmount: number, refundReason: string) => void;
+  auditOrder: (id: string, approved: boolean, remark?: string) => Promise<void>;
   
   // User actions (Customer members)
   addUser: (user: Omit<User, 'id' | 'registeredAt' | 'totalSpent' | 'orderCount' | 'lastActive'>) => void;
@@ -244,6 +246,8 @@ function backendOrdersToFrontend(records: BackendTradeOrder[]): Order[] {
     amount: Number(record.paidAmount || record.payableAmount || 0),
     paymentMethod: backendPaymentMethodToFrontend(record.paymentMethod),
     status: backendOrderStatusToFrontend(record.orderStatus),
+    auditStatus: record.auditStatus === 20 ? 'approved' : record.auditStatus === 30 ? 'rejected' : 'pending',
+    auditRemark: record.auditRemark || undefined,
     items: [],
     shippingAddress: [record.receiverProvince, record.receiverCity, record.receiverDistrict, record.receiverAddress]
       .filter(Boolean)
@@ -305,6 +309,7 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       'order:cancel': ['trade:order:cancel'],
       'order:remark': ['trade:order:remark'],
       'order:refund': ['trade:order:refund'],
+      'order:audit': ['trade:order:audit'],
       'system:config:save': ['system:config:save', 'system:config:view']
     };
     return (aliases[permission] || []).some((candidate) => permissions.includes(candidate));
@@ -659,6 +664,34 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       showToast(`物流同步完成：${result.syncedCount} 个节点`, 'success');
     } catch (error) {
       showToast(error instanceof Error ? error.message : '物流同步失败，请稍后重试', 'error');
+    }
+  };
+
+  const auditOrder = async (id: string, approved: boolean, remark?: string) => {
+    const numericId = Number(id);
+    const previous = orders.find((order) => order.id === id);
+    if (!Number.isFinite(numericId) || !previous || previous.version === undefined) {
+      showToast('当前订单缺少服务端版本，无法提交审核', 'warning');
+      return;
+    }
+    // 先更新本地状态给出即时反馈，接口失败时按快照恢复。
+    setOrders((prev) => prev.map((order) => order.id === id ? {
+      ...order,
+      auditStatus: approved ? 'approved' : 'rejected',
+      auditRemark: remark || (approved ? '审核通过' : '审核驳回')
+    } : order));
+    try {
+      const saved = await auditTradeOrder(numericId, approved, { remark, version: previous.version });
+      setOrders((prev) => prev.map((order) => order.id === id ? {
+        ...order,
+        auditStatus: saved.auditStatus === 20 ? 'approved' : saved.auditStatus === 30 ? 'rejected' : 'pending',
+        auditRemark: saved.auditRemark || undefined,
+        version: saved.version
+      } : order));
+      showToast(approved ? '订单审核已通过' : '订单审核已驳回', approved ? 'success' : 'warning');
+    } catch (error) {
+      setOrders((prev) => prev.map((order) => order.id === id ? previous : order));
+      showToast(error instanceof Error ? error.message : '订单审核失败，已恢复原状态', 'error');
     }
   };
 
@@ -1377,6 +1410,7 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         batchCancelOrders,
         updateOrderRemark,
         processOrderRefund,
+        auditOrder,
         addUser,
         updateUserStatus,
         updateUser,

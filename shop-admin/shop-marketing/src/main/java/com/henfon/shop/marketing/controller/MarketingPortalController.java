@@ -3,6 +3,8 @@ package com.henfon.shop.marketing.controller;
 import com.henfon.shop.common.api.ApiResponse;
 import com.henfon.shop.marketing.entity.MarketingCoupon;
 import com.henfon.shop.marketing.entity.MarketingMemberCoupon;
+import com.henfon.shop.marketing.dto.MarketingFlashSalePortalResponse;
+import com.henfon.shop.marketing.service.MarketingFlashSalePortalService;
 import com.henfon.shop.marketing.service.MarketingPortalService;
 import com.henfon.shop.marketing.dto.MarketingCouponRedeemRequest;
 import com.henfon.shop.marketing.dto.MarketingCouponRollbackRequest;
@@ -30,6 +32,7 @@ import java.util.List;
 @RequestMapping("/api/portal/marketing")
 public class MarketingPortalController {
     private final MarketingPortalService service;
+    private final MarketingFlashSalePortalService flashSalePortalService;
 
     /**
      * 创建门户营销控制器。
@@ -38,8 +41,10 @@ public class MarketingPortalController {
      * @author Henfon
      * @date 2026-08-29
      */
-    public MarketingPortalController(MarketingPortalService service) {
+    public MarketingPortalController(MarketingPortalService service,
+                                     MarketingFlashSalePortalService flashSalePortalService) {
         this.service = service;
+        this.flashSalePortalService = flashSalePortalService;
     }
 
     /**
@@ -52,6 +57,18 @@ public class MarketingPortalController {
     @GetMapping("/coupons")
     public ApiResponse<List<MarketingCoupon>> coupons() {
         return ApiResponse.success(service.coupons(), MDC.get("requestId"));
+    }
+
+    /**
+     * 查询当前可购买的秒杀活动及商品库存。
+     *
+     * @return 进行中的秒杀活动列表
+     * @author Henfon
+     * @date 2026-09-01
+     */
+    @GetMapping("/flash-sales")
+    public ApiResponse<List<MarketingFlashSalePortalResponse>> flashSales() {
+        return ApiResponse.success(flashSalePortalService.activeFlashSales(), MDC.get("requestId"));
     }
 
     /**

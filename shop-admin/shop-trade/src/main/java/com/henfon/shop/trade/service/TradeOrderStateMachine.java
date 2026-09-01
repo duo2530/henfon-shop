@@ -21,6 +21,13 @@ public final class TradeOrderStateMachine {
     public static final int STATUS_REFUNDING = 60;
     public static final int STATUS_REFUNDED = 70;
 
+    /** 订单审核状态：待审核。 */
+    public static final int AUDIT_PENDING = 10;
+    /** 订单审核状态：已通过。 */
+    public static final int AUDIT_APPROVED = 20;
+    /** 订单审核状态：已驳回。 */
+    public static final int AUDIT_REJECTED = 30;
+
     private static final Map<Integer, Set<Integer>> TRANSITIONS = Map.of(
             STATUS_PENDING_PAYMENT, Set.of(STATUS_PENDING_SHIPMENT, STATUS_CANCELLED),
             STATUS_PENDING_SHIPMENT, Set.of(STATUS_SHIPPED, STATUS_CANCELLED, STATUS_REFUNDING),

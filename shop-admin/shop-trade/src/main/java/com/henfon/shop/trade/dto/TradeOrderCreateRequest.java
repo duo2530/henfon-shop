@@ -27,6 +27,7 @@ import java.util.List;
  * @param freightAmount 运费
  * @param payableAmount 应付金额
  * @param idempotencyKey 订单幂等键
+ * @param flashSaleId 秒杀活动ID
  * @author Henfon
  * @date 2026-08-29
  */
@@ -36,7 +37,8 @@ public record TradeOrderCreateRequest(@NotNull Long memberId, @NotEmpty List<@Va
                                       @NotBlank String receiverAddress, String paymentMethod,
                                       @NotNull BigDecimal subtotalAmount, @NotNull BigDecimal discountAmount,
                                       @NotNull BigDecimal freightAmount, @NotNull BigDecimal payableAmount,
-                                      @Size(max = 64, message = "订单幂等键长度不能超过64") String idempotencyKey) {
+                                      @Size(max = 64, message = "订单幂等键长度不能超过64") String idempotencyKey,
+                                      Long flashSaleId) {
     /**
      * 订单商品请求。
      *

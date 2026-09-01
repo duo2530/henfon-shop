@@ -38,6 +38,7 @@ export const OrderManagementView: React.FC = () => {
     batchCancelOrders,
     updateOrderRemark,
     processOrderRefund,
+    auditOrder,
     showToast, 
     products,
     requirePermission
@@ -767,7 +768,15 @@ export const OrderManagementView: React.FC = () => {
 
                       {/* Status */}
                       <td className="py-3 px-4 text-center">
-                        {statusBadges}
+                        <div className="flex flex-col items-center gap-1">
+                          {statusBadges}
+                          {order.auditStatus === 'pending' && order.status === 'pending_shipment' && (
+                            <span className="text-[10px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">待审核</span>
+                          )}
+                          {order.auditStatus === 'rejected' && (
+                            <span className="text-[10px] text-red-700 bg-red-50 border border-red-200 rounded px-1.5 py-0.5">审核驳回</span>
+                          )}
+                        </div>
                       </td>
 
                       {/* Actions */}
@@ -782,18 +791,46 @@ export const OrderManagementView: React.FC = () => {
                           </button>
 
                           {order.status === 'pending_shipment' && (
-                            <PermissionGate permission="order:ship">
-                              <button
-                                onClick={() => {
-                                  setShippingOrder(order);
-                                  setTrackingNumber(`SF${Math.floor(10000000000 + Math.random() * 90000000000)}`);
-                                }}
-                                className="px-2 py-1 text-xs font-semibold bg-orange-50 text-orange-700 hover:bg-orange-100 rounded border border-orange-200 transition-colors"
-                                title="单笔发货"
-                              >
-                                发货
-                              </button>
-                            </PermissionGate>
+                            <>
+                              {order.auditStatus === 'pending' && (
+                                <PermissionGate permission="order:audit">
+                                  <button
+                                    onClick={() => {
+                                      const remark = window.prompt('请输入订单审核备注（可选）') || undefined;
+                                      void auditOrder(order.id, true, remark);
+                                    }}
+                                    className="px-2 py-1 text-xs font-semibold bg-emerald-50 text-emerald-700 hover:bg-emerald-100 rounded border border-emerald-200 transition-colors"
+                                    title="通过订单审核"
+                                  >
+                                    审核通过
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      const remark = window.prompt('请输入驳回原因（建议填写）');
+                                      if (remark === null) return;
+                                      void auditOrder(order.id, false, remark || undefined);
+                                    }}
+                                    className="px-2 py-1 text-xs font-semibold bg-red-50 text-red-700 hover:bg-red-100 rounded border border-red-200 transition-colors"
+                                    title="驳回订单审核"
+                                  >
+                                    驳回
+                                  </button>
+                                </PermissionGate>
+                              )}
+                              <PermissionGate permission="order:ship">
+                                <button
+                                  onClick={() => {
+                                    setShippingOrder(order);
+                                    setTrackingNumber(`SF${Math.floor(10000000000 + Math.random() * 90000000000)}`);
+                                  }}
+                                  disabled={order.auditStatus !== undefined && order.auditStatus !== 'approved'}
+                                  className="px-2 py-1 text-xs font-semibold bg-orange-50 text-orange-700 hover:bg-orange-100 rounded border border-orange-200 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                                  title={order.auditStatus === 'rejected' ? '订单审核已驳回' : order.auditStatus === 'pending' ? '请先通过订单审核' : '单笔发货'}
+                                >
+                                  发货
+                                </button>
+                              </PermissionGate>
+                            </>
                           )}
 
                           {order.status === 'shipped' && !order.refundStatus && (

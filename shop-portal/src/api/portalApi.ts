@@ -93,6 +93,29 @@ interface MarketingCouponRecord {
   endAt: string;
 }
 
+/** 门户进行中秒杀活动及活动商品库存摘要。 */
+export interface PortalFlashSaleRecord {
+  id: number;
+  activityCode: string;
+  activityName: string;
+  startAt: string;
+  endAt: string;
+  limitPerMember: number;
+  items: PortalFlashSaleItemRecord[];
+}
+
+/** 门户秒杀商品的活动价格、限购和剩余库存。 */
+export interface PortalFlashSaleItemRecord {
+  id: number;
+  productId: number;
+  skuId?: number;
+  activityPrice: number;
+  totalStock: number;
+  soldStock: number;
+  remainingStock: number;
+  limitPerMember: number;
+}
+
 export interface PortalBanner {
   id: number;
   bannerTitle: string;
@@ -455,6 +478,11 @@ export async function fetchPortalCoupons(): Promise<Coupon[]> {
   }));
 }
 
+/** 查询当前时间窗口内仍有库存的门户秒杀活动。 */
+export async function fetchPortalFlashSales(): Promise<PortalFlashSaleRecord[]> {
+  return request<PortalFlashSaleRecord[]>('/api/portal/marketing/flash-sales');
+}
+
 /** 领取门户优惠券并返回会员优惠券记录。 */
 export async function claimPortalCoupon(couponId: number): Promise<unknown> {
   return request(`/api/portal/marketing/coupons/${couponId}/claim`, { method: 'POST' });
@@ -661,6 +689,8 @@ export async function applyPortalOrderInvoice(orderId: number, payload: {
 export interface PortalOrderCreatePayload {
   memberId: number;
   idempotencyKey?: string;
+  /** 秒杀订单可选活动ID，普通订单不传。 */
+  flashSaleId?: number;
   items: Array<{
     productId?: number;
     skuId?: number;

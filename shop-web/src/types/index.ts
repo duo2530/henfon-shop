@@ -81,6 +81,9 @@ export interface Order {
   amount: number;
   paymentMethod: 'wechat' | 'alipay' | 'card';
   status: OrderStatus;
+  /** 服务端独立审核状态：pending/approved/rejected。 */
+  auditStatus?: 'pending' | 'approved' | 'rejected';
+  auditRemark?: string;
   items: OrderItem[];
   shippingAddress: string;
   trackingNumber?: string;

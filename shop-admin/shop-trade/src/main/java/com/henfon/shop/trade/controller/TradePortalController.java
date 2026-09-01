@@ -122,7 +122,8 @@ public class TradePortalController {
         TradeOrderCreateRequest normalized = new TradeOrderCreateRequest(memberId, request.items(),
                 request.receiverName(), request.receiverPhone(), request.receiverProvince(), request.receiverCity(),
                 request.receiverDistrict(), request.receiverAddress(), request.paymentMethod(), request.subtotalAmount(),
-                request.discountAmount(), request.freightAmount(), request.payableAmount(), request.idempotencyKey());
+                request.discountAmount(), request.freightAmount(), request.payableAmount(), request.idempotencyKey(),
+                request.flashSaleId());
         return ApiResponse.success(orderService.create(normalized), MDC.get("requestId"));
     }
 

@@ -359,6 +359,10 @@ export interface BackendTradeOrder {
   memberId?: number;
   memberName?: string;
   orderStatus: number;
+  auditStatus?: number;
+  auditRemark?: string;
+  auditedAt?: string;
+  auditedBy?: string;
   paymentStatus: number;
   paymentMethod?: string;
   subtotalAmount: number;
@@ -1279,6 +1283,28 @@ export function updateTradeOrderLogistics(orderId: number, logisticsId: number, 
 
 export function cancelTradeOrder(orderId: number, reason?: string): Promise<void> {
   return request<void>(`/api/admin/trade/orders/${orderId}/cancel`, { method: 'PUT', body: JSON.stringify({ reason }) });
+}
+
+export function auditTradeOrder(orderId: number, approved: boolean, payload: { remark?: string; version: number }): Promise<BackendTradeOrder> {
+  const query = new URLSearchParams({ approved: String(approved) });
+  return request<BackendTradeOrder>(`/api/admin/trade/orders/${orderId}/audit?${query.toString()}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload)
+  });
+}
+
+export function approveTradeOrder(orderId: number, payload: { remark?: string; version: number }): Promise<BackendTradeOrder> {
+  return request<BackendTradeOrder>(`/api/admin/trade/orders/${orderId}/audit/approve`, {
+    method: 'PUT',
+    body: JSON.stringify(payload)
+  });
+}
+
+export function rejectTradeOrder(orderId: number, payload: { remark?: string; version: number }): Promise<BackendTradeOrder> {
+  return request<BackendTradeOrder>(`/api/admin/trade/orders/${orderId}/audit/reject`, {
+    method: 'PUT',
+    body: JSON.stringify(payload)
+  });
 }
 
 export function updateTradeOrderRemark(orderId: number, payload: {
