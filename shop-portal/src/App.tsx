@@ -1633,6 +1633,11 @@ export default function App() {
     }
     const existing = await fetchPortalOrderInvoice(orderId).catch(() => null);
     if (existing) {
+      if (existing.invoiceUrl) {
+        window.open(existing.invoiceUrl, '_blank', 'noopener,noreferrer');
+        showToast('已打开电子发票附件', 'success');
+        return;
+      }
       const statusLabels: Record<number, string> = { 0: '待开票', 1: '开票中', 2: '已开票', 3: '开票失败', 4: '已取消' };
       showToast(`该订单已有发票申请（${existing.invoiceNo}），状态：${statusLabels[existing.status] || '处理中'}`, 'info');
       return;
