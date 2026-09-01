@@ -4,6 +4,7 @@ import { BackendMenu } from '../api/adminApi';
 const routeTabMap: Record<string, NavigationTab> = {
   '/dashboard': 'dashboard',
   '/ecommerce/products': 'products',
+  '/ecommerce/categories': 'categories',
   '/ecommerce/orders': 'orders',
   '/ecommerce/customers': 'users',
   '/marketing/coupons': 'coupons',

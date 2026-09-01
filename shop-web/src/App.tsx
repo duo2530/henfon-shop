@@ -9,6 +9,7 @@ import { Sidebar } from './components/layout/Sidebar';
 import { TopNavbar } from './components/layout/TopNavbar';
 import { DashboardView } from './components/dashboard/DashboardView';
 import { ProductManagementView } from './components/products/ProductManagementView';
+import { CategoryManagementView } from './components/products/CategoryManagementView';
 import { OrderManagementView } from './components/orders/OrderManagementView';
 import { UserManagementView } from './components/users/UserManagementView';
 import { RoleManagementView } from './components/rbac/RoleManagementView';
@@ -88,6 +89,7 @@ const AdminLayoutContent: React.FC = () => {
         {!hasCurrentTab && <PermissionDenied />}
         {hasCurrentTab && currentTab === 'dashboard' && <DashboardView />}
         {hasCurrentTab && currentTab === 'products' && <ProductManagementView />}
+        {hasCurrentTab && currentTab === 'categories' && <CategoryManagementView />}
         {hasCurrentTab && currentTab === 'orders' && <OrderManagementView />}
         {hasCurrentTab && currentTab === 'users' && <UserManagementView />}
         

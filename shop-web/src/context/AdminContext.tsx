@@ -119,7 +119,7 @@ interface AdminContextType {
   cancelOrder: (id: string) => void;
   batchShipOrders: (shipments: { orderId: string; carrier: string; trackingNumber: string }[]) => void;
   batchCancelOrders: (ids: string[], reason?: string) => void;
-  updateOrderRemark: (id: string, sellerNote: string, flagColor?: Order['flagColor']) => void;
+  updateOrderRemark: (id: string, sellerNote: string, flagColor?: Order['flagColor'] | null) => void;
   processOrderRefund: (id: string, refundAmount: number, refundReason: string) => void;
   
   // User actions (Customer members)
@@ -248,6 +248,8 @@ function backendOrdersToFrontend(records: BackendTradeOrder[]): Order[] {
     trackingNumber: record.trackingNo || undefined,
     shippingCarrier: record.logisticsCompany || undefined,
     sellerNote: record.sellerRemark || undefined,
+    flagColor: record.flagColor || undefined,
+    version: record.version,
     discountAmount: Number(record.discountAmount || 0),
     freightAmount: Number(record.freightAmount || 0),
     refundStatus: record.orderStatus === 60 ? 'pending' : record.orderStatus === 70 ? 'approved' : 'none'
@@ -708,18 +710,48 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     }
   };
 
-  const updateOrderRemark = (id: string, sellerNote: string, flagColor?: Order['flagColor']) => {
-    setOrders((prev) =>
-      prev.map((o) => (o.id === id ? { ...o, sellerNote, flagColor: flagColor || o.flagColor } : o))
-    );
-    showToast('卖家备注及标旗已更新', 'success');
+  const updateOrderRemark = (id: string, sellerNote: string, flagColor?: Order['flagColor'] | null) => {
+    const previousOrder = orders.find((order) => order.id === id);
+    const optimisticOrder = previousOrder
+      ? {
+          ...previousOrder,
+          sellerNote,
+          // undefined 表示调用方未修改标旗，null 表示明确清除标旗。
+          flagColor: flagColor === undefined ? previousOrder.flagColor : flagColor || undefined
+        }
+      : undefined;
+    setOrders((prev) => prev.map((o) => o.id === id && optimisticOrder ? optimisticOrder : o));
     const numericId = Number(id);
-    if (Number.isFinite(numericId)) {
-      void updateTradeOrderRemark(numericId, sellerNote).catch(() => {
-        showToast('备注已更新本地状态，但服务端保存失败', 'warning');
-        void hydrateTradeMetadata();
-      });
+    if (!Number.isFinite(numericId) || !previousOrder || previousOrder.version === undefined) {
+      showToast('卖家备注及标旗已更新', 'success');
+      return;
     }
+    const requestFlagColor = flagColor === undefined ? previousOrder.flagColor || null : flagColor;
+    void updateTradeOrderRemark(numericId, {
+      sellerRemark: sellerNote,
+      flagColor: requestFlagColor,
+      version: previousOrder.version
+    }).then((saved) => {
+      // 以后端规范化后的值和新版本覆盖本地快照，保证下一次写入携带最新版本。
+      setOrders((prev) => prev.map((o) => o.id === id ? {
+        ...o,
+        sellerNote: saved.sellerRemark || undefined,
+        flagColor: saved.flagColor || undefined,
+        version: saved.version
+      } : o));
+      showToast('卖家备注及标旗已更新', 'success');
+    }).catch(() => {
+      // 仅回滚仍处于本次乐观状态的订单，避免覆盖用户随后发起的新编辑。
+      setOrders((prev) => prev.map((o) => {
+        if (o.id !== id || !previousOrder || !optimisticOrder) return o;
+        const sameOptimisticState = o.sellerNote === optimisticOrder.sellerNote
+          && o.flagColor === optimisticOrder.flagColor
+          && o.version === optimisticOrder.version;
+        return sameOptimisticState ? previousOrder : o;
+      }));
+      showToast('备注及标旗保存失败，已恢复原值', 'warning');
+      void hydrateTradeMetadata();
+    });
   };
 
   const processOrderRefund = (id: string, refundAmount: number, refundReason: string) => {

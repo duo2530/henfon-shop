@@ -47,7 +47,7 @@ export const OrderManagementView: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [dateRange, setDateRange] = useState<'7days' | '30days' | 'month' | 'all'>('7days');
   const [selectedOrderIds, setSelectedOrderIds] = useState<string[]>([]);
-  const [flagFilter, setFlagFilter] = useState<'all' | 'red' | 'yellow' | 'blue' | 'green'>('all');
+  const [flagFilter, setFlagFilter] = useState<'all' | 'red' | 'yellow' | 'blue' | 'green' | 'purple'>('all');
 
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
@@ -67,7 +67,7 @@ export const OrderManagementView: React.FC = () => {
   // Remark & Flag Modal
   const [remarkOrder, setRemarkOrder] = useState<Order | null>(null);
   const [remarkText, setRemarkText] = useState('');
-  const [remarkFlag, setRemarkFlag] = useState<Order['flagColor']>('blue');
+  const [remarkFlag, setRemarkFlag] = useState<Order['flagColor'] | null>(null);
 
   // Refund Modal
   const [refundOrder, setRefundOrder] = useState<Order | null>(null);
@@ -209,7 +209,7 @@ export const OrderManagementView: React.FC = () => {
   const handleOpenRemark = (order: Order) => {
     setRemarkOrder(order);
     setRemarkText(order.sellerNote || '');
-    setRemarkFlag(order.flagColor || 'blue');
+    setRemarkFlag(order.flagColor || null);
   };
 
   const handleSaveRemark = () => {
@@ -255,6 +255,8 @@ export const OrderManagementView: React.FC = () => {
 
   const getFlagBadge = (flag?: Order['flagColor']) => {
     switch (flag) {
+      case undefined:
+        return null;
       case 'red':
         return <Flag className="w-3.5 h-3.5 text-red-500 fill-red-500" title="红旗: 催发货/加急" />;
       case 'yellow':
@@ -262,8 +264,11 @@ export const OrderManagementView: React.FC = () => {
       case 'green':
         return <Flag className="w-3.5 h-3.5 text-emerald-500 fill-emerald-500" title="绿旗: VIP客户/赠品" />;
       case 'blue':
-      default:
         return <Flag className="w-3.5 h-3.5 text-blue-500 fill-blue-500" title="蓝旗: 普通备注" />;
+      case 'purple':
+        return <Flag className="w-3.5 h-3.5 text-purple-500 fill-purple-500" title="紫旗: 特殊跟进" />;
+      default:
+        return null;
     }
   };
 
@@ -532,6 +537,9 @@ export const OrderManagementView: React.FC = () => {
               </button>
               <button onClick={() => setFlagFilter('green')} className="p-1 hover:bg-gray-100 rounded">
                 <Flag className="w-3.5 h-3.5 text-emerald-500 fill-emerald-500" />
+              </button>
+              <button onClick={() => setFlagFilter('purple')} className="p-1 hover:bg-gray-100 rounded">
+                <Flag className="w-3.5 h-3.5 text-purple-500 fill-purple-500" />
               </button>
             </div>
           </div>
@@ -1200,6 +1208,15 @@ export const OrderManagementView: React.FC = () => {
                     <input
                       type="radio"
                       name="flag"
+                      checked={remarkFlag === null}
+                      onChange={() => setRemarkFlag(null)}
+                    />
+                    <span>无标旗</span>
+                  </label>
+                  <label className="flex items-center gap-1.5 cursor-pointer text-xs">
+                    <input
+                      type="radio"
+                      name="flag"
                       checked={remarkFlag === 'red'}
                       onChange={() => setRemarkFlag('red')}
                     />
@@ -1235,6 +1252,16 @@ export const OrderManagementView: React.FC = () => {
                     />
                     <Flag className="w-4 h-4 text-blue-500 fill-blue-500" />
                     <span>蓝旗 (普通)</span>
+                  </label>
+                  <label className="flex items-center gap-1.5 cursor-pointer text-xs">
+                    <input
+                      type="radio"
+                      name="flag"
+                      checked={remarkFlag === 'purple'}
+                      onChange={() => setRemarkFlag('purple')}
+                    />
+                    <Flag className="w-4 h-4 text-purple-500 fill-purple-500" />
+                    <span>紫旗 (特殊跟进)</span>
                   </label>
                 </div>
               </div>

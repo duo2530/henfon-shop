@@ -81,7 +81,7 @@ HTTP 状态：成功 2xx；参数/业务错误 400；认证失败 401；无权�
 
 - 购物车：`GET /api/portal/trade/cart`、`POST /items`、`PUT /items/{id}`、`DELETE /items/{id}`。
 - 门户订单：`GET /api/portal/trade/orders`（分页）、`GET /orders/{id}`、`GET /orders/{id}/logistics`、`POST /orders`、`PUT /orders/{id}/cancel|confirm`。
-- 管理订单：`GET /api/admin/trade/orders`（分页）、`GET /orders/{id}/items|logistics`、`POST /orders/{id}/logistics`、`PUT /orders/{id}/logistics/{logisticsId}`、`PUT /orders/{id}/ship|cancel|remark|refund`。
+- 管理订单：`GET /api/admin/trade/orders`（分页）、`GET /orders/{id}/items|logistics`、`POST /orders/{id}/logistics`、`PUT /orders/{id}/logistics/{logisticsId}`、`PUT /orders/{id}/ship|cancel|remark|refund`。备注接口请求体为 `{sellerRemark, flagColor, version}`，标旗支持 `red/yellow/green/blue/purple` 或 `null` 清空，并通过 `version` 乐观锁校验。
 - 售后：门户 `GET/POST /api/portal/trade/after-sales`、`DELETE /after-sales/{id}`；管理 `GET /api/admin/trade/after-sales`（分页）、`PUT /{id}/approve|reject`。
 - Outbox 运维：`GET /api/admin/trade/outbox/dead-events`（按事件类型、主题、聚合 ID 分页筛选）、`POST /api/admin/trade/outbox/{eventId}/retry`（仅允许死信事件人工重试，需 `trade:outbox:query/retry` 权限）。
 
@@ -107,6 +107,9 @@ HTTP 状态：成功 2xx；参数/业务错误 400；认证失败 401；无权�
 
 - `GET /api/admin/reporting/overview`（兼容 `/dashboard/metrics`）：指定日期经营指标。
 - `GET /api/admin/reporting/sales-trend`（兼容 `/dashboard/sales-trend`）：按日期范围返回销售额、订单数、销量；日期范围需符合服务端上限。
+- `GET /api/admin/reporting/product-ranking`（兼容 `/products/ranking`）：按已支付订单查询商品销量排行，支持日期范围和 Top N。
+- `GET /api/admin/reporting/member-analysis`（兼容 `/members/analysis`）：返回会员总数、新增、活跃、复购率、客单价及等级分布。
+- `GET /api/admin/reporting/export`：导出 `PRODUCT_RANKING`、`MEMBER_ANALYSIS` 或 `SALES_TREND` CSV 报表，响应包含 UTF-8 BOM。
 
 ## 7. 兼容与变更
 

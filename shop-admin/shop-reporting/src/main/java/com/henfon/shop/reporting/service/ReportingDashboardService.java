@@ -4,6 +4,11 @@ import com.henfon.shop.common.exception.BusinessException;
 import com.henfon.shop.reporting.dto.ReportingDashboardMetricsResponse;
 import com.henfon.shop.reporting.dto.ReportingSalesTrendPoint;
 import com.henfon.shop.reporting.dto.ReportingSalesTrendRow;
+import com.henfon.shop.reporting.dto.ReportingProductRankingItem;
+import com.henfon.shop.reporting.dto.ReportingProductRankingRow;
+import com.henfon.shop.reporting.dto.ReportingMemberAnalysisResponse;
+import com.henfon.shop.reporting.dto.ReportingMemberLevelStat;
+import com.henfon.shop.reporting.dto.ReportingMemberLevelStatRow;
 import com.henfon.shop.reporting.mapper.ReportingMetricsMapper;
 import org.springframework.stereotype.Service;
 
@@ -15,6 +20,8 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Locale;
+import java.util.Objects;
 
 /**
  * 后台首页经营指标应用服务。
@@ -112,6 +119,194 @@ public class ReportingDashboardService {
                     valueOrZero(row == null ? null : row.getProductQuantity())));
         }
         return points;
+    }
+
+    /**
+     * 查询指定日期范围内的商品销售排行。
+     *
+     * @param startDate 开始日期，为空时默认结束日期前29天
+     * @param endDate 结束日期，为空时默认当天
+     * @param limit 返回条数，默认20，最大100
+     * @return 商品销售排行
+     * @author Henfon
+     * @date 2026-09-01
+     */
+    public List<ReportingProductRankingItem> queryProductRanking(LocalDate startDate, LocalDate endDate,
+                                                                  Integer limit) {
+        DateRange range = resolveRange(startDate, endDate);
+        int queryLimit = limit == null ? 20 : limit;
+        if (queryLimit < 1 || queryLimit > 100) {
+            throw new BusinessException("REPORTING_LIMIT_INVALID", "商品排行条数必须在1到100之间");
+        }
+        List<ReportingProductRankingRow> rows = reportingMetricsMapper.listProductRanking(
+                range.startTime(), range.endTime(), queryLimit);
+        List<ReportingProductRankingItem> result = new ArrayList<>();
+        if (rows == null) {
+            return result;
+        }
+        int rank = 1;
+        for (ReportingProductRankingRow row : rows) {
+            if (row == null) {
+                continue;
+            }
+            result.add(new ReportingProductRankingItem(rank++, row.getProductId(),
+                    Objects.requireNonNullElse(row.getProductName(), "未知商品"),
+                    Objects.requireNonNullElse(row.getCategoryName(), "未分类"),
+                    valueOrZero(row.getSalesVolume()), amountOrZero(row.getSalesAmount()),
+                    valueOrZero(row.getOrderCount())));
+        }
+        return result;
+    }
+
+    /**
+     * 查询指定日期范围内的会员分析。
+     *
+     * @param startDate 开始日期，为空时默认结束日期前29天
+     * @param endDate 结束日期，为空时默认当天
+     * @return 会员分析报表
+     * @author Henfon
+     * @date 2026-09-01
+     */
+    public ReportingMemberAnalysisResponse queryMemberAnalysis(LocalDate startDate, LocalDate endDate) {
+        DateRange range = resolveRange(startDate, endDate);
+        Long totalMemberCount = reportingMetricsMapper.countMembersBefore(range.endTime());
+        Long newMemberCount = reportingMetricsMapper.countMembers(range.startTime(), range.endTime());
+        List<ReportingMemberLevelStatRow> rows = reportingMetricsMapper.listMemberLevelStats(
+                range.startTime(), range.endTime());
+
+        long activeMemberCount = 0L;
+        long paidOrderCount = 0L;
+        BigDecimal paidAmount = BigDecimal.ZERO;
+        List<ReportingMemberLevelStat> levelStats = new ArrayList<>();
+        if (rows != null) {
+            for (ReportingMemberLevelStatRow row : rows) {
+                if (row == null) {
+                    continue;
+                }
+                activeMemberCount += valueOrZero(row.getActiveMemberCount());
+                paidOrderCount += valueOrZero(row.getPaidOrderCount());
+                paidAmount = paidAmount.add(amountOrZero(row.getPaidAmount()));
+                levelStats.add(new ReportingMemberLevelStat(
+                        Objects.requireNonNullElse(row.getMemberLevel(), "UNKNOWN"),
+                        valueOrZero(row.getMemberCount()), valueOrZero(row.getActiveMemberCount()),
+                        valueOrZero(row.getPaidOrderCount()), amountOrZero(row.getPaidAmount())));
+            }
+        }
+        long repeatPurchaseMemberCount = valueOrZero(reportingMetricsMapper.countRepeatMembers(
+                range.startTime(), range.endTime()));
+        BigDecimal repurchaseRate = activeMemberCount == 0L ? BigDecimal.ZERO
+                : BigDecimal.valueOf(repeatPurchaseMemberCount)
+                .multiply(BigDecimal.valueOf(100))
+                .divide(BigDecimal.valueOf(activeMemberCount), 2, java.math.RoundingMode.HALF_UP);
+        BigDecimal averageOrderAmount = paidOrderCount == 0L ? BigDecimal.ZERO
+                : paidAmount.divide(BigDecimal.valueOf(paidOrderCount), 2, java.math.RoundingMode.HALF_UP);
+        return new ReportingMemberAnalysisResponse(range.startDate(), range.endDate(),
+                valueOrZero(totalMemberCount), valueOrZero(newMemberCount), activeMemberCount,
+                repeatPurchaseMemberCount, repurchaseRate, paidOrderCount, paidAmount,
+                averageOrderAmount, levelStats);
+    }
+
+    /**
+     * 导出报表 CSV 文件内容，使用 UTF-8 BOM 兼容常见表格软件。
+     *
+     * @param reportType 报表类型：PRODUCT_RANKING、MEMBER_ANALYSIS 或 SALES_TREND
+     * @param startDate 开始日期
+     * @param endDate 结束日期
+     * @param limit 商品排行条数
+     * @return CSV 二进制内容
+     * @author Henfon
+     * @date 2026-09-01
+     */
+    public byte[] export(String reportType, LocalDate startDate, LocalDate endDate, Integer limit) {
+        String type = reportType == null ? "PRODUCT_RANKING" : reportType.trim().toUpperCase(Locale.ROOT);
+        StringBuilder csv = new StringBuilder("\uFEFF");
+        switch (type) {
+            case "PRODUCT_RANKING", "PRODUCTS" -> {
+                csv.append("排名,商品ID,商品名称,类目,销量,销售额,订单数\n");
+                for (ReportingProductRankingItem item : queryProductRanking(startDate, endDate, limit)) {
+                    csv.append(item.rank()).append(',').append(item.productId()).append(',')
+                            .append(csvCell(item.productName())).append(',').append(csvCell(item.categoryName()))
+                            .append(',').append(item.salesVolume()).append(',').append(item.salesAmount())
+                            .append(',').append(item.orderCount()).append('\n');
+                }
+            }
+            case "MEMBER_ANALYSIS", "MEMBERS" -> {
+                ReportingMemberAnalysisResponse response = queryMemberAnalysis(startDate, endDate);
+                csv.append("统计开始日期,统计结束日期,会员总数,新增会员,活跃会员,复购会员,复购率(%),支付订单数,支付金额,平均客单价\n");
+                csv.append(response.startDate()).append(',').append(response.endDate()).append(',')
+                        .append(response.totalMemberCount()).append(',').append(response.newMemberCount()).append(',')
+                        .append(response.activeMemberCount()).append(',').append(response.repeatPurchaseMemberCount())
+                        .append(',').append(response.repurchaseRate()).append(',').append(response.paidOrderCount())
+                        .append(',').append(response.paidAmount()).append(',').append(response.averageOrderAmount()).append('\n');
+                csv.append("会员等级,会员数,活跃会员,支付订单数,支付金额\n");
+                for (ReportingMemberLevelStat item : response.levelStats()) {
+                    csv.append(csvCell(item.memberLevel())).append(',').append(item.memberCount()).append(',')
+                            .append(item.activeMemberCount()).append(',').append(item.paidOrderCount()).append(',')
+                            .append(item.paidAmount()).append('\n');
+                }
+            }
+            case "SALES_TREND", "TREND" -> {
+                csv.append("日期,销售额,订单数,销量\n");
+                for (ReportingSalesTrendPoint point : querySalesTrend(startDate, endDate)) {
+                    csv.append(point.getDate()).append(',').append(point.getSalesAmount()).append(',')
+                            .append(point.getOrderCount()).append(',').append(point.getProductQuantity()).append('\n');
+                }
+            }
+            default -> throw new BusinessException("REPORTING_TYPE_INVALID", "不支持的报表类型");
+        }
+        return csv.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8);
+    }
+
+    /**
+     * 规范化报表日期范围并限制最大查询窗口。
+     *
+     * @param startDate 开始日期
+     * @param endDate 结束日期
+     * @return 日期范围
+     * @author Henfon
+     * @date 2026-09-01
+     */
+    private DateRange resolveRange(LocalDate startDate, LocalDate endDate) {
+        LocalDate today = LocalDate.now();
+        LocalDate queryEnd = endDate == null ? today : endDate;
+        LocalDate queryStart = startDate == null ? queryEnd.minusDays(29) : startDate;
+        if (queryStart.isAfter(queryEnd)) {
+            throw new BusinessException("REPORTING_DATE_RANGE_INVALID", "报表开始日期不能晚于结束日期");
+        }
+        if (queryEnd.isAfter(today)) {
+            throw new BusinessException("REPORTING_DATE_INVALID", "报表结束日期不能晚于今天");
+        }
+        if (ChronoUnit.DAYS.between(queryStart, queryEnd) > 365) {
+            throw new BusinessException("REPORTING_DATE_RANGE_TOO_LARGE", "报表查询范围最多支持366天");
+        }
+        return new DateRange(queryStart, queryEnd, queryStart.atStartOfDay(), queryEnd.plusDays(1).atStartOfDay());
+    }
+
+    /**
+     * 对 CSV 文本字段进行转义。
+     *
+     * @param value 文本值
+     * @return 转义后的 CSV 单元格
+     * @author Henfon
+     * @date 2026-09-01
+     */
+    private String csvCell(String value) {
+        if (value == null) {
+            return "";
+        }
+        String escaped = value.replace("\"", "\"\"");
+        return escaped.indexOf(',') >= 0 || escaped.indexOf('\n') >= 0 || escaped.indexOf('\r') >= 0
+                ? '"' + escaped + '"' : escaped;
+    }
+
+    /**
+     * 报表日期范围内部值对象。
+     *
+     * @author Henfon
+     * @date 2026-09-01
+     */
+    private record DateRange(LocalDate startDate, LocalDate endDate,
+                             LocalDateTime startTime, LocalDateTime endTime) {
     }
 
     /**

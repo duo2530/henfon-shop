@@ -42,6 +42,7 @@ public class TradeOrder {
     private String receiverAddress;
     private String buyerRemark;
     private String sellerRemark;
+    private String flagColor;
     private String logisticsCompany;
     private String trackingNo;
     private LocalDateTime paidAt;

@@ -170,16 +170,15 @@ public class TradeAdminController {
      *
      * @param orderId 订单ID
      * @param request 备注内容
-     * @return 空响应
+     * @return 更新后的订单
      * @author Henfon
      * @date 2026-08-29
      */
     @PutMapping("/orders/{orderId}/remark")
     @PreAuthorize("hasAuthority('trade:order:remark')")
-    public ApiResponse<Void> updateRemark(@PathVariable Long orderId,
-                                          @Valid @RequestBody TradeOrderRemarkRequest request) {
-        tradeOrderService.updateRemark(orderId, request);
-        return ApiResponse.success(MDC.get("requestId"));
+    public ApiResponse<TradeOrder> updateRemark(@PathVariable Long orderId,
+                                                @Valid @RequestBody TradeOrderRemarkRequest request) {
+        return ApiResponse.success(tradeOrderService.updateRemark(orderId, request), MDC.get("requestId"));
     }
 
     /**

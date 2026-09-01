@@ -33,7 +33,9 @@ import org.springframework.dao.DuplicateKeyException;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDateTime;
+import java.util.Locale;
 import java.util.List;
+import java.util.Set;
 
 /**
  * 交易订单应用服务。
@@ -43,6 +45,8 @@ import java.util.List;
  */
 @Service
 public class TradeOrderService {
+
+    private static final Set<String> ORDER_FLAG_COLORS = Set.of("red", "yellow", "green", "blue", "purple");
 
     private final TradeOrderMapper tradeOrderMapper;
     private final TradeOrderItemMapper tradeOrderItemMapper;
@@ -459,14 +463,41 @@ public class TradeOrderService {
      *
      * @param orderId 订单ID
      * @param request 备注请求
+     * @return 更新后的订单
      * @author Henfon
      * @date 2026-08-29
      */
     @Transactional
-    public void updateRemark(Long orderId, TradeOrderRemarkRequest request) {
+    public TradeOrder updateRemark(Long orderId, TradeOrderRemarkRequest request) {
         TradeOrder order = requireOrder(orderId);
-        order.setSellerRemark(request.sellerRemark() == null ? null : request.sellerRemark().trim());
+        // 先比对客户端读取的版本，避免陈旧页面覆盖其他管理员刚保存的备注或标旗。
+        if (request.version() == null || !request.version().equals(order.getVersion())) {
+            throw new BusinessException("TRADE_ORDER_CONCURRENT_UPDATE", "订单已被其他操作修改，请刷新后重试");
+        }
+        order.setSellerRemark(normalizeOptional(request.sellerRemark()));
+        order.setFlagColor(normalizeFlagColor(request.flagColor()));
         updateOrder(order);
+        return order;
+    }
+
+    /**
+     * 规范化并校验订单标旗颜色。
+     *
+     * @param flagColor 原始标旗颜色
+     * @return 清理后的标旗颜色，空值表示清除标旗
+     * @author Henfon
+     * @date 2026-09-01
+     */
+    private String normalizeFlagColor(String flagColor) {
+        // 空字符串和全空白均视为清除标旗，其余值统一转小写后校验白名单。
+        if (!StringUtils.hasText(flagColor)) {
+            return null;
+        }
+        String normalized = flagColor.trim().toLowerCase(Locale.ROOT);
+        if (!ORDER_FLAG_COLORS.contains(normalized)) {
+            throw new BusinessException("TRADE_ORDER_FLAG_INVALID", "订单标旗仅支持 red、yellow、green、blue、purple 或清空");
+        }
+        return normalized;
     }
 
     /**

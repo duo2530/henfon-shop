@@ -2,6 +2,7 @@ export type NavigationTab =
   | 'dashboard' 
   // 电商核心
   | 'products' 
+  | 'categories'
   | 'orders' 
   | 'users' 
   // 营销推广
@@ -96,6 +97,8 @@ export interface Order {
   refundAmount?: number;
   refundStatus?: 'none' | 'pending' | 'approved' | 'rejected';
   logisticsSteps?: LogisticsStep[];
+  /** 服务端订单乐观锁版本，用于备注与标旗并发更新。 */
+  version?: number;
 }
 
 export type UserStatus = 'active' | 'suspended';

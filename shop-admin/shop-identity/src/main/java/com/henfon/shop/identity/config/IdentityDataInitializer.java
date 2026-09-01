@@ -206,9 +206,24 @@ public class IdentityDataInitializer implements ApplicationRunner {
 
         menus.add(ensureMenu("商品管理", "MENU", "catalog:product:query", "/ecommerce/products", 1,
                 ecommerce.getId(), "ProductManagementView", "Package"));
-        menus.add(ensureMenu("订单履约", "MENU", "trade:order:query", "/ecommerce/orders", 2,
+        SysMenu categoryMenu = ensureMenu("类目管理", "MENU", "catalog:category:query", "/ecommerce/categories", 2,
+                ecommerce.getId(), "CategoryManagementView", "Tags");
+        // 兼容旧版本曾以 BUTTON 类型写入相同权限编码的记录，确保升级后路由和组件信息被补齐。
+        if (!"MENU".equals(categoryMenu.getMenuType())
+                || !"/ecommerce/categories".equals(categoryMenu.getRoutePath())
+                || !ecommerce.getId().equals(categoryMenu.getParentId())) {
+            categoryMenu.setMenuType("MENU");
+            categoryMenu.setRoutePath("/ecommerce/categories");
+            categoryMenu.setComponent("CategoryManagementView");
+            categoryMenu.setIcon("Tags");
+            categoryMenu.setParentId(ecommerce.getId());
+            categoryMenu.setSortNo(2);
+            sysMenuMapper.updateById(categoryMenu);
+        }
+        menus.add(categoryMenu);
+        menus.add(ensureMenu("订单履约", "MENU", "trade:order:query", "/ecommerce/orders", 3,
                 ecommerce.getId(), "OrderManagementView", "ShoppingCart"));
-        SysMenu member = ensureMenu("商城会员", "MENU", "member:user:query", "/ecommerce/customers", 3,
+        SysMenu member = ensureMenu("商城会员", "MENU", "member:user:query", "/ecommerce/customers", 4,
                 ecommerce.getId(), "UserManagementView", "UserCheck");
         menus.add(member);
         menus.add(ensureMenu("优惠券中心", "MENU", "marketing:coupon:query", "/marketing/coupons", 1,
@@ -250,6 +265,10 @@ public class IdentityDataInitializer implements ApplicationRunner {
         String[][] categoryButtons = {{"类目管理", "catalog:category:query"}};
         for (String[] button : categoryButtons) {
             SysMenu menu = ensureMenu(button[0], "BUTTON", button[1], null, 101);
+            // 类目查询权限同时作为菜单权限使用时避免将同一菜单 ID 重复加入角色关联表。
+            if (categoryMenu.getId().equals(menu.getId())) {
+                continue;
+            }
             if (!ecommerce.getId().equals(menu.getParentId())) {
                 menu.setParentId(ecommerce.getId());
                 sysMenuMapper.updateById(menu);

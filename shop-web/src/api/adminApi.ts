@@ -171,9 +171,16 @@ export interface BackendCatalogProduct {
 
 export interface BackendCatalogCategory {
   id: number;
+  parentId?: number;
   categoryName: string;
   categoryCode: string;
+  levelNo?: number;
+  sortNo?: number;
   status: number;
+  iconUrl?: string;
+  remark?: string;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface BackendCatalogSku {
@@ -320,12 +327,14 @@ export interface BackendTradeOrder {
   receiverDistrict?: string;
   receiverAddress: string;
   sellerRemark?: string;
+  flagColor?: 'red' | 'yellow' | 'green' | 'blue' | 'purple' | null;
   logisticsCompany?: string;
   trackingNo?: string;
   createdAt?: string;
   paidAt?: string;
   shippedAt?: string;
   completedAt?: string;
+  version?: number;
 }
 
 export interface BackendTradeOrderLogistics {
@@ -420,6 +429,38 @@ export interface BackendReportingSalesTrendPoint {
   salesAmount: number;
   orderCount: number;
   productQuantity: number;
+}
+
+export interface BackendReportingProductRankingItem {
+  rank: number;
+  productId?: number;
+  productName: string;
+  categoryName?: string;
+  salesVolume: number;
+  salesAmount: number;
+  orderCount: number;
+}
+
+export interface BackendReportingMemberLevelStat {
+  memberLevel: string;
+  memberCount: number;
+  activeMemberCount: number;
+  paidOrderCount: number;
+  paidAmount: number;
+}
+
+export interface BackendReportingMemberAnalysis {
+  startDate: string;
+  endDate: string;
+  totalMemberCount: number;
+  newMemberCount: number;
+  activeMemberCount: number;
+  repeatPurchaseMemberCount: number;
+  repurchaseRate: number;
+  paidOrderCount: number;
+  paidAmount: number;
+  averageOrderAmount: number;
+  levelStats: BackendReportingMemberLevelStat[];
 }
 
 export interface BackendLoginLog {
@@ -976,6 +1017,45 @@ export function getReportingSalesTrend(startDate?: string, endDate?: string): Pr
   return request<BackendReportingSalesTrendPoint[]>(`/api/admin/reporting/sales-trend${queryString ? `?${queryString}` : ''}`);
 }
 
+export function getReportingProductRanking(params: {
+  startDate?: string;
+  endDate?: string;
+  limit?: number;
+} = {}): Promise<BackendReportingProductRankingItem[]> {
+  const query = new URLSearchParams({ limit: String(params.limit || 20) });
+  if (params.startDate) query.set('startDate', params.startDate);
+  if (params.endDate) query.set('endDate', params.endDate);
+  return request<BackendReportingProductRankingItem[]>(`/api/admin/reporting/product-ranking?${query.toString()}`);
+}
+
+export function getReportingMemberAnalysis(startDate?: string, endDate?: string): Promise<BackendReportingMemberAnalysis> {
+  const query = new URLSearchParams();
+  if (startDate) query.set('startDate', startDate);
+  if (endDate) query.set('endDate', endDate);
+  const queryString = query.toString();
+  return request<BackendReportingMemberAnalysis>(`/api/admin/reporting/member-analysis${queryString ? `?${queryString}` : ''}`);
+}
+
+export async function downloadReportingExport(params: {
+  reportType: 'PRODUCT_RANKING' | 'MEMBER_ANALYSIS' | 'SALES_TREND';
+  startDate?: string;
+  endDate?: string;
+  limit?: number;
+}): Promise<Blob> {
+  const query = new URLSearchParams({ reportType: params.reportType, limit: String(params.limit || 20) });
+  if (params.startDate) query.set('startDate', params.startDate);
+  if (params.endDate) query.set('endDate', params.endDate);
+  const accessToken = getAdminToken();
+  const response = await fetch(`${API_BASE_URL}/api/admin/reporting/export?${query.toString()}`, {
+    headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined,
+  });
+  if (!response.ok) {
+    const body = await response.json().catch(() => null) as ApiEnvelope<unknown> | null;
+    throw new Error(body?.message || `导出失败（${response.status}）`);
+  }
+  return response.blob();
+}
+
 export function shipTradeOrder(orderId: number, payload: { logisticsCompany: string; trackingNo: string }): Promise<void> {
   return request<void>(`/api/admin/trade/orders/${orderId}/ship`, { method: 'PUT', body: JSON.stringify(payload) });
 }
@@ -1031,8 +1111,15 @@ export function cancelTradeOrder(orderId: number, reason?: string): Promise<void
   return request<void>(`/api/admin/trade/orders/${orderId}/cancel`, { method: 'PUT', body: JSON.stringify({ reason }) });
 }
 
-export function updateTradeOrderRemark(orderId: number, sellerRemark: string): Promise<void> {
-  return request<void>(`/api/admin/trade/orders/${orderId}/remark`, { method: 'PUT', body: JSON.stringify({ sellerRemark }) });
+export function updateTradeOrderRemark(orderId: number, payload: {
+  sellerRemark: string;
+  flagColor?: 'red' | 'yellow' | 'green' | 'blue' | 'purple' | null;
+  version: number;
+}): Promise<BackendTradeOrder> {
+  return request<BackendTradeOrder>(`/api/admin/trade/orders/${orderId}/remark`, {
+    method: 'PUT',
+    body: JSON.stringify(payload)
+  });
 }
 
 export function refundTradeOrder(orderId: number, refundAmount: number, reason: string): Promise<void> {
