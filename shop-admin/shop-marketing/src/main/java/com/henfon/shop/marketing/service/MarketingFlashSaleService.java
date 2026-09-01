@@ -22,7 +22,9 @@ import org.springframework.util.StringUtils;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.HashSet;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -214,6 +216,14 @@ public class MarketingFlashSaleService implements FlashSaleReservationService {
         } catch (DuplicateKeyException exception) {
             throw new BusinessException("MARKETING_FLASH_SALE_CODE_EXISTS", "活动编码已存在");
         }
+        // 覆盖保存前保留已售数量，避免编辑活动时把真实销量重置为 0。
+        Map<String, Integer> soldStockByItem = new HashMap<>();
+        if (activity.getId() != null) {
+            itemMapper.selectList(new LambdaQueryWrapper<MarketingFlashSaleItem>()
+                    .eq(MarketingFlashSaleItem::getActivityId, activity.getId()))
+                    .forEach(item -> soldStockByItem.put(itemKey(item.getProductId(), item.getSkuId()),
+                            item.getSoldStock() == null ? 0 : item.getSoldStock()));
+        }
         // 明细采用事务内覆盖保存，避免删除后残留失效商品。
         itemMapper.delete(new LambdaQueryWrapper<MarketingFlashSaleItem>()
                 .eq(MarketingFlashSaleItem::getActivityId, activity.getId()));
@@ -224,7 +234,11 @@ public class MarketingFlashSaleService implements FlashSaleReservationService {
             item.setSkuId(requestItem.skuId());
             item.setActivityPrice(requestItem.activityPrice());
             item.setTotalStock(requestItem.totalStock());
-            item.setSoldStock(0);
+            int soldStock = soldStockByItem.getOrDefault(itemKey(requestItem.productId(), requestItem.skuId()), 0);
+            if (requestItem.totalStock() < soldStock) {
+                throw new BusinessException("MARKETING_FLASH_SALE_STOCK_INVALID", "活动库存不能低于已售库存");
+            }
+            item.setSoldStock(soldStock);
             item.setLimitPerMember(requestItem.limitPerMember());
             item.setStatus(requestItem.status());
             itemMapper.insert(item);
@@ -294,6 +308,19 @@ public class MarketingFlashSaleService implements FlashSaleReservationService {
                 throw new BusinessException("MARKETING_FLASH_SALE_STOCK_INVALID", "活动库存不能小于单会员限购数量");
             }
         }
+    }
+
+    /**
+     * 生成活动商品唯一匹配键。
+     *
+     * @param productId 商品ID
+     * @param skuId SKU ID
+     * @return 商品匹配键
+     * @author Henfon
+     * @date 2026-09-01
+     */
+    private String itemKey(Long productId, Long skuId) {
+        return productId + ":" + (skuId == null ? 0 : skuId);
     }
 
     /**
