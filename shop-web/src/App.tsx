@@ -28,6 +28,8 @@ import { ProductAnalyticsView } from './components/analytics/ProductAnalyticsVie
 import { BannerManagementView } from './components/content/BannerManagementView';
 import { ReviewManagementView } from './components/content/ReviewManagementView';
 import { SettingsView } from './components/settings/SettingsView';
+import { LoginLogManagementView } from './components/settings/LoginLogManagementView';
+import { OperationLogManagementView } from './components/settings/OperationLogManagementView';
 import { NotificationDrawer } from './components/common/NotificationDrawer';
 import { ToastContainer } from './components/common/ToastContainer';
 import { AdminLogin } from './components/auth/AdminLogin';
@@ -120,6 +122,8 @@ const AdminLayoutContent: React.FC = () => {
         {hasCurrentTab && currentTab === 'authorization' && <AuthorizationView />}
         {hasCurrentTab && currentTab === 'data_permissions' && <DataPermissionView />}
         {hasCurrentTab && currentTab === 'settings' && <SettingsView />}
+        {hasCurrentTab && currentTab === 'login_logs' && <LoginLogManagementView />}
+        {hasCurrentTab && currentTab === 'operation_logs' && <OperationLogManagementView />}
       </main>
     </div>
   );

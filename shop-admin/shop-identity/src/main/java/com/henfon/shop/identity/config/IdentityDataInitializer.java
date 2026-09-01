@@ -20,6 +20,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 
 /**
  * 身份模块基础数据初始化器。
@@ -205,9 +206,32 @@ public class IdentityDataInitializer implements ApplicationRunner {
                 0L, null, "LineChart");
         SysMenu content = ensureMenu("内容与客户运营", "DIRECTORY", null, "/content", 7,
                 0L, null, "MessageSquare");
-        SysMenu settings = ensureMenu("系统与参数设置", "MENU", "system:config:view", "/settings", 8,
+        // 先按原权限编码定位参数配置，确保旧版本角色关联继续指向参数配置页面。
+        SysMenu settingsConfig = ensureMenu("参数配置", "MENU", "system:config:view", "/settings", 1,
                 0L, "SettingsView", "Settings");
+        if ("系统与参数设置".equals(settingsConfig.getMenuName())) {
+            // 旧记录本身就是参数配置菜单，先改名释放目录节点名称，再创建新的目录记录。
+            normalizeMenu(settingsConfig, "参数配置", "MENU", "system:config:view", "/settings", 1,
+                    0L, "SettingsView", "Settings");
+        }
+        // 系统设置作为目录承载参数配置、登录记录和操作审计三个独立页面。
+        SysMenu settings = ensureMenu("系统与参数设置", "DIRECTORY", null, null, 8,
+                0L, null, "Settings");
+        normalizeMenu(settings, "系统与参数设置", "DIRECTORY", null, null, 8,
+                0L, null, "Settings");
+        normalizeMenu(settingsConfig, "参数配置", "MENU", "system:config:view", "/settings", 1,
+                settings.getId(), "SettingsView", "Settings");
         menus.addAll(List.of(dashboard, ecommerce, marketing, inventory, finance, analytics, content, settings));
+        menus.add(settingsConfig);
+        // 系统设置保存权限挂在设置菜单下，供运费模板等参数配置接口校验。
+        SysMenu settingsSave = ensureMenu("保存系统配置", "BUTTON", "system:config:save", null, 100,
+                settingsConfig.getId(), null, null);
+        if (!settingsConfig.getId().equals(settingsSave.getParentId())) {
+            // 兼容旧版本保存按钮曾直接挂在系统设置节点下的历史数据。
+            settingsSave.setParentId(settingsConfig.getId());
+            sysMenuMapper.updateById(settingsSave);
+        }
+        menus.add(settingsSave);
 
         menus.add(ensureMenu("商品管理", "MENU", "catalog:product:query", "/ecommerce/products", 1,
                 ecommerce.getId(), "ProductManagementView", "Package"));
@@ -355,18 +379,17 @@ public class IdentityDataInitializer implements ApplicationRunner {
             }
             menus.add(menu);
         }
-        // 审计日志查询权限挂在系统设置菜单下，仅允许具备审计权限的管理员查看敏感操作记录。
-        String[][] auditButtons = {
-                {"登录日志查询", "system:audit:login"}, {"操作审计查询", "system:audit:operation"}
-        };
-        for (String[] button : auditButtons) {
-            SysMenu menu = ensureMenu(button[0], "BUTTON", button[1], null, 104);
-            if (!settings.getId().equals(menu.getParentId())) {
-                menu.setParentId(settings.getId());
-                sysMenuMapper.updateById(menu);
-            }
-            menus.add(menu);
-        }
+        // 审计日志分别作为独立菜单页面，权限编码继续复用后端查询接口的鉴权规则。
+        SysMenu loginLogs = ensureMenu("登录记录", "MENU", "system:audit:login", "/settings/login-logs", 2,
+                settings.getId(), "LoginLogManagementView", "LogIn");
+        normalizeMenu(loginLogs, "登录记录", "MENU", "system:audit:login", "/settings/login-logs", 2,
+                settings.getId(), "LoginLogManagementView", "LogIn");
+        SysMenu operationLogs = ensureMenu("操作审计", "MENU", "system:audit:operation", "/settings/operation-logs", 3,
+                settings.getId(), "OperationLogManagementView", "ClipboardCheck");
+        normalizeMenu(operationLogs, "操作审计", "MENU", "system:audit:operation", "/settings/operation-logs", 3,
+                settings.getId(), "OperationLogManagementView", "ClipboardCheck");
+        menus.add(loginLogs);
+        menus.add(operationLogs);
         // RocketMQ 死信查询和人工重试权限挂在系统设置下，避免补偿接口被普通订单操作员误用。
         String[][] outboxButtons = {
                 {"消息死信查询", "trade:outbox:query"}, {"消息死信重试", "trade:outbox:retry"}
@@ -454,6 +477,46 @@ public class IdentityDataInitializer implements ApplicationRunner {
         menu.setKeepAlive(1);
         sysMenuMapper.insert(menu);
         return menu;
+    }
+
+    /**
+     * 将历史菜单记录同步为当前页面定义，兼容旧版本已经创建的同权限记录。
+     *
+     * @param menu 待同步菜单
+     * @param name 菜单名称
+     * @param type 菜单类型
+     * @param permission 权限编码
+     * @param route 路由地址
+     * @param sort 排序号
+     * @param parentId 父菜单ID
+     * @param component 前端组件名称
+     * @param icon 图标名称
+     * @author Henfon
+     * @date 2026-09-01
+     * @description 仅在字段发生变化时更新数据库，避免每次启动产生无意义写入。
+     */
+    private void normalizeMenu(SysMenu menu, String name, String type, String permission, String route, int sort,
+                               Long parentId, String component, String icon) {
+        boolean changed = !Objects.equals(menu.getMenuName(), name)
+                || !Objects.equals(menu.getMenuType(), type)
+                || !Objects.equals(menu.getPermissionCode(), permission)
+                || !Objects.equals(menu.getRoutePath(), route)
+                || !Objects.equals(menu.getSortNo(), sort)
+                || !Objects.equals(menu.getParentId(), parentId)
+                || !Objects.equals(menu.getComponent(), component)
+                || !Objects.equals(menu.getIcon(), icon);
+        if (changed) {
+            // 统一修正历史记录，确保动态菜单树和前端页面路由保持一致。
+            menu.setMenuName(name);
+            menu.setMenuType(type);
+            menu.setPermissionCode(permission);
+            menu.setRoutePath(route);
+            menu.setSortNo(sort);
+            menu.setParentId(parentId == null ? 0L : parentId);
+            menu.setComponent(component);
+            menu.setIcon(icon);
+            sysMenuMapper.updateById(menu);
+        }
     }
 
     /**

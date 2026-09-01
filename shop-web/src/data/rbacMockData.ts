@@ -730,13 +730,52 @@ export const initialMenuItems: MenuItem[] = [
     parentId: null,
     title: '系统与参数设置',
     icon: 'Settings',
-    type: 'menu',
-    path: '/settings',
-    component: 'SettingsView',
-    permission: 'system:config:view',
+    type: 'directory',
+    path: '/system-settings',
     sort: 4,
     visible: true,
-    status: 'active'
+    status: 'active',
+    children: [
+      {
+        id: 'menu-settings-config',
+        parentId: 'menu-system-settings',
+        title: '参数配置',
+        icon: 'Settings',
+        type: 'menu',
+        path: '/settings',
+        component: 'SettingsView',
+        permission: 'system:config:view',
+        sort: 1,
+        visible: true,
+        status: 'active'
+      },
+      {
+        id: 'menu-login-logs',
+        parentId: 'menu-system-settings',
+        title: '登录记录',
+        icon: 'LogIn',
+        type: 'menu',
+        path: '/settings/login-logs',
+        component: 'LoginLogManagementView',
+        permission: 'system:audit:login',
+        sort: 2,
+        visible: true,
+        status: 'active'
+      },
+      {
+        id: 'menu-operation-logs',
+        parentId: 'menu-system-settings',
+        title: '操作审计',
+        icon: 'ClipboardCheck',
+        type: 'menu',
+        path: '/settings/operation-logs',
+        component: 'OperationLogManagementView',
+        permission: 'system:audit:operation',
+        sort: 3,
+        visible: true,
+        status: 'active'
+      }
+    ]
   }
 ];
 

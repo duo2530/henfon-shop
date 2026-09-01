@@ -7,6 +7,11 @@ import { useAdmin } from '../../context/AdminContext';
 type AuditTab = 'operation' | 'login';
 type LoginStatusFilter = '' | '0' | '1';
 
+interface AuditLogPanelProps {
+  /** 独立页面固定展示的日志类型；未传入时保留双标签页兼容能力。 */
+  mode?: AuditTab;
+}
+
 const PAGE_SIZE = 20;
 
 /** 管理端审计记录查询面板，数据来源于后端独立事务写入的日志表。
@@ -15,9 +20,9 @@ const PAGE_SIZE = 20;
  * @date 2026-09-01
  * @description 提供登录与操作日志的权限隔离、条件筛选、分页和异常重试。
  */
-export const AuditLogPanel: React.FC = () => {
+export const AuditLogPanel: React.FC<AuditLogPanelProps> = ({ mode }) => {
   const { showToast, hasPermission } = useAdmin();
-  const [tab, setTab] = useState<AuditTab>('operation');
+  const [tab, setTab] = useState<AuditTab>(mode || 'operation');
   const [operationsPage, setOperationsPage] = useState<BackendPage<BackendOperationLog> | null>(null);
   const [loginsPage, setLoginsPage] = useState<BackendPage<BackendLoginLog> | null>(null);
   const [operationCurrent, setOperationCurrent] = useState(1);
@@ -33,6 +38,7 @@ export const AuditLogPanel: React.FC = () => {
 
   const canViewOperation = hasPermission('system:audit:operation');
   const canViewLogin = hasPermission('system:audit:login');
+  const canViewCurrent = mode === 'operation' ? canViewOperation : mode === 'login' ? canViewLogin : canViewOperation || canViewLogin;
 
   const loadLogs = useCallback(async () => {
     setLoading(true);
@@ -68,16 +74,20 @@ export const AuditLogPanel: React.FC = () => {
   }, [loginCurrent, loginFilter, operationCurrent, operationFilter, showToast, tab]);
 
   useEffect(() => {
+    if (mode && tab !== mode) setTab(mode);
+  }, [mode, tab]);
+
+  useEffect(() => {
     // 没有当前页权限时不发起请求，避免因切换权限导致后端 403。
     if ((tab === 'operation' && canViewOperation) || (tab === 'login' && canViewLogin)) void loadLogs();
-  }, [canViewLogin, canViewOperation, loadLogs, tab]);
+  }, [canViewLogin, canViewOperation, loadLogs, mode, tab]);
 
   useEffect(() => {
     if (!canViewOperation && canViewLogin && tab !== 'login') setTab('login');
     if (!canViewLogin && canViewOperation && tab !== 'operation') setTab('operation');
   }, [canViewLogin, canViewOperation, tab]);
 
-  if (!canViewOperation && !canViewLogin) return <PermissionDenied title="暂无审计日志权限" />;
+  if (!canViewCurrent) return <PermissionDenied title={mode === 'login' ? '暂无登录记录权限' : mode === 'operation' ? '暂无操作审计权限' : '暂无审计日志权限'} />;
 
   const submitOperationFilter = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -130,15 +140,15 @@ export const AuditLogPanel: React.FC = () => {
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <div className="flex items-center gap-2.5">
           <div className="p-2 bg-indigo-50 text-indigo-600 rounded-lg"><ShieldCheck className="w-5 h-5" /></div>
-          <div><h3 className="text-base font-semibold text-gray-900">操作审计与登录记录</h3><p className="text-xs text-gray-500">关键管理端请求由后端自动采集，支持追踪责任人与异常登录。</p></div>
+          <div><h3 className="text-base font-semibold text-gray-900">{mode === 'login' ? '登录记录' : mode === 'operation' ? '操作审计' : '操作审计与登录记录'}</h3><p className="text-xs text-gray-500">关键管理端请求由后端自动采集，支持追踪责任人与异常登录。</p></div>
         </div>
         <button type="button" onClick={() => void loadLogs()} disabled={loading} className="h-8 px-3 rounded-lg border border-gray-200 text-xs font-semibold text-gray-600 hover:bg-gray-50 disabled:opacity-50 flex items-center gap-1.5"><RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />刷新</button>
       </div>
 
-      <div className="flex gap-4 border-b border-gray-100 mb-3">
+      {!mode && <div className="flex gap-4 border-b border-gray-100 mb-3">
         {canViewOperation && <button type="button" onClick={() => setTab('operation')} className={`pb-2 text-xs font-semibold border-b-2 ${tab === 'operation' ? 'text-indigo-600 border-indigo-600' : 'text-gray-500 border-transparent'}`}>操作日志</button>}
         {canViewLogin && <button type="button" onClick={() => setTab('login')} className={`pb-2 text-xs font-semibold border-b-2 ${tab === 'login' ? 'text-indigo-600 border-indigo-600' : 'text-gray-500 border-transparent'}`}>登录日志</button>}
-      </div>
+      </div>}
 
       {tab === 'operation' ? (
         <form className="flex flex-wrap items-end gap-2 mb-4" onSubmit={submitOperationFilter}>

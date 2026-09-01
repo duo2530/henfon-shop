@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { CartItem, Address, Coupon, Order } from '../types/ecommerce';
 import { INITIAL_ADDRESSES } from '../data/products';
+import { quotePortalFreight } from '../api/portalApi';
 import {
   X,
   MapPin,
@@ -91,6 +92,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   const [needInvoice, setNeedInvoice] = useState(false);
   const [orderNotes, setOrderNotes] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [shippingFee, setShippingFee] = useState(0);
+  const [freightQuoteLoading, setFreightQuoteLoading] = useState(false);
 
   useEffect(() => {
     if (initialAddresses) {
@@ -99,8 +102,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     }
   }, [initialAddresses]);
 
-  if (!isOpen) return null;
-
   const selectedAddress =
     addresses.find((a) => a.id === selectedAddressId) || addresses[0];
 
@@ -108,14 +109,53 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     (acc, item) => acc + (item.unitPrice || 0) * (item.quantity || 1),
     0
   );
-  const isFreeShipping = rawSubtotal >= 99;
-  const shippingFee = rawSubtotal > 0 ? (isFreeShipping ? 0 : 15) : 0;
   const couponDiscount = appliedCoupon
     ? rawSubtotal >= appliedCoupon.minSpend
       ? appliedCoupon.discountAmount
       : 0
     : 0;
+
+  const fallbackShippingFee = rawSubtotal > 0 ? (rawSubtotal >= 99 ? 0 : 15) : 0;
+  const freightItemsKey = safeItems
+    .map((item) => `${item.productId}:${item.skuId || ''}:${item.quantity}`)
+    .join('|');
+
+  useEffect(() => {
+    if (!isOpen || !selectedAddress || rawSubtotal <= 0) {
+      setShippingFee(0);
+      setFreightQuoteLoading(false);
+      return;
+    }
+    let active = true;
+    setFreightQuoteLoading(true);
+    quotePortalFreight({
+      items: safeItems.map((item) => ({
+        productId: Number(item.productId.replace(/^prod-/, '')),
+        skuId: item.skuId,
+        quantity: item.quantity,
+      })),
+      receiverProvince: selectedAddress.province,
+      receiverCity: selectedAddress.city,
+      receiverDistrict: selectedAddress.district,
+      subtotalAmount: rawSubtotal,
+      discountAmount: couponDiscount,
+    }).then((quote) => {
+      if (active) setShippingFee(Number(quote.freightAmount || 0));
+    }).catch(() => {
+      // 后端暂不可用时保留开发环境兜底规则，创建订单仍会由后端校验真实模板金额。
+      if (active) setShippingFee(fallbackShippingFee);
+    }).finally(() => {
+      if (active) setFreightQuoteLoading(false);
+    });
+    return () => {
+      active = false;
+    };
+  }, [isOpen, selectedAddress?.id, selectedAddress?.province, selectedAddress?.city,
+    selectedAddress?.district, rawSubtotal, couponDiscount, freightItemsKey]);
+
   const totalPayable = Math.max(0, rawSubtotal - couponDiscount + shippingFee);
+
+  if (!isOpen) return null;
 
   const resetAddressForm = () => {
     setNewReceiver('');
@@ -703,10 +743,15 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
             <button
               onClick={handlePayOrder}
-              disabled={isSubmitting || !selectedAddress}
+              disabled={isSubmitting || freightQuoteLoading || !selectedAddress}
               className="py-3 px-8 rounded-2xl bg-zinc-900 text-white font-bold text-sm hover:bg-zinc-800 disabled:opacity-50 transition shadow-lg flex items-center justify-center gap-2"
             >
-              {isSubmitting ? (
+              {freightQuoteLoading ? (
+                <>
+                  <span className="w-4 h-4 rounded-full border-2 border-white/30 border-t-white animate-spin"></span>
+                  <span>计算运费中...</span>
+                </>
+              ) : isSubmitting ? (
                 <>
                   <span className="w-4 h-4 rounded-full border-2 border-white/30 border-t-white animate-spin"></span>
                   <span>安全支付中...</span>

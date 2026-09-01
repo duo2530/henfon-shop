@@ -33,6 +33,8 @@ public class CatalogProduct {
     private BigDecimal price;
     private BigDecimal marketPrice;
     private BigDecimal costPrice;
+    /** 默认计费重量（克），未设置时由运费服务按 1000 克兜底。 */
+    private Integer weightGram;
     private Integer currentStock;
     private Integer safetyStock;
     private Long salesCount;

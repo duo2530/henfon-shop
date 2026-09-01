@@ -390,6 +390,22 @@ export interface BackendTradeOrder {
   version?: number;
 }
 
+export interface BackendTradeFreightTemplate {
+  id: number;
+  templateName: string;
+  carrierName: string;
+  baseWeightGram: number;
+  baseFee: number;
+  additionalWeightGram: number;
+  additionalFee: number;
+  freeShippingThreshold: number;
+  remoteSurcharge: number;
+  remoteRegionsCsv?: string;
+  status: number;
+  isDefault: number;
+  version?: number;
+}
+
 export interface BackendTradeOrderLogistics {
   id: number;
   orderId: number;
@@ -1191,6 +1207,17 @@ export function listTradeOrders(params: { current?: number; size?: number; keywo
   if (params.keyword) query.set('keyword', params.keyword);
   if (params.orderStatus !== undefined) query.set('orderStatus', String(params.orderStatus));
   return request<BackendPage<BackendTradeOrder>>(`/api/admin/trade/orders?${query.toString()}`);
+}
+
+export function getTradeFreightTemplate(): Promise<BackendTradeFreightTemplate> {
+  return request<BackendTradeFreightTemplate>('/api/admin/trade/freight/template');
+}
+
+export function saveTradeFreightTemplate(payload: Omit<BackendTradeFreightTemplate, 'id' | 'isDefault' | 'version'> & { id?: number }): Promise<BackendTradeFreightTemplate> {
+  return request<BackendTradeFreightTemplate>('/api/admin/trade/freight/template', {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  });
 }
 
 export function getReportingDashboardMetrics(date?: string): Promise<BackendReportingDashboardMetrics> {

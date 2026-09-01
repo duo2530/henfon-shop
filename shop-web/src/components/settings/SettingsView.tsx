@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useAdmin } from '../../context/AdminContext';
+import { getTradeFreightTemplate, saveTradeFreightTemplate } from '../../api/adminApi';
 import { 
   Store, 
   BellRing, 
@@ -10,7 +11,6 @@ import {
   RotateCcw,
   CheckCircle2
 } from 'lucide-react';
-import { AuditLogPanel } from './AuditLogPanel';
 import { PermissionGate } from '../common/PermissionGate';
 
 export const SettingsView: React.FC = () => {
@@ -25,11 +25,53 @@ export const SettingsView: React.FC = () => {
   const [autoTrackingSync, setAutoTrackingSync] = useState(true);
   const [enableWechatPay, setEnableWechatPay] = useState(true);
   const [defaultCarrier, setDefaultCarrier] = useState('顺丰速运');
+  const [freightTemplateId, setFreightTemplateId] = useState<number>();
+  const [baseWeightGram, setBaseWeightGram] = useState(1000);
+  const [baseFee, setBaseFee] = useState(15);
+  const [additionalWeightGram, setAdditionalWeightGram] = useState(1000);
+  const [additionalFee, setAdditionalFee] = useState(5);
+  const [freeShippingThreshold, setFreeShippingThreshold] = useState(99);
+  const [remoteSurcharge, setRemoteSurcharge] = useState(0);
+  const [remoteRegionsCsv, setRemoteRegionsCsv] = useState('西藏,新疆,港澳台');
 
-  const handleSaveSettings = (e: React.FormEvent) => {
+  useEffect(() => {
+    getTradeFreightTemplate().then((template) => {
+      setFreightTemplateId(template.id);
+      setDefaultCarrier(template.carrierName || '顺丰速运');
+      setBaseWeightGram(template.baseWeightGram || 1000);
+      setBaseFee(Number(template.baseFee || 0));
+      setAdditionalWeightGram(template.additionalWeightGram || 1000);
+      setAdditionalFee(Number(template.additionalFee || 0));
+      setFreeShippingThreshold(Number(template.freeShippingThreshold || 0));
+      setRemoteSurcharge(Number(template.remoteSurcharge || 0));
+      setRemoteRegionsCsv(template.remoteRegionsCsv || '');
+    }).catch(() => {
+      // 后端尚未启动时保留默认值，页面仍可用于查看和编辑其他设置。
+    });
+  }, []);
+
+  const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!requirePermission('system:config:save', '保存系统配置')) return;
-    showToast('系统设置已成功保存并生效', 'success');
+    try {
+      const template = await saveTradeFreightTemplate({
+        id: freightTemplateId,
+        templateName: '全国顺丰配送模板',
+        carrierName: defaultCarrier,
+        baseWeightGram,
+        baseFee,
+        additionalWeightGram,
+        additionalFee,
+        freeShippingThreshold,
+        remoteSurcharge,
+        remoteRegionsCsv,
+        status: 1,
+      });
+      setFreightTemplateId(template.id);
+      showToast('系统设置已成功保存，运费规则立即生效', 'success');
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : '运费配置保存失败，请稍后重试', 'error');
+    }
   };
 
   const handleResetSettings = () => {
@@ -37,6 +79,14 @@ export const SettingsView: React.FC = () => {
     setLowStockThreshold(10);
     setAutoNotifyEmail(true);
     setAutoTrackingSync(true);
+    setDefaultCarrier('顺丰速运');
+    setBaseWeightGram(1000);
+    setBaseFee(15);
+    setAdditionalWeightGram(1000);
+    setAdditionalFee(5);
+    setFreeShippingThreshold(99);
+    setRemoteSurcharge(0);
+    setRemoteRegionsCsv('西藏,新疆,港澳台');
     showToast('已重置为默认系统配置', 'info');
   };
 
@@ -196,6 +246,50 @@ export const SettingsView: React.FC = () => {
               </select>
             </div>
 
+            <div>
+              <label className="block text-xs font-semibold text-gray-700 mb-1.5">首重（克）</label>
+              <input type="number" min="1" value={baseWeightGram}
+                onChange={(e) => setBaseWeightGram(Number(e.target.value) || 1000)}
+                className="w-full h-[36px] px-3 rounded-lg border border-gray-300 bg-white text-sm outline-none" />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-700 mb-1.5">首重费用（元）</label>
+              <input type="number" min="0" step="0.01" value={baseFee}
+                onChange={(e) => setBaseFee(Number(e.target.value) || 0)}
+                className="w-full h-[36px] px-3 rounded-lg border border-gray-300 bg-white text-sm outline-none" />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-700 mb-1.5">续重（克）</label>
+              <input type="number" min="1" value={additionalWeightGram}
+                onChange={(e) => setAdditionalWeightGram(Number(e.target.value) || 1000)}
+                className="w-full h-[36px] px-3 rounded-lg border border-gray-300 bg-white text-sm outline-none" />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-700 mb-1.5">每续重费用（元）</label>
+              <input type="number" min="0" step="0.01" value={additionalFee}
+                onChange={(e) => setAdditionalFee(Number(e.target.value) || 0)}
+                className="w-full h-[36px] px-3 rounded-lg border border-gray-300 bg-white text-sm outline-none" />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-700 mb-1.5">包邮门槛（元，0 表示不包邮）</label>
+              <input type="number" min="0" step="0.01" value={freeShippingThreshold}
+                onChange={(e) => setFreeShippingThreshold(Number(e.target.value) || 0)}
+                className="w-full h-[36px] px-3 rounded-lg border border-gray-300 bg-white text-sm outline-none" />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-gray-700 mb-1.5">偏远地区附加费（元）</label>
+              <input type="number" min="0" step="0.01" value={remoteSurcharge}
+                onChange={(e) => setRemoteSurcharge(Number(e.target.value) || 0)}
+                className="w-full h-[36px] px-3 rounded-lg border border-gray-300 bg-white text-sm outline-none" />
+            </div>
+            <div className="md:col-span-2">
+              <label className="block text-xs font-semibold text-gray-700 mb-1.5">偏远地区关键词（逗号分隔）</label>
+              <input type="text" value={remoteRegionsCsv}
+                onChange={(e) => setRemoteRegionsCsv(e.target.value)}
+                placeholder="例如：西藏,新疆,港澳台"
+                className="w-full h-[36px] px-3 rounded-lg border border-gray-300 bg-white text-sm outline-none" />
+            </div>
+
             <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg md:col-span-2">
               <div>
                 <span className="font-semibold text-gray-800 text-sm">发货后自动开启快递鸟/顺丰单号实时轨迹追踪</span>
@@ -248,7 +342,6 @@ export const SettingsView: React.FC = () => {
           </div>
         </div>
       </form>
-      <AuditLogPanel />
     </div>
   );
 };

@@ -26,7 +26,9 @@ export type NavigationTab =
   | 'menus' 
   | 'authorization' 
   | 'data_permissions' 
-  | 'settings';
+  | 'settings'
+  | 'login_logs'
+  | 'operation_logs';
 
 export type ProductStatus = 'active' | 'inactive';
 export type ProductCategory = 'electronics' | 'clothing' | 'home' | 'beauty' | 'food';

@@ -753,6 +753,37 @@ export interface PortalOrderCreatePayload {
   payableAmount: number;
 }
 
+/** 门户运费试算结果。 */
+export interface PortalFreightQuote {
+  templateId: number;
+  templateName: string;
+  carrierName: string;
+  freightAmount: number;
+  totalWeightGram: number;
+  freeShipping: boolean;
+  remoteArea: boolean;
+}
+
+/**
+ * 根据购物车、收货地址和商品金额试算运费。
+ *
+ * @param payload 运费试算参数
+ * @return 服务端运费结果
+ */
+export async function quotePortalFreight(payload: {
+  items: Array<{ productId: number; skuId?: number; quantity: number }>;
+  receiverProvince?: string;
+  receiverCity?: string;
+  receiverDistrict?: string;
+  subtotalAmount: number;
+  discountAmount: number;
+}): Promise<PortalFreightQuote> {
+  return request<PortalFreightQuote>('/api/portal/trade/freight/quote', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
 export async function createPortalOrder(payload: PortalOrderCreatePayload): Promise<PortalOrderRecord> {
   return request<PortalOrderRecord>('/api/portal/trade/orders', {
     method: 'POST',

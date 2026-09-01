@@ -33,6 +33,8 @@ import com.henfon.shop.identity.service.MemberAdminService;
 import com.henfon.shop.trade.dto.TradeOrderLogisticsSyncResult;
 import com.henfon.shop.trade.dto.TradeOrderBatchShipRequest;
 import com.henfon.shop.trade.dto.TradeOrderAuditRequest;
+import com.henfon.shop.trade.dto.TradeFreightQuoteRequest;
+import com.henfon.shop.trade.dto.TradeFreightQuoteResponse;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -67,6 +69,7 @@ public class TradeOrderService {
     private final CatalogSkuMapper catalogSkuMapper;
     private final MemberAdminService memberAdminService;
     private final LogisticsProvider logisticsProvider;
+    private final TradeFreightService tradeFreightService;
     private final ObjectProvider<FlashSaleReservationService> flashSaleReservationServiceProvider;
 
     /**
@@ -84,6 +87,7 @@ public class TradeOrderService {
                              CatalogSkuMapper catalogSkuMapper,
                              MemberAdminService memberAdminService,
                              LogisticsProvider logisticsProvider,
+                             TradeFreightService tradeFreightService,
                              ObjectProvider<FlashSaleReservationService> flashSaleReservationServiceProvider) {
         this.tradeOrderMapper = tradeOrderMapper;
         this.tradeOrderItemMapper = tradeOrderItemMapper;
@@ -94,6 +98,7 @@ public class TradeOrderService {
         this.catalogSkuMapper = catalogSkuMapper;
         this.memberAdminService = memberAdminService;
         this.logisticsProvider = logisticsProvider;
+        this.tradeFreightService = tradeFreightService;
         this.flashSaleReservationServiceProvider = flashSaleReservationServiceProvider;
     }
 
@@ -780,6 +785,7 @@ public class TradeOrderService {
      * 创建门户订单并写入订单明细。
      *
      * @param request 订单创建请求
+     * @param serverFreightAmount 服务端复算运费
      * @return 新订单
      * @author Henfon
      * @date 2026-08-29
@@ -798,7 +804,10 @@ public class TradeOrderService {
                 return existing;
             }
         }
-        validateAmounts(request);
+        // 运费必须由服务端按当前模板复算，避免篡改请求金额或使用过期结算结果。
+        TradeFreightQuoteResponse freightQuote = tradeFreightService.requireMatchedQuote(
+                toFreightQuoteRequest(request), request.freightAmount());
+        validateAmounts(request, freightQuote.freightAmount());
         validateCatalogItems(request);
         TradeOrder order = new TradeOrder();
         order.setOrderNo("AO" + IdWorker.getIdStr());
@@ -811,7 +820,7 @@ public class TradeOrderService {
         order.setPaymentMethod(request.paymentMethod());
         order.setSubtotalAmount(request.subtotalAmount());
         order.setDiscountAmount(request.discountAmount());
-        order.setFreightAmount(request.freightAmount());
+        order.setFreightAmount(freightQuote.freightAmount());
         order.setPayableAmount(request.payableAmount());
         order.setPaidAmount(BigDecimal.ZERO);
         order.setReceiverName(request.receiverName());
@@ -908,10 +917,11 @@ public class TradeOrderService {
      * 校验订单明细与金额汇总的一致性。
      *
      * @param request 订单创建请求
+     * @param serverFreightAmount 服务端复算运费
      * @author Henfon
      * @date 2026-08-30
      */
-    private void validateAmounts(TradeOrderCreateRequest request) {
+    private void validateAmounts(TradeOrderCreateRequest request, BigDecimal serverFreightAmount) {
         // 先按明细单价和数量重算商品小计，拒绝客户端直接篡改汇总金额。
         BigDecimal calculatedSubtotal = request.items().stream()
                 .map(item -> {
@@ -923,7 +933,7 @@ public class TradeOrderService {
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
         BigDecimal subtotal = money(request.subtotalAmount());
         BigDecimal discount = money(request.discountAmount());
-        BigDecimal freight = money(request.freightAmount());
+        BigDecimal freight = money(serverFreightAmount);
         BigDecimal payable = money(request.payableAmount());
         if (discount.signum() < 0 || freight.signum() < 0) {
             throw new BusinessException("TRADE_AMOUNT_INVALID", "优惠金额和运费不能为负数");
@@ -938,6 +948,22 @@ public class TradeOrderService {
         if (calculatedPayable.compareTo(payable) != 0) {
             throw new BusinessException("TRADE_PAYABLE_MISMATCH", "应付金额与订单优惠、运费不一致");
         }
+    }
+
+    /**
+     * 将订单请求转换为运费试算请求。
+     *
+     * @param request 订单创建请求
+     * @return 运费试算请求
+     * @author Henfon
+     * @date 2026-09-01
+     */
+    private TradeFreightQuoteRequest toFreightQuoteRequest(TradeOrderCreateRequest request) {
+        List<TradeFreightQuoteRequest.Item> items = request.items().stream()
+                .map(item -> new TradeFreightQuoteRequest.Item(item.productId(), item.skuId(), item.quantity()))
+                .toList();
+        return new TradeFreightQuoteRequest(items, request.receiverProvince(), request.receiverCity(),
+                request.receiverDistrict(), request.subtotalAmount(), request.discountAmount());
     }
 
     /**

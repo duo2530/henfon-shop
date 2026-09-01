@@ -23,7 +23,9 @@ const routeTabMap: Record<string, NavigationTab> = {
   '/system/auth': 'authorization',
   '/system/data-rules': 'data_permissions',
   '/system/data-permissions': 'data_permissions',
-  '/settings': 'settings'
+  '/settings': 'settings',
+  '/settings/login-logs': 'login_logs',
+  '/settings/operation-logs': 'operation_logs'
 };
 
 export function routeToTab(path?: string): NavigationTab | undefined {

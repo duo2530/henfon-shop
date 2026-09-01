@@ -52,13 +52,23 @@ public interface SysUserRoleMapper {
      * @author Henfon
      * @date 2026-08-29
      */
-    @Select("SELECT DISTINCT m.id,m.parent_id,m.menu_name,m.menu_type,m.route_path,m.component,m.icon,"
+    @Select("WITH RECURSIVE authorized_menu AS ("
+            + "SELECT DISTINCT m.id,m.parent_id,m.menu_name,m.menu_type,m.route_path,m.component,m.icon,"
             + "m.permission_code,m.sort_no,m.visible,m.status,m.keep_alive,m.external_url,m.created_at,"
             + "m.updated_at,m.is_deleted,m.version,m.remark FROM sys_user_role ur "
             + "JOIN sys_role r ON r.id = ur.role_id AND r.status = 1 AND r.is_deleted = 0 "
             + "JOIN sys_role_menu rm ON rm.role_id = r.id "
             + "JOIN sys_menu m ON m.id = rm.menu_id AND m.status = 1 AND m.visible = 1 AND m.is_deleted = 0 "
-            + "WHERE ur.user_id = #{userId} ORDER BY m.parent_id,m.sort_no,m.id")
+            + "WHERE ur.user_id = #{userId} "
+            + "UNION "
+            + "SELECT parent.id,parent.parent_id,parent.menu_name,parent.menu_type,parent.route_path,parent.component,parent.icon,"
+            + "parent.permission_code,parent.sort_no,parent.visible,parent.status,parent.keep_alive,parent.external_url,parent.created_at,"
+            + "parent.updated_at,parent.is_deleted,parent.version,parent.remark FROM sys_menu parent "
+            + "JOIN authorized_menu child ON child.parent_id = parent.id "
+            + "WHERE parent.status = 1 AND parent.visible = 1 AND parent.is_deleted = 0"
+            + ") SELECT id,parent_id,menu_name,menu_type,route_path,component,icon,permission_code,sort_no,visible,status,"
+            + "keep_alive,external_url,created_at,updated_at,is_deleted,version,remark FROM authorized_menu "
+            + "ORDER BY parent_id,sort_no,id")
     List<SysMenu> selectMenusByUserId(@Param("userId") Long userId);
 
     /**
