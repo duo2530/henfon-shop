@@ -131,6 +131,36 @@ public class TradeOrderService {
     }
 
     /**
+     * 判断会员是否购买过指定商品。
+     *
+     * <p>仅已支付且未取消的订单可以作为评价购买凭证，退款订单仍保留历史购买事实。</p>
+     *
+     * @param memberId 会员ID
+     * @param productId 商品ID
+     * @return 是否存在购买记录
+     * @author Henfon
+     * @date 2026-09-01
+     */
+    public boolean hasPurchasedProduct(Long memberId, Long productId) {
+        if (memberId == null || productId == null) {
+            return false;
+        }
+        List<TradeOrder> orders = tradeOrderMapper.selectList(new LambdaQueryWrapper<TradeOrder>()
+                .eq(TradeOrder::getMemberId, memberId)
+                .eq(TradeOrder::getPaymentStatus, 1)
+                .ne(TradeOrder::getOrderStatus, TradeOrderStateMachine.STATUS_CANCELLED)
+                .orderByDesc(TradeOrder::getCreatedAt));
+        for (TradeOrder order : orders) {
+            boolean purchased = listItems(order.getId()).stream()
+                    .anyMatch(item -> productId.equals(item.getProductId()));
+            if (purchased) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
      * 查询订单物流轨迹。
      *
      * @param orderId 订单ID

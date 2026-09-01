@@ -9,6 +9,7 @@ import com.henfon.shop.content.entity.ContentBanner;
 import com.henfon.shop.content.entity.ContentReview;
 import com.henfon.shop.content.mapper.ContentBannerMapper;
 import com.henfon.shop.content.mapper.ContentReviewMapper;
+import com.henfon.shop.trade.service.TradeOrderService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -26,18 +27,22 @@ import java.util.List;
 public class ContentPortalService {
     private final ContentBannerMapper bannerMapper;
     private final ContentReviewMapper reviewMapper;
+    private final TradeOrderService tradeOrderService;
 
     /**
      * 创建门户内容服务。
      *
      * @param bannerMapper Banner 数据访问对象
      * @param reviewMapper 评价数据访问对象
+     * @param tradeOrderService 订单应用服务
      * @author Henfon
      * @date 2026-08-29
      */
-    public ContentPortalService(ContentBannerMapper bannerMapper, ContentReviewMapper reviewMapper) {
+    public ContentPortalService(ContentBannerMapper bannerMapper, ContentReviewMapper reviewMapper,
+                                TradeOrderService tradeOrderService) {
         this.bannerMapper = bannerMapper;
         this.reviewMapper = reviewMapper;
+        this.tradeOrderService = tradeOrderService;
     }
 
     /**
@@ -113,6 +118,9 @@ public class ContentPortalService {
     public Long submitReview(Long productId, Long memberId, String memberName, ContentReviewSubmitRequest request) {
         if (productId == null || memberId == null) {
             throw new BusinessException("CONTENT_REVIEW_ARGUMENT_INVALID", "商品和会员信息不能为空");
+        }
+        if (!tradeOrderService.hasPurchasedProduct(memberId, productId)) {
+            throw new BusinessException("CONTENT_REVIEW_PURCHASE_REQUIRED", "购买过该商品后才能评价");
         }
         ContentReview review = new ContentReview();
         review.setProductId(productId);

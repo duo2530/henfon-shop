@@ -93,7 +93,7 @@ HTTP 状态：成功 2xx；参数/业务错误 400；认证失败 401；无权�
 
 ### shop-content（Banner、评价、通知）
 
-- 门户：`GET /api/portal/content/banners`、`GET /products/{productId}/reviews`、`GET /products/{productId}/reviews/page`（分页）、`POST /products/{productId}/reviews`；通知 `GET /api/portal/content/notifications`（分页）、`PUT /{notificationId}/read`、`PUT /read-all`。
+- 门户：`GET /api/portal/content/banners`、`GET /products/{productId}/reviews`、`GET /products/{productId}/reviews/page`（分页）、`POST /products/{productId}/reviews`（仅已支付且未取消订单购买过该商品的会员可提交）；通知 `GET /api/portal/content/notifications`（分页）、`PUT /{notificationId}/read`、`PUT /read-all`。
 - 管理 Banner：`GET/POST /api/admin/content/banners`、`PUT /{id}/status`、`DELETE /{id}`；评价 `GET /api/admin/content/reviews`（分页）、`PUT /{id}/status`、`PUT /{id}/reply`。
 
 ### shop-payment（支付、退款、发票）
