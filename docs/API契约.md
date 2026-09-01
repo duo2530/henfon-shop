@@ -54,7 +54,7 @@ HTTP 状态：成功 2xx；参数/业务错误 400；认证失败 401；无权�
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | GET | `/api/health` | 健康检查 |
-| POST | `/api/admin/storage/upload` | MinIO 上传（multipart） |
+| POST | `/api/admin/storage/upload` | MinIO 上传（multipart，支持 JPG/PNG/WEBP/GIF/MP4/PDF，单文件不超过 10MB） |
 | DELETE | `/api/admin/storage?objectKey=` | 删除对象 |
 | POST | `/api/portal/storage/upload` | 会员评价图片上传（需会员 JWT，multipart） |
 
@@ -83,7 +83,7 @@ HTTP 状态：成功 2xx；参数/业务错误 400；认证失败 401；无权�
 - 购物车：`GET /api/portal/trade/cart`、`POST /items`、`PUT /items/{id}`、`DELETE /items/{id}`。
 - 门户订单：`GET /api/portal/trade/orders`（分页）、`GET /orders/{id}`、`GET /orders/{id}/logistics`、`POST /orders`、`PUT /orders/{id}/cancel|confirm`。
 - 管理订单：`GET /api/admin/trade/orders`（分页）、`GET /orders/{id}/items|logistics`、`POST /orders/{id}/logistics`、`POST /orders/{id}/logistics/sync`、`POST /orders/batch-ship`、`PUT /orders/{id}/logistics/{logisticsId}`、`PUT /orders/{id}/ship|cancel|remark|refund|audit`、`PUT /orders/{id}/audit/approve|reject`。订单审核仅允许已支付待发货订单，使用 `version` 乐观锁并记录审核人、时间和备注；未审核通过的订单不能发货。`logistics/sync` 调用已配置的物流服务商（当前为快递100）并将轨迹幂等写入现有物流表；未配置服务商时返回 `TRADE_LOGISTICS_SYNC_FAILED`。已发货订单会在服务商启用后由后台定时任务按批次自动同步。`batch-ship` 请求体为 `{shipments:[{orderId,logisticsCompany,trackingNo}]}`，单次最多100笔，任一订单失败则整批事务回滚。备注接口请求体为 `{sellerRemark, flagColor, version}`，标旗支持 `red/yellow/green/blue/purple` 或 `null` 清空，并通过 `version` 乐观锁校验。
-- 售后：门户 `GET/POST /api/portal/trade/after-sales`、`DELETE /after-sales/{id}`；申请可携带最多 9 个 `evidenceUrls`，管理 `GET /api/admin/trade/after-sales`（分页）、`PUT /{id}/approve|reject`。
+- 售后：门户 `GET/POST /api/portal/trade/after-sales`、`DELETE /after-sales/{id}`；申请可携带最多 9 个 `evidenceUrls`（先通过需登录的 `POST /api/portal/storage/upload` 上传 JPG/PNG/WEBP/GIF 图片，单文件不超过 10MB，再提交返回的 `url`），管理 `GET /api/admin/trade/after-sales`（分页）、`PUT /{id}/approve|reject`。
 - Outbox 运维：`GET /api/admin/trade/outbox/dead-events`（按事件类型、主题、聚合 ID 分页筛选）、`POST /api/admin/trade/outbox/{eventId}/retry`（仅允许死信事件人工重试，需 `trade:outbox:query/retry` 权限）。
 
 ### shop-marketing（优惠券、秒杀）

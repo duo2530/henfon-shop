@@ -242,6 +242,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       totalPaid: totalPayable,
       shippingAddress: selectedAddress,
       paymentMethod: paymentMethodNames[paymentMethod] || '在线支付',
+      flashSaleId: items.length === 1 ? items[0].flashSaleId : undefined,
       estimatedDelivery: '预计 1-2 日内顺丰送达',
       trackingSteps: [
         {

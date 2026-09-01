@@ -28,7 +28,7 @@ public class MinioStorageService {
     private static final long MAX_FILE_SIZE = 10 * 1024 * 1024;
     private static final Duration PRESIGN_DURATION = Duration.ofHours(24);
     private static final Set<String> ALLOWED_CONTENT_TYPES = Set.of(
-            "image/jpeg", "image/png", "image/webp", "image/gif", "video/mp4");
+            "image/jpeg", "image/png", "image/webp", "image/gif", "video/mp4", "application/pdf");
 
     private final MinioClient minioClient;
     private final MinioProperties properties;
@@ -64,7 +64,7 @@ public class MinioStorageService {
         String contentType = StringUtils.hasText(file.getContentType())
                 ? file.getContentType().toLowerCase(Locale.ROOT) : "";
         if (!ALLOWED_CONTENT_TYPES.contains(contentType)) {
-            throw new BusinessException("STORAGE_FILE_TYPE_INVALID", "仅支持 JPG、PNG、WEBP、GIF 和 MP4 文件");
+            throw new BusinessException("STORAGE_FILE_TYPE_INVALID", "仅支持 JPG、PNG、WEBP、GIF、MP4 和 PDF 文件");
         }
         String objectKey = buildObjectKey(file.getOriginalFilename(), contentType);
         try {
@@ -154,6 +154,7 @@ public class MinioStorageService {
                 case "image/webp" -> "webp";
                 case "image/gif" -> "gif";
                 case "video/mp4" -> "mp4";
+                case "application/pdf" -> "pdf";
                 default -> "bin";
             };
         }

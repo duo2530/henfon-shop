@@ -58,6 +58,7 @@ import {
   PortalOrderItemRecord,
   PortalOrderLogisticsRecord,
   PortalAfterSaleRecord,
+  PortalAfterSaleCreatePayload,
   PortalCategoryRecord,
   PortalFlashSaleRecord,
 } from './api/portalApi';
@@ -1076,6 +1077,41 @@ export default function App() {
     setIsCheckoutOpen(true);
   };
 
+  /**
+   * 从秒杀活动直接创建结算项，保留活动 ID 交由后端进行库存与限购校验。
+   *
+   * @param saleId 秒杀活动 ID
+   * @param item 秒杀活动商品
+   * @author Henfon
+   * @date 2026-09-01
+   */
+  const handleFlashSaleBuy = (saleId: number, item: PortalFlashSaleRecord['items'][number]) => {
+    if (!resolveMemberId(currentUser)) {
+      handleOpenAuth('login-pwd');
+      showToast('请先登录会员账号，再参加秒杀活动', 'info');
+      return;
+    }
+    const product = products.find((candidate) => candidate.id === `prod-${item.productId}`);
+    if (!product || item.remainingStock <= 0) {
+      showToast('该秒杀商品暂不可购买', 'error');
+      return;
+    }
+    const selectedSku = item.skuId ? product.skus?.find((sku) => sku.id === item.skuId) : undefined;
+    const tempItem: CartItem = {
+      id: `flash-${saleId}-${item.id}-${Date.now()}`,
+      productId: product.id,
+      skuId: item.skuId,
+      product,
+      selectedVariants: selectedSku?.attributes || {},
+      quantity: 1,
+      unitPrice: Number(item.activityPrice),
+      selected: true,
+      flashSaleId: saleId,
+    };
+    setCheckoutItems([tempItem]);
+    setIsCheckoutOpen(true);
+  };
+
   const handleUpdateQuantity = (cartItemId: string, newQuantity: number) => {
     if (newQuantity <= 0) {
       handleRemoveCartItem(cartItemId);
@@ -1430,6 +1466,7 @@ export default function App() {
     try {
       const serverOrder = await createPortalOrder({
         memberId,
+        flashSaleId: order.flashSaleId,
         // 使用本地订单 ID 作为幂等键，网络重试时仍能定位同一笔订单。
         idempotencyKey: order.id,
         items: order.items.map((item) => {
@@ -1539,41 +1576,21 @@ export default function App() {
     }
   };
 
-  const handleApplyAfterSale = async (order: Order) => {
+  const handleApplyAfterSale = async (order: Order, payload: PortalAfterSaleCreatePayload) => {
     const memberId = resolveMemberId(currentUser);
     const orderId = Number(order.id);
     if (!memberId || !Number.isFinite(orderId)) {
       showToast('当前订单尚未同步到服务端，暂不能申请售后', 'error');
       return;
     }
-    const typeInput = window.prompt('请选择售后类型：1 仅退款，2 退货退款，3 换货', '1');
-    if (typeInput === null) return;
-    const afterSaleType = Number(typeInput);
-    if (![1, 2, 3].includes(afterSaleType)) {
-      showToast('售后类型不合法，请重新申请', 'error');
-      return;
-    }
-    const defaultAmount = afterSaleType === 3 ? '0' : String(order.totalPaid);
-    const amountInput = window.prompt('请输入申请退款金额（元，换货填写 0）', defaultAmount);
-    if (amountInput === null) return;
-    const refundAmount = Number(amountInput);
-    if (!Number.isFinite(refundAmount) || refundAmount < 0 || refundAmount > order.totalPaid) {
-      showToast('退款金额不合法，不能超过订单实付金额', 'error');
-      return;
-    }
-    const reason = window.prompt('请填写售后原因', '商品存在质量问题');
-    if (!reason?.trim()) return;
     try {
-      const record = await createPortalAfterSale(memberId, orderId, {
-        afterSaleType: afterSaleType as 1 | 2 | 3,
-        refundAmount,
-        reason: reason.trim(),
-      });
+      const record = await createPortalAfterSale(memberId, orderId, payload);
       setAfterSales((previous) => [record, ...previous.filter((item) => item.id !== record.id)]);
       showToast(`售后申请已提交（${record.afterSaleNo}），等待商家审核`, 'success');
     } catch (error) {
       console.error('申请售后失败', error);
       showToast(error instanceof Error ? error.message : '申请售后失败，请稍后重试', 'error');
+      throw error;
     }
   };
 
@@ -1882,11 +1899,14 @@ export default function App() {
                   <div className="mt-2 flex gap-2 overflow-x-auto pb-1">
                     {sale.items.slice(0, 4).map((item) => {
                       const product = products.find((candidate) => candidate.id === `prod-${item.productId}`);
-                      return <button key={item.id} type="button" onClick={() => product && openProduct(product)} disabled={!product} className="min-w-[132px] rounded-lg border border-zinc-100 bg-zinc-50 p-2 text-left disabled:cursor-default">
-                        <div className="truncate text-xs text-zinc-700">{product?.title || `商品 #${item.productId}`}</div>
-                        <div className="mt-1 text-sm font-bold text-orange-600">¥{Number(item.activityPrice || 0).toFixed(2)}</div>
-                        <div className="mt-1 text-[10px] text-zinc-400">剩余 {item.remainingStock} 件</div>
-                      </button>;
+                      return <div key={item.id} className="min-w-[150px] rounded-lg border border-zinc-100 bg-zinc-50 p-2">
+                        <button type="button" onClick={() => product && openProduct(product)} disabled={!product} className="w-full text-left disabled:cursor-default">
+                          <div className="truncate text-xs text-zinc-700">{product?.title || `商品 #${item.productId}`}</div>
+                          <div className="mt-1 text-sm font-bold text-orange-600">¥{Number(item.activityPrice || 0).toFixed(2)}</div>
+                          <div className="mt-1 text-[10px] text-zinc-400">剩余 {item.remainingStock} 件</div>
+                        </button>
+                        <button type="button" onClick={() => handleFlashSaleBuy(sale.id, item)} disabled={!product || item.remainingStock <= 0} className="mt-2 w-full rounded-md bg-orange-500 px-2 py-1 text-[11px] font-semibold text-white hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-50">立即秒杀</button>
+                      </div>;
                     })}
                   </div>
                 </article>

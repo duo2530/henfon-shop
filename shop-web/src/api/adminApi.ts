@@ -941,7 +941,7 @@ export function deleteInventorySupplier(id: number): Promise<void> {
 
 export async function uploadStorageFile(file: File): Promise<BackendStorageUploadResult> {
   const maxFileSize = 10 * 1024 * 1024;
-  const allowedContentTypes = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'video/mp4']);
+  const allowedContentTypes = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'video/mp4', 'application/pdf']);
   if (!file || file.size === 0) {
     throw new Error('上传文件不能为空');
   }
@@ -949,7 +949,7 @@ export async function uploadStorageFile(file: File): Promise<BackendStorageUploa
     throw new Error('文件大小不能超过10MB');
   }
   if (!allowedContentTypes.has(file.type.toLowerCase())) {
-    throw new Error('仅支持 JPG、PNG、WEBP、GIF 和 MP4 文件');
+    throw new Error('仅支持 JPG、PNG、WEBP、GIF、MP4 和 PDF 文件');
   }
 
   const formData = new FormData();

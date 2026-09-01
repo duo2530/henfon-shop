@@ -68,6 +68,8 @@ export interface CartItem {
   quantity: number;
   unitPrice: number;
   selected: boolean;
+  /** 秒杀活动下单标识，普通购物车商品不填写。 */
+  flashSaleId?: number;
 }
 
 export interface Address {
@@ -122,6 +124,8 @@ export interface Order {
   paymentNo?: string;
   paymentStatus?: number;
   paymentState?: 'pending' | 'processing' | 'succeeded' | 'failed' | 'expired';
+  /** 秒杀活动订单关联的活动 ID。 */
+  flashSaleId?: number;
   trackingNumber: string;
   carrier?: string;
   createdAt: string;

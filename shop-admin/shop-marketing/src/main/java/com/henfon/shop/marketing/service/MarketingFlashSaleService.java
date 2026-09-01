@@ -91,6 +91,10 @@ public class MarketingFlashSaleService implements FlashSaleReservationService {
             if (item == null) {
                 throw new BusinessException("MARKETING_FLASH_SALE_ITEM_INVALID", "商品不在当前秒杀活动中");
             }
+            if (requestItem.unitPrice() == null || item.getActivityPrice() == null
+                    || item.getActivityPrice().setScale(2).compareTo(requestItem.unitPrice().setScale(2)) != 0) {
+                throw new BusinessException("MARKETING_FLASH_SALE_PRICE_CHANGED", "秒杀价格已变化，请刷新后重试");
+            }
             int memberBought = reservationMapper.selectList(new LambdaQueryWrapper<MarketingFlashSaleReservation>()
                     .eq(MarketingFlashSaleReservation::getActivityId, activityId)
                     .eq(MarketingFlashSaleReservation::getActivityItemId, item.getId())

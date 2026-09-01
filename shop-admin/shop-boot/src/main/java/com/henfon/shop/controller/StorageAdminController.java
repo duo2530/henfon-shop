@@ -44,7 +44,7 @@ public class StorageAdminController {
      * @date 2026-08-30
      */
     @PostMapping("/upload")
-    @PreAuthorize("hasAuthority('catalog:product:query')")
+    @PreAuthorize("hasAnyAuthority('catalog:product:query', 'payment:invoice:status')")
     public ApiResponse<MinioStorageService.UploadResult> upload(@RequestParam("file") MultipartFile file) {
         return ApiResponse.success(storageService.upload(file), MDC.get("requestId"));
     }
@@ -58,7 +58,7 @@ public class StorageAdminController {
      * @date 2026-08-30
      */
     @DeleteMapping
-    @PreAuthorize("hasAuthority('catalog:product:query')")
+    @PreAuthorize("hasAnyAuthority('catalog:product:query', 'payment:invoice:status')")
     public ApiResponse<Void> delete(@RequestParam @NotBlank String objectKey) {
         storageService.delete(objectKey);
         return ApiResponse.success(MDC.get("requestId"));

@@ -863,7 +863,7 @@ public class TradeOrderService {
                 throw new BusinessException("MARKETING_FLASH_SALE_UNAVAILABLE", "秒杀服务暂不可用，请稍后重试");
             }
             reservationService.reserve(request.flashSaleId(), request.memberId(), order.getId(), request.items().stream()
-                    .map(item -> new FlashSaleReservationItem(item.productId(), item.skuId(), item.quantity()))
+                    .map(item -> new FlashSaleReservationItem(item.productId(), item.skuId(), item.quantity(), item.unitPrice()))
                     .toList());
         }
         tradeEventOutboxService.recordOrderCreated(order);
@@ -963,8 +963,9 @@ public class TradeOrderService {
                 actualPrice = sku.getPrice();
                 stock = sku.getStock();
             }
-            if (actualPrice == null || item.unitPrice() == null || actualPrice.setScale(2, RoundingMode.HALF_UP)
-                    .compareTo(item.unitPrice().setScale(2, RoundingMode.HALF_UP)) != 0) {
+            boolean flashSaleOrder = request.flashSaleId() != null;
+            if (!flashSaleOrder && (actualPrice == null || item.unitPrice() == null || actualPrice.setScale(2, RoundingMode.HALF_UP)
+                    .compareTo(item.unitPrice().setScale(2, RoundingMode.HALF_UP)) != 0)) {
                 throw new BusinessException("TRADE_PRICE_CHANGED", "商品价格已变化，请刷新后重试");
             }
             if (stock == null || stock < item.quantity()) {

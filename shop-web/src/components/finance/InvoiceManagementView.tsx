@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useAdmin } from '../../context/AdminContext';
 import { Download, CheckCircle, Clock, Search, Send } from 'lucide-react';
-import { BackendPaymentInvoice, listPaymentInvoices, updatePaymentInvoiceStatus } from '../../api/adminApi';
+import { BackendPaymentInvoice, listPaymentInvoices, updatePaymentInvoiceStatus, uploadStorageFile } from '../../api/adminApi';
 
 export interface InvoiceRecord {
   id: string;
@@ -17,6 +17,7 @@ export interface InvoiceRecord {
   status: 'issued' | 'pending' | 'issuing' | 'rejected' | 'red_ink';
   createdAt: string;
   issuedAt?: string;
+  invoiceUrl?: string;
 }
 
 function toInvoiceRecord(invoice: BackendPaymentInvoice): InvoiceRecord {
@@ -41,6 +42,7 @@ function toInvoiceRecord(invoice: BackendPaymentInvoice): InvoiceRecord {
     status,
     createdAt: invoice.createdAt || invoice.requestedAt || '-',
     issuedAt: invoice.issuedAt,
+    invoiceUrl: invoice.invoiceUrl,
   };
 }
 
@@ -92,6 +94,18 @@ export const InvoiceManagementView: React.FC = () => {
     } catch (error) {
       showToast(error instanceof Error ? error.message : '批量更新发票状态失败', 'error');
       await loadInvoices();
+    }
+  };
+
+  const handleUploadInvoice = async (invoice: InvoiceRecord, file?: File) => {
+    if (!file) return;
+    try {
+      const uploaded = await uploadStorageFile(file);
+      await updatePaymentInvoiceStatus(invoice.invoiceNo, { status: 2, invoiceUrl: uploaded.url });
+      showToast('发票附件已关联并标记为已开具', 'success');
+      await loadInvoices();
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : '发票附件上传失败', 'error');
     }
   };
 
@@ -223,13 +237,18 @@ export const InvoiceManagementView: React.FC = () => {
                       >
                         立即开票
                       </button>
-                    ) : inv.status === 'issued' && inv.invoiceNo ? (
-                      <button
-                        onClick={() => inv.status === 'issued' && showToast('开票平台尚未返回发票附件', 'info')}
-                        className="text-blue-600 hover:text-blue-700 text-xs font-semibold flex items-center gap-1 ml-auto"
-                      >
-                        <Download className="w-3.5 h-3.5" /> 下载PDF
-                      </button>
+                    ) : (inv.status === 'issued' || inv.status === 'issuing') && inv.invoiceNo ? (
+                      <div className="flex items-center justify-end gap-2">
+                        {inv.invoiceUrl ? (
+                          <a href={inv.invoiceUrl} target="_blank" rel="noreferrer" className="text-blue-600 hover:text-blue-700 text-xs font-semibold flex items-center gap-1">
+                            <Download className="w-3.5 h-3.5" /> 下载PDF
+                          </a>
+                        ) : <span className="text-xs text-gray-400">待关联附件</span>}
+                        <label className="cursor-pointer text-xs font-semibold text-indigo-600 hover:text-indigo-700">
+                          上传附件
+                          <input type="file" accept="application/pdf,.pdf" className="hidden" onChange={(event) => void handleUploadInvoice(inv, event.target.files?.[0])} />
+                        </label>
+                      </div>
                     ) : (
                       <span className="text-xs text-gray-400">暂无可用操作</span>
                     )}

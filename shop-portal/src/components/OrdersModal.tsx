@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Order } from '../types/ecommerce';
-import { PortalAfterSaleRecord } from '../api/portalApi';
-import { Package, X, ChevronDown, ChevronUp, RotateCcw, Receipt } from 'lucide-react';
+import { PortalAfterSaleCreatePayload, PortalAfterSaleRecord, uploadPortalMedia } from '../api/portalApi';
+import { Package, X, ChevronDown, ChevronUp, RotateCcw, Receipt, Upload, Trash2 } from 'lucide-react';
 import { OrderTracking } from './OrderTracking';
 
 interface OrdersModalProps {
@@ -14,7 +14,7 @@ interface OrdersModalProps {
   afterSales?: PortalAfterSaleRecord[];
   afterSalesLoading?: boolean;
   afterSalesError?: string | null;
-  onApplyAfterSale?: (order: Order) => Promise<void> | void;
+  onApplyAfterSale?: (order: Order, payload: PortalAfterSaleCreatePayload) => Promise<void> | void;
   onCancelAfterSale?: (afterSale: PortalAfterSaleRecord) => Promise<void> | void;
   onApplyInvoice?: (order: Order) => Promise<void> | void;
 }
@@ -38,6 +38,14 @@ export const OrdersModal: React.FC<OrdersModalProps> = ({
   );
   const [actioningOrderId, setActioningOrderId] = useState<string | null>(null);
   const [actioningAfterSaleId, setActioningAfterSaleId] = useState<number | null>(null);
+  const [afterSaleOrder, setAfterSaleOrder] = useState<Order | null>(null);
+  const [afterSaleType, setAfterSaleType] = useState<1 | 2 | 3>(1);
+  const [afterSaleAmount, setAfterSaleAmount] = useState('0');
+  const [afterSaleReason, setAfterSaleReason] = useState('');
+  const [afterSaleEvidenceUrls, setAfterSaleEvidenceUrls] = useState<string[]>([]);
+  const [afterSaleUploading, setAfterSaleUploading] = useState(false);
+  const [afterSaleSubmitting, setAfterSaleSubmitting] = useState(false);
+  const [afterSaleError, setAfterSaleError] = useState<string | null>(null);
 
   useEffect(() => {
     setExpandedOrderId((current) => {
@@ -83,6 +91,104 @@ export const OrdersModal: React.FC<OrdersModalProps> = ({
     1: '仅退款',
     2: '退货退款',
     3: '换货',
+  };
+
+  /**
+   * 打开售后申请表单并初始化订单金额。
+   *
+   * @param order 当前订单
+   * @author Henfon
+   * @date 2026-09-01
+   */
+  const openAfterSaleForm = (order: Order) => {
+    setAfterSaleOrder(order);
+    setAfterSaleType(1);
+    setAfterSaleAmount(String(order.totalPaid));
+    setAfterSaleReason('');
+    setAfterSaleEvidenceUrls([]);
+    setAfterSaleError(null);
+  };
+
+  /**
+   * 上传售后凭证图片并加入预览列表。
+   *
+   * @param event 文件选择事件
+   * @author Henfon
+   * @date 2026-09-01
+   */
+  const handleAfterSaleEvidenceChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files || []) as File[];
+    event.target.value = '';
+    if (!files.length) return;
+    if (afterSaleEvidenceUrls.length + files.length > 9) {
+      setAfterSaleError('售后凭证最多上传9张');
+      return;
+    }
+    const invalid = files.find((file) => !['image/jpeg', 'image/png', 'image/webp', 'image/gif'].includes(file.type));
+    if (invalid) {
+      setAfterSaleError('仅支持 JPG、PNG、WEBP、GIF 图片');
+      return;
+    }
+    const oversized = files.find((file) => file.size > 10 * 1024 * 1024);
+    if (oversized) {
+      setAfterSaleError('单张图片不能超过10MB');
+      return;
+    }
+    setAfterSaleUploading(true);
+    setAfterSaleError(null);
+    try {
+      const uploaded = await Promise.all(files.map((file) => uploadPortalMedia(file)));
+      setAfterSaleEvidenceUrls((current) => [...current, ...uploaded.map((item) => item.url)]);
+    } catch (error) {
+      setAfterSaleError(error instanceof Error ? error.message : '售后凭证上传失败，请稍后重试');
+    } finally {
+      setAfterSaleUploading(false);
+    }
+  };
+
+  /**
+   * 提交售后申请表单。
+   *
+   * @author Henfon
+   * @date 2026-09-01
+   */
+  const submitAfterSaleForm = async () => {
+    if (!afterSaleOrder || !onApplyAfterSale) return;
+    const amount = Number(afterSaleAmount);
+    if (!Number.isFinite(amount) || amount < 0 || amount > afterSaleOrder.totalPaid) {
+      setAfterSaleError('退款金额不合法，不能超过订单实付金额');
+      return;
+    }
+    if (!afterSaleReason.trim()) {
+      setAfterSaleError('请填写售后原因');
+      return;
+    }
+    setAfterSaleSubmitting(true);
+    setAfterSaleError(null);
+    try {
+      await onApplyAfterSale(afterSaleOrder, {
+        afterSaleType,
+        refundAmount: afterSaleType === 3 ? 0 : amount,
+        reason: afterSaleReason.trim(),
+        evidenceUrls: afterSaleEvidenceUrls,
+      });
+      setAfterSaleOrder(null);
+    } catch (error) {
+      setAfterSaleError(error instanceof Error ? error.message : '申请售后失败，请稍后重试');
+    } finally {
+      setAfterSaleSubmitting(false);
+    }
+  };
+
+  const parseEvidenceUrls = (value?: string | string[]) => {
+    if (Array.isArray(value)) return value.filter(Boolean);
+    if (!value) return [];
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string' && item.length > 0) : [value];
+    } catch {
+      return value.split(',').map((item) => item.trim()).filter(Boolean);
+    }
   };
 
   return (
@@ -208,7 +314,7 @@ export const OrdersModal: React.FC<OrdersModalProps> = ({
                           <button
                             type="button"
                             disabled={actioningOrderId === ord.id}
-                            onClick={() => void runOrderAction(ord, onApplyAfterSale)}
+                            onClick={() => openAfterSaleForm(ord)}
                             className="px-3 py-1.5 rounded-lg border border-amber-200 text-amber-700 text-xs font-semibold hover:bg-amber-50 disabled:opacity-50"
                           >
                             {actioningOrderId === ord.id ? '提交中…' : '申请售后'}
@@ -268,6 +374,15 @@ export const OrdersModal: React.FC<OrdersModalProps> = ({
                               </div>
                               <p>原因：{afterSale.reason}</p>
                               {afterSale.refundAmount > 0 && <p>申请退款：¥{Number(afterSale.refundAmount).toFixed(2)}</p>}
+                              {parseEvidenceUrls(afterSale.evidenceUrls).length > 0 && (
+                                <div className="flex flex-wrap gap-1.5 pt-1">
+                                  {parseEvidenceUrls(afterSale.evidenceUrls).map((url) => (
+                                    <a key={url} href={url} target="_blank" rel="noreferrer" title="查看售后凭证">
+                                      <img src={url} alt="售后凭证" className="w-12 h-12 rounded-md object-cover border border-amber-200" />
+                                    </a>
+                                  ))}
+                                </div>
+                              )}
                               {afterSale.status === 10 && onCancelAfterSale && (
                                 <button
                                   type="button"
@@ -295,6 +410,68 @@ export const OrdersModal: React.FC<OrdersModalProps> = ({
           )}
         </div>
       </div>
+      {afterSaleOrder && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4" onClick={() => !afterSaleSubmitting && setAfterSaleOrder(null)}>
+          <div className="w-full max-w-lg rounded-2xl bg-white p-5 shadow-2xl" onClick={(event) => event.stopPropagation()}>
+            <div className="flex items-center justify-between border-b border-zinc-200 pb-3">
+              <div>
+                <h3 className="text-base font-bold text-zinc-900">申请售后</h3>
+                <p className="text-xs text-zinc-500">订单：{afterSaleOrder.orderNumber}</p>
+              </div>
+              <button type="button" className="rounded-lg p-1.5 text-zinc-400 hover:bg-zinc-100" onClick={() => setAfterSaleOrder(null)} disabled={afterSaleSubmitting}>
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="space-y-3 pt-4">
+              <label className="block text-xs font-semibold text-zinc-700">售后类型
+                <select value={afterSaleType} onChange={(event) => {
+                  const next = Number(event.target.value) as 1 | 2 | 3;
+                  setAfterSaleType(next);
+                  if (next === 3) setAfterSaleAmount('0');
+                  else if (Number(afterSaleAmount) === 0) setAfterSaleAmount(String(afterSaleOrder.totalPaid));
+                }} className="mt-1 w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm">
+                  <option value={1}>仅退款</option>
+                  <option value={2}>退货退款</option>
+                  <option value={3}>换货</option>
+                </select>
+              </label>
+              <label className="block text-xs font-semibold text-zinc-700">退款金额（元）
+                <input type="number" min="0" max={afterSaleOrder.totalPaid} step="0.01" value={afterSaleAmount} disabled={afterSaleType === 3} onChange={(event) => setAfterSaleAmount(event.target.value)} className="mt-1 w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm disabled:bg-zinc-100" />
+              </label>
+              <label className="block text-xs font-semibold text-zinc-700">售后原因
+                <textarea rows={3} maxLength={500} value={afterSaleReason} onChange={(event) => setAfterSaleReason(event.target.value)} placeholder="请描述商品问题或售后诉求" className="mt-1 w-full resize-none rounded-lg border border-zinc-200 px-3 py-2 text-sm" />
+              </label>
+              <div>
+                <div className="mb-1 flex items-center justify-between text-xs font-semibold text-zinc-700">
+                  <span>售后凭证（最多9张，可选）</span><span className="font-normal text-zinc-400">{afterSaleEvidenceUrls.length}/9</span>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {afterSaleEvidenceUrls.map((url) => (
+                    <div key={url} className="group relative">
+                      <img src={url} alt="已上传售后凭证" className="h-16 w-16 rounded-lg border border-zinc-200 object-cover" />
+                      <button type="button" aria-label="删除凭证" onClick={() => setAfterSaleEvidenceUrls((current) => current.filter((item) => item !== url))} className="absolute -right-1.5 -top-1.5 rounded-full bg-zinc-900 p-0.5 text-white opacity-0 transition group-hover:opacity-100">
+                        <Trash2 className="h-3 w-3" />
+                      </button>
+                    </div>
+                  ))}
+                  {afterSaleEvidenceUrls.length < 9 && (
+                    <label className={`flex h-16 w-16 cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-zinc-300 text-zinc-400 hover:border-amber-400 hover:text-amber-600 ${afterSaleUploading ? 'pointer-events-none opacity-50' : ''}`}>
+                      <Upload className="h-4 w-4" />
+                      <span className="mt-1 text-[10px]">{afterSaleUploading ? '上传中' : '上传图片'}</span>
+                      <input type="file" accept="image/jpeg,image/png,image/webp,image/gif" multiple className="hidden" disabled={afterSaleUploading || afterSaleSubmitting} onChange={(event) => void handleAfterSaleEvidenceChange(event)} />
+                    </label>
+                  )}
+                </div>
+              </div>
+              {afterSaleError && <p className="text-xs text-rose-600">{afterSaleError}</p>}
+              <div className="flex justify-end gap-2 pt-2">
+                <button type="button" onClick={() => setAfterSaleOrder(null)} disabled={afterSaleSubmitting} className="rounded-lg border border-zinc-200 px-4 py-2 text-xs font-semibold text-zinc-600 hover:bg-zinc-50">取消</button>
+                <button type="button" onClick={() => void submitAfterSaleForm()} disabled={afterSaleSubmitting || afterSaleUploading} className="rounded-lg bg-amber-600 px-4 py-2 text-xs font-semibold text-white hover:bg-amber-700 disabled:opacity-50">{afterSaleSubmitting ? '提交中…' : '提交售后申请'}</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
