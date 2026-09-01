@@ -1501,12 +1501,9 @@ export default function App() {
       serverOrderId = serverOrder.id;
       serverOrderNo = serverOrder.orderNo;
 
-      // 支付渠道暂由基础支付单承接，后续接入微信/支付宝 SDK 时复用该支付单号。
+      // 支付渠道暂由基础支付单承接，后续接入微信 SDK 时复用该支付单号。
       const paymentChannels: Record<string, string> = {
         微信支付: 'WECHAT',
-        支付宝: 'ALIPAY',
-        云闪付: 'UNIONPAY',
-        'Apple Pay': 'APPLEPAY',
       };
       const channel = paymentChannels[order.paymentMethod] || 'WECHAT';
       // 订单创建成功后记录优惠券核销，支付单必须建立在服务端确认优惠金额之后。

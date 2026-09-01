@@ -23,6 +23,10 @@ import { loginPortalMember, registerPortalMember, MemberAuthResponse } from '../
 
 export type AuthMode = 'login-pwd' | 'login-sms' | 'register' | 'forgot-pwd';
 
+// 首期仅开放账号密码登录和邮箱找回密码，短信及第三方授权暂不接入。
+const ENABLE_SMS_LOGIN = false;
+const ENABLE_SOCIAL_LOGIN = false;
+
 interface AuthModalProps {
   isOpen: boolean;
   initialMode?: AuthMode;
@@ -305,7 +309,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         onClose();
       } else if (mode === 'forgot-pwd') {
         if (!accountInput) {
-          setErrorMsg('请输入您的注册手机或邮箱');
+          setErrorMsg('请输入您的注册邮箱');
+          return;
+        }
+        if (!accountInput.includes('@')) {
+          setErrorMsg('密码找回暂仅支持邮箱地址');
           return;
         }
         setSuccessMsg('重置密码链接与临时验证码已发送至您的账号，请查收！');
@@ -413,7 +421,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               >
                 密码登录
               </button>
-              <button
+              {ENABLE_SMS_LOGIN && <button
                 onClick={() => {
                   setMode('login-sms');
                   setErrorMsg(null);
@@ -425,7 +433,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 }`}
               >
                 短信免密
-              </button>
+              </button>}
               <button
                 onClick={() => {
                   setMode('register');
@@ -702,7 +710,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             {mode === 'forgot-pwd' && (
               <>
                 <div className="space-y-1">
-                  <label className="text-xs font-bold text-zinc-700 block">注册手机或邮箱</label>
+                  <label className="text-xs font-bold text-zinc-700 block">注册邮箱</label>
                   <div className="relative flex items-center">
                     <Mail className="w-4 h-4 text-zinc-400 absolute left-3.5 pointer-events-none" />
                     <input
@@ -710,14 +718,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                       required
                       value={accountInput}
                       onChange={(e) => setAccountInput(e.target.value)}
-                      placeholder="输入绑定的手机号或邮箱以找回密码"
+                      placeholder="输入绑定邮箱以找回密码"
                       className="w-full py-2.5 pl-10 pr-3.5 bg-zinc-50 border border-zinc-200 rounded-xl text-xs text-zinc-900 placeholder:text-zinc-400 focus:bg-white focus:border-zinc-900 focus:ring-2 focus:ring-zinc-900/10 focus:outline-none transition"
                     />
                   </div>
                 </div>
 
                 <p className="text-xs text-zinc-500">
-                  系统将向您的绑定联系方式发送一次性安全重置验证码，点击下方按钮继续。
+                  系统将向您的绑定邮箱发送一次性安全重置链接，点击下方按钮继续。
                 </p>
               </>
             )}
@@ -788,7 +796,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           </form>
 
           {/* Social Quick Login Section */}
-          {mode !== 'forgot-pwd' && (
+          {ENABLE_SOCIAL_LOGIN && mode !== 'forgot-pwd' && (
             <div className="pt-3 border-t border-zinc-100">
               <div className="flex items-center justify-between mb-3">
                 <span className="text-[11px] font-bold text-zinc-400">第三方快捷授权登录</span>

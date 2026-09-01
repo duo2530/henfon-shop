@@ -87,7 +87,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
   // Delivery & Payment Settings
   const [deliveryTime, setDeliveryTime] = useState('工作日、双休日均可配送');
-  const [paymentMethod, setPaymentMethod] = useState<'wechat' | 'alipay' | 'unionpay' | 'applepay'>('wechat');
+  const [paymentMethod, setPaymentMethod] = useState<'wechat'>('wechat');
   const [needInvoice, setNeedInvoice] = useState(false);
   const [orderNotes, setOrderNotes] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -222,9 +222,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
     const paymentMethodNames: Record<string, string> = {
       wechat: '微信支付',
-      alipay: '支付宝',
-      unionpay: '云闪付',
-      applepay: 'Apple Pay',
     };
 
     // 真实支付回调尚未完成前，订单保持待付款，避免前端提前展示已付款。
@@ -658,9 +655,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               <div className="grid grid-cols-2 gap-2">
                 {[
                   { id: 'wechat', label: '微信支付', desc: '亿万用户的选择' },
-                  { id: 'alipay', label: '支付宝', desc: '数亿用户的安全支付' },
-                  { id: 'unionpay', label: '云闪付', desc: '银联快捷直连' },
-                  { id: 'applepay', label: 'Apple Pay', desc: '指纹/面容快速付' },
                 ].map((m) => (
                   <button
                     key={m.id}

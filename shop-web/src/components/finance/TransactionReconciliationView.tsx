@@ -131,7 +131,7 @@ export const TransactionReconciliationView: React.FC = () => {
             </span>
           </div>
           <p className="text-xs md:text-sm text-[#434655] mt-0.5">
-            全渠道支付收单流水、银行与微信/支付宝三方对账、手续费日结与退款冲销审计。
+            微信支付收单流水、银行对账、手续费日结与退款冲销审计；其他支付渠道暂未接入。
           </p>
         </div>
 
@@ -294,7 +294,7 @@ export const TransactionReconciliationView: React.FC = () => {
                   <td className="py-3 px-4">
                     <div className="text-xs font-semibold text-gray-800">
                       {t.channel === 'wechat_pay' && '微信支付 (WeChat Pay)'}
-                      {t.channel === 'alipay' && '支付宝 (Alipay)'}
+                      {t.channel === 'alipay' && '其他渠道（历史）'}
                       {t.channel === 'balance_pay' && '会员余额支付'}
                       {t.channel === 'unionpay' && '银联快捷/转账'}
                     </div>

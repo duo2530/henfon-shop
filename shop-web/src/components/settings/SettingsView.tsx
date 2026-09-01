@@ -21,10 +21,9 @@ export const SettingsView: React.FC = () => {
   const [storeContactPhone, setStoreContactPhone] = useState('400-888-9999');
   const [storeContactEmail, setStoreContactEmail] = useState('support@brandmall.com');
   const [lowStockThreshold, setLowStockThreshold] = useState(10);
-  const [autoNotifySms, setAutoNotifySms] = useState(true);
+  const [autoNotifyEmail, setAutoNotifyEmail] = useState(true);
   const [autoTrackingSync, setAutoTrackingSync] = useState(true);
   const [enableWechatPay, setEnableWechatPay] = useState(true);
-  const [enableAlipay, setEnableAlipay] = useState(true);
   const [defaultCarrier, setDefaultCarrier] = useState('顺丰速运');
 
   const handleSaveSettings = (e: React.FormEvent) => {
@@ -36,7 +35,7 @@ export const SettingsView: React.FC = () => {
   const handleResetSettings = () => {
     setStoreName('极简臻品官方旗舰店');
     setLowStockThreshold(10);
-    setAutoNotifySms(true);
+    setAutoNotifyEmail(true);
     setAutoTrackingSync(true);
     showToast('已重置为默认系统配置', 'info');
   };
@@ -131,7 +130,7 @@ export const SettingsView: React.FC = () => {
             </div>
             <div>
               <h3 className="text-base font-semibold text-gray-900">库存预警与自动化通知</h3>
-              <p className="text-xs text-gray-500">配置低库存告警阈值及买家订单短信/应用通知机制</p>
+              <p className="text-xs text-gray-500">配置低库存告警阈值及买家订单邮件通知机制</p>
             </div>
           </div>
 
@@ -155,13 +154,13 @@ export const SettingsView: React.FC = () => {
 
             <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
               <div>
-                <span className="font-semibold text-gray-800 text-sm">买家支付成功后自动发送短信与App通知</span>
+                <span className="font-semibold text-gray-800 text-sm">买家支付成功后自动发送邮件通知</span>
                 <p className="text-xs text-gray-500">包含订单编号、预计发货时间及售后保障提示</p>
               </div>
               <input
                 type="checkbox"
-                checked={autoNotifySms}
-                onChange={(e) => setAutoNotifySms(e.target.checked)}
+                checked={autoNotifyEmail}
+                onChange={(e) => setAutoNotifyEmail(e.target.checked)}
                 className="w-5 h-5 rounded text-blue-600 focus:ring-blue-500 cursor-pointer"
               />
             </div>
@@ -243,22 +242,8 @@ export const SettingsView: React.FC = () => {
               />
             </div>
 
-            <div className="flex items-center justify-between p-3.5 border border-gray-200 rounded-lg">
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-lg bg-blue-50 text-blue-700 flex items-center justify-center font-bold text-xs">
-                  支
-                </div>
-                <div>
-                  <h4 className="text-sm font-semibold text-gray-900">支付宝 (Alipay)</h4>
-                  <p className="text-xs text-gray-500">支持快捷收银台、花呗分期及当面付</p>
-                </div>
-              </div>
-              <input
-                type="checkbox"
-                checked={enableAlipay}
-                onChange={(e) => setEnableAlipay(e.target.checked)}
-                className="w-5 h-5 rounded text-blue-600 focus:ring-blue-500 cursor-pointer"
-              />
+            <div className="rounded-lg border border-dashed border-gray-200 bg-gray-50 p-3 text-xs text-gray-500">
+              支付宝暂未接入，当前仅开放微信支付。
             </div>
           </div>
         </div>

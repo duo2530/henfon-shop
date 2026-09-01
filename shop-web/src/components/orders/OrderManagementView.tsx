@@ -762,7 +762,7 @@ export const OrderManagementView: React.FC = () => {
                           ¥{order.amount.toFixed(2)}
                         </div>
                         <div className="text-[11px] text-gray-400 mt-0.5">
-                          {order.discountAmount ? `已减 ¥${order.discountAmount}` : '微信/支付宝'}
+                          {order.discountAmount ? `已减 ¥${order.discountAmount}` : '微信支付'}
                         </div>
                       </td>
 
