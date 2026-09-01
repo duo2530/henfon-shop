@@ -81,6 +81,7 @@ public class MarketingCouponAdminService {
         coupon.setTag(trimToNull(request.tag()));
         coupon.setDescription(trimToNull(request.description()));
         coupon.setTotalQuantity(request.totalQuantity());
+        coupon.setPerMemberLimit(request.perMemberLimit());
         coupon.setStartAt(request.startAt());
         coupon.setEndAt(request.endAt());
         coupon.setStatus(request.status());
@@ -92,6 +93,10 @@ public class MarketingCouponAdminService {
                 MarketingCoupon existing = requireCoupon(coupon.getId());
                 if (request.totalQuantity() < existing.getClaimedQuantity()) {
                     throw new BusinessException("MARKETING_COUPON_QUANTITY_INVALID", "发行总量不能小于已领取数量");
+                }
+                // 已有领取记录继续沿用当前配置，管理员只能把单会员上限调高到合法范围。
+                if (request.perMemberLimit() == null || request.perMemberLimit() < 1) {
+                    throw new BusinessException("MARKETING_COUPON_MEMBER_LIMIT_INVALID", "单会员领取上限必须大于 0");
                 }
                 coupon.setClaimedQuantity(existing.getClaimedQuantity());
                 // 带上查询到的版本号，确保后台编辑不会覆盖并发领取产生的最新数据。
@@ -149,6 +154,12 @@ public class MarketingCouponAdminService {
     private void validate(MarketingCouponSaveRequest request) {
         if (request.totalQuantity() < 0) {
             throw new BusinessException("MARKETING_COUPON_QUANTITY_INVALID", "发行总量不能为负数");
+        }
+        if (request.perMemberLimit() == null || request.perMemberLimit() < 1 || request.perMemberLimit() > 999999) {
+            throw new BusinessException("MARKETING_COUPON_MEMBER_LIMIT_INVALID", "单会员领取上限必须在 1 到 999999 之间");
+        }
+        if (request.totalQuantity() > 0 && request.perMemberLimit() > request.totalQuantity()) {
+            throw new BusinessException("MARKETING_COUPON_MEMBER_LIMIT_INVALID", "单会员领取上限不能超过发行总量");
         }
         if (request.startAt().isAfter(request.endAt())) {
             throw new BusinessException("MARKETING_COUPON_TIME_INVALID", "优惠券开始时间不能晚于结束时间");

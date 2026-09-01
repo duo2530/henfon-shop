@@ -36,6 +36,7 @@ export interface CouponItem {
   discountValue: number; // e.g. 50 (for ¥50 off) or 85 (for 8.5折)
   minSpend: number;
   totalQuantity: number;
+  perMemberLimit: number;
   claimedQuantity: number;
   /** 后端暂未返回核销统计时保持 undefined，避免展示虚构数据。 */
   usedQuantity?: number;
@@ -63,6 +64,7 @@ function mapBackendCoupon(record: BackendMarketingCoupon): CouponItem {
     discountValue: Number(record.discountAmount || 0),
     minSpend: Number(record.minSpend || 0),
     totalQuantity: Number(record.totalQuantity || 0),
+    perMemberLimit: Number(record.perMemberLimit || 1),
     claimedQuantity: Number(record.claimedQuantity || 0),
     usedQuantity: record.usedQuantity == null ? undefined : Number(record.usedQuantity),
     status,
@@ -94,6 +96,7 @@ export const CouponManagementView: React.FC = () => {
     discountValue: 20,
     minSpend: 100,
     totalQuantity: 1000,
+    perMemberLimit: 1,
     status: 'active',
     startDate: new Date().toISOString().split('T')[0],
     endDate: new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0],
@@ -186,6 +189,7 @@ export const CouponManagementView: React.FC = () => {
         tag: formData.type,
         description: formData.name,
         totalQuantity: formData.totalQuantity,
+        perMemberLimit: formData.perMemberLimit,
         startAt: `${formData.startDate}T00:00:00`,
         endAt: `${formData.endDate}T23:59:59`,
         status: formData.status === 'active' ? 1 : 0,
@@ -201,11 +205,11 @@ export const CouponManagementView: React.FC = () => {
   const handleExportCSV = () => {
     const csvContent =
       'data:text/csv;charset=utf-8,\uFEFF' +
-      '优惠券ID,券名称,券代码,类型,优惠额度,门槛金额,总发放量,已领取,已核销,状态,有效期\n' +
+      '优惠券ID,券名称,券代码,类型,优惠额度,门槛金额,总发放量,单会员上限,已领取,已核销,状态,有效期\n' +
       filteredCoupons
         .map(
           (c) =>
-            `"${c.id}","${c.name}","${c.code}","${c.type}",${c.discountValue},${c.minSpend},${c.totalQuantity},${c.claimedQuantity},${c.usedQuantity ?? ''},"${c.status}","${c.startDate} ~ ${c.endDate}"`
+            `"${c.id}","${c.name}","${c.code}","${c.type}",${c.discountValue},${c.minSpend},${c.totalQuantity},${c.perMemberLimit},${c.claimedQuantity},${c.usedQuantity ?? ''},"${c.status}","${c.startDate} ~ ${c.endDate}"`
         )
         .join('\n');
     const encodedUri = encodeURI(csvContent);
@@ -254,6 +258,7 @@ export const CouponManagementView: React.FC = () => {
                 discountValue: 30,
                 minSpend: 200,
                 totalQuantity: 2000,
+                perMemberLimit: 1,
                 status: 'active',
                 startDate: new Date().toISOString().split('T')[0],
                 endDate: new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0],
@@ -446,7 +451,7 @@ export const CouponManagementView: React.FC = () => {
                           {coupon.minSpend > 0 ? `满 ¥${coupon.minSpend} 可用` : '无门槛立减'}
                         </div>
                         <div className="text-[11px] text-gray-500 mt-0.5">
-                          {coupon.scope === 'all' ? '全场通用' : `${coupon.scopeTargetName || '指定品类'}`}
+                          {coupon.scope === 'all' ? '全场通用' : `${coupon.scopeTargetName || '指定品类'}`} · 单会员限领 {coupon.perMemberLimit} 张
                         </div>
                       </td>
 
@@ -579,6 +584,10 @@ export const CouponManagementView: React.FC = () => {
                   </span>
                 </div>
                 <div className="p-2.5 bg-gray-50 rounded-lg">
+                  <span className="text-gray-400 block mb-0.5">单会员领取上限</span>
+                  <span className="font-bold text-blue-700">{inspectCoupon.perMemberLimit} 张</span>
+                </div>
+                <div className="p-2.5 bg-gray-50 rounded-lg">
                   <span className="text-gray-400 block mb-0.5">实际核销订单</span>
                   <span className="font-bold text-emerald-700">
                     {inspectCoupon.usedQuantity == null ? '待同步' : `${inspectCoupon.usedQuantity} 笔`}
@@ -670,6 +679,17 @@ export const CouponManagementView: React.FC = () => {
                     required
                     value={formData.totalQuantity}
                     onChange={(e) => setFormData({ ...formData, totalQuantity: parseInt(e.target.value, 10) || 1 })}
+                    className="w-full h-[36px] px-3 rounded-lg border border-gray-300 outline-none text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">单会员领取上限 *</label>
+                  <input
+                    type="number"
+                    required
+                    min={1}
+                    value={formData.perMemberLimit}
+                    onChange={(e) => setFormData({ ...formData, perMemberLimit: parseInt(e.target.value, 10) || 1 })}
                     className="w-full h-[36px] px-3 rounded-lg border border-gray-300 outline-none text-sm"
                   />
                 </div>

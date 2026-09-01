@@ -23,6 +23,7 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -105,6 +106,29 @@ class MarketingPortalServiceTest {
         // 无匹配类目时应在核销前直接拒绝，避免产生优惠流水。
         assertThrows(BusinessException.class,
                 () -> service.redeem(memberId, new MarketingCouponRedeemRequest(couponId, orderId)));
+    }
+
+    /**
+     * 验证会员达到优惠券领取上限后拒绝继续领取。
+     *
+     * @author Henfon
+     * @date 2026-09-01
+     */
+    @Test
+    void shouldRejectClaimWhenPerMemberLimitReached() {
+        long memberId = 7L;
+        long couponId = 11L;
+        MarketingCoupon coupon = activeCategoryCoupon(couponId, "DIGITAL");
+        coupon.setPerMemberLimit(1);
+
+        // 模拟当前会员已经拥有一张该优惠券，但逻辑删除记录不应被重复计算由 Mapper 过滤。
+        when(memberCouponMapper.selectOne(any())).thenReturn(null);
+        when(couponMapper.selectById(couponId)).thenReturn(coupon);
+        when(memberCouponMapper.selectCount(any())).thenReturn(1L);
+
+        assertThrows(BusinessException.class, () -> service.claim(memberId, couponId));
+        // 达到上限时应在库存递增前失败，避免错误消耗发行库存。
+        verify(couponMapper, never()).incrementClaimed(org.mockito.ArgumentMatchers.eq(couponId), any());
     }
 
     /**

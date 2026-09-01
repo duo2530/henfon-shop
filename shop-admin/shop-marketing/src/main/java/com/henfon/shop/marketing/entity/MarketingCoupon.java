@@ -29,6 +29,8 @@ public class MarketingCoupon {
     private String tag;
     private String description;
     private Integer totalQuantity;
+    /** 单个会员最多可领取的张数。 */
+    private Integer perMemberLimit;
     private Integer claimedQuantity;
     private LocalDateTime startAt;
     private LocalDateTime endAt;

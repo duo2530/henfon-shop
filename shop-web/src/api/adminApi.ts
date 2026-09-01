@@ -278,6 +278,7 @@ export interface BackendMarketingCoupon {
   tag?: string;
   description?: string;
   totalQuantity: number;
+  perMemberLimit: number;
   claimedQuantity: number;
   /** 可选核销统计，后端未返回时前端展示为待同步。 */
   usedQuantity?: number;
@@ -1087,6 +1088,7 @@ export function saveMarketingCoupon(payload: {
   tag?: string;
   description?: string;
   totalQuantity: number;
+  perMemberLimit: number;
   startAt: string;
   endAt: string;
   status: number;

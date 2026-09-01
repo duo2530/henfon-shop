@@ -121,6 +121,17 @@ public class MarketingPortalService {
                 || now.isBefore(coupon.getStartAt()) || now.isAfter(coupon.getEndAt())) {
             throw new BusinessException("MARKETING_COUPON_INACTIVE", "优惠券当前不可领取");
         }
+        int perMemberLimit = coupon.getPerMemberLimit() == null ? 1 : coupon.getPerMemberLimit();
+        if (perMemberLimit < 1) {
+            throw new BusinessException("MARKETING_COUPON_MEMBER_LIMIT_INVALID", "优惠券单会员领取上限配置无效");
+        }
+        // 领取记录按会员和优惠券维度统计，兼容历史数据中尚未回填上限字段的优惠券。
+        long memberClaimedCount = memberCouponMapper.selectCount(new LambdaQueryWrapper<MarketingMemberCoupon>()
+                .eq(MarketingMemberCoupon::getMemberId, memberId)
+                .eq(MarketingMemberCoupon::getCouponId, couponId));
+        if (memberClaimedCount >= perMemberLimit) {
+            throw new BusinessException("MARKETING_COUPON_MEMBER_LIMIT_REACHED", "已达到该优惠券的单会员领取上限");
+        }
         // 仅在库存充足时递增已领取数量，避免并发请求超发。
         if (couponMapper.incrementClaimed(couponId, now) == 0) {
             throw new BusinessException("MARKETING_COUPON_SOLD_OUT", "优惠券已领完");

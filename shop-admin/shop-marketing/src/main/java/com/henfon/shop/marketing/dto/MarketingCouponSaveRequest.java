@@ -1,6 +1,8 @@
 package com.henfon.shop.marketing.dto;
 
 import jakarta.validation.constraints.DecimalMin;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
@@ -24,6 +26,7 @@ public record MarketingCouponSaveRequest(
         @Size(max = 64) String tag,
         @Size(max = 500) String description,
         @NotNull Integer totalQuantity,
+        @NotNull @Min(1) @Max(999999) Integer perMemberLimit,
         @NotNull LocalDateTime startAt,
         @NotNull LocalDateTime endAt,
         @NotNull Integer status

@@ -87,7 +87,7 @@ HTTP 状态：成功 2xx；参数/业务错误 400；认证失败 401；无权�
 
 ### shop-marketing（优惠券、秒杀）
 
-- 门户：`GET /api/portal/marketing/coupons|member-coupons`、`POST /coupons/{couponId}/claim`、`POST /coupons/redeem|rollback`。核销时服务端校验优惠券适用类目；订单取消可主动回滚，订单全额退款成功事件会自动幂等回滚已核销优惠券。
+- 门户：`GET /api/portal/marketing/coupons|member-coupons`、`POST /coupons/{couponId}/claim`、`POST /coupons/redeem|rollback`。领取时校验单会员领取上限和发行总量；核销时服务端校验优惠券适用类目；订单取消可主动回滚，订单全额退款成功事件会自动幂等回滚已核销优惠券。
 - 管理优惠券：`GET/POST /api/admin/marketing/coupons`（分页/保存）、`PUT /{id}/status`、`DELETE /{id}`。
 - 管理秒杀：`GET /api/admin/marketing/flash-sales`、`GET /{id}/items`、`POST /`、`PUT /{id}/status`、`DELETE /{id}`。
 
