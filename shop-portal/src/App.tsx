@@ -393,7 +393,8 @@ export default function App() {
           if (selectedCategory === 'home') return value.includes('home') || value.includes('家居');
           if (selectedCategory === 'fashion') return value.includes('fashion') || value.includes('服饰');
           if (selectedCategory === 'outdoor') return value.includes('outdoor') || value.includes('户外');
-          if (selectedCategory === 'lifestyle') return value.includes('lifestyle') || value.includes('生活') || value.includes('咖啡');
+          // “咖啡美食”不能使用“生活”泛匹配，否则会误命中“家居生活”类目。
+          if (selectedCategory === 'lifestyle') return value.includes('lifestyle') || value.includes('咖啡美食') || value.includes('咖啡');
           return false;
         })?.id;
 
