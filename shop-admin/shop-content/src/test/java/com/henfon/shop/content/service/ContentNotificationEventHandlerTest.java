@@ -67,6 +67,27 @@ class ContentNotificationEventHandlerTest {
     }
 
     /**
+     * 校验退货入库事件生成明确的售后进度通知。
+     *
+     * @author Henfon
+     * @date 2026-09-01
+     */
+    @Test
+    void shouldHandleReturnReceivedEvent() {
+        ContentNotificationEventHandler handler = new ContentNotificationEventHandler(notificationService,
+                new ObjectMapper());
+        handler.handle(new DomainEvent("evt-return", "AFTER_SALE_RETURN_RECEIVED", "11", Instant.now(),
+                "{\"memberId\":21,\"orderId\":11,\"orderNo\":\"ORD-11\",\"afterSaleNo\":\"AS-11\"}"));
+
+        ArgumentCaptor<NotificationEventRequest> captor = ArgumentCaptor.forClass(NotificationEventRequest.class);
+        verify(notificationService).saveEvent(captor.capture());
+        NotificationEventRequest request = captor.getValue();
+        assertEquals("AFTER_SALE_RETURN_RECEIVED", request.eventType());
+        assertEquals("退货已入库", request.title());
+        assertEquals("售后单 AS-11 的退货已入库，退款将继续处理。", request.content());
+    }
+
+    /**
      * 校验消费者不会吞掉处理异常，RocketMQ 才能执行重试/DLQ。
      *
      * @author Henfon

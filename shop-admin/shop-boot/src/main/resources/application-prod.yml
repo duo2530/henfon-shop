@@ -2,6 +2,15 @@ spring:
   config:
     activate:
       on-profile: prod
+  mail:
+    # 生产环境通过部署平台注入 SMTP 账号，默认不开启业务邮件。
+    host: ${SHOP_MAIL_HOST:}
+    port: ${SHOP_MAIL_PORT:587}
+    username: ${SHOP_MAIL_USERNAME:}
+    password: ${SHOP_MAIL_PASSWORD:}
+    properties:
+      mail.smtp.auth: ${SHOP_MAIL_SMTP_AUTH:true}
+      mail.smtp.starttls.enable: ${SHOP_MAIL_SMTP_STARTTLS:true}
   datasource:
     # 生产环境不提供默认连接信息，必须通过部署平台注入环境变量。
     url: ${SHOP_MYSQL_URL}
@@ -41,6 +50,11 @@ shop:
     outbox-initial-delay-ms: ${SHOP_OUTBOX_INITIAL_DELAY_MS:10000}
     logistics-sync-scan-ms: ${SHOP_LOGISTICS_SYNC_SCAN_MS:600000}
     logistics-sync-initial-delay-ms: ${SHOP_LOGISTICS_SYNC_INITIAL_DELAY_MS:30000}
+  notification:
+    email:
+      enabled: ${SHOP_EMAIL_NOTIFICATION_ENABLED:false}
+      from: ${SHOP_EMAIL_FROM:}
+      subject-prefix: ${SHOP_EMAIL_SUBJECT_PREFIX:Henfon商城}
   integration:
     logistics:
       kuaidi100:

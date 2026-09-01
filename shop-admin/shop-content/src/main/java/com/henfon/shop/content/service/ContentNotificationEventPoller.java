@@ -26,6 +26,7 @@ public class ContentNotificationEventPoller {
 
     private final TradeEventOutboxNotificationMapper eventMapper;
     private final ContentNotificationService notificationService;
+    private final EmailNotificationService emailNotificationService;
     private final ObjectMapper objectMapper;
 
     /**
@@ -33,15 +34,18 @@ public class ContentNotificationEventPoller {
      *
      * @param eventMapper Outbox 事件读取器
      * @param notificationService 通知应用服务
+     * @param emailNotificationService 邮件通知适配器
      * @param objectMapper JSON 解析器
      * @author Henfon
      * @date 2026-08-31
      */
     public ContentNotificationEventPoller(TradeEventOutboxNotificationMapper eventMapper,
                                            ContentNotificationService notificationService,
+                                           EmailNotificationService emailNotificationService,
                                            ObjectMapper objectMapper) {
         this.eventMapper = eventMapper;
         this.notificationService = notificationService;
+        this.emailNotificationService = emailNotificationService;
         this.objectMapper = objectMapper;
     }
 
@@ -101,9 +105,12 @@ public class ContentNotificationEventPoller {
                     content = "订单 " + orderNo + " 的售后状态已更新，请进入订单查看详情。";
                 }
             }
+            String dedupeKey = "ROCKETMQ:" + event.eventId();
             notificationService.saveEvent(new com.henfon.shop.content.dto.NotificationEventRequest(
                     // 与 RocketMQ 消费者使用同一幂等键，兼容轮询兜底时不会重复生成通知。
-                    memberId, orderId, orderNo, eventType, title, content, "ROCKETMQ:" + event.eventId()));
+                    memberId, orderId, orderNo, eventType, title, content, dedupeKey));
+            // Outbox 兜底链路同样触发邮件，适配器内部按事件幂等键避免重复发送。
+            emailNotificationService.sendIfConfigured(memberId, eventType, title, content, dedupeKey);
         } catch (Exception exception) {
             // 单条脏事件跳过并记录日志，避免阻塞同批次其他会员通知。
             log.warn("交易事件转换站内通知失败，eventId={}", event.eventId(), exception);

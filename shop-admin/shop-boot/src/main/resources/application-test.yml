@@ -2,6 +2,15 @@ spring:
   config:
     activate:
       on-profile: test
+  mail:
+    # 测试环境默认关闭邮件通知，避免自动化测试访问外部 SMTP。
+    host: ${SHOP_TEST_MAIL_HOST:}
+    port: ${SHOP_TEST_MAIL_PORT:587}
+    username: ${SHOP_TEST_MAIL_USERNAME:}
+    password: ${SHOP_TEST_MAIL_PASSWORD:}
+    properties:
+      mail.smtp.auth: ${SHOP_TEST_MAIL_SMTP_AUTH:true}
+      mail.smtp.starttls.enable: ${SHOP_TEST_MAIL_SMTP_STARTTLS:true}
   datasource:
     # 测试环境默认使用独立库，避免测试数据污染开发库；执行测试前请创建该数据库或覆盖连接串。
     url: ${SHOP_TEST_MYSQL_URL:jdbc:mysql://127.0.0.1:3306/henfon-shop-test?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true}
@@ -37,6 +46,11 @@ shop:
     outbox-initial-delay-ms: ${SHOP_TEST_OUTBOX_INITIAL_DELAY_MS:10000}
     logistics-sync-scan-ms: ${SHOP_TEST_LOGISTICS_SYNC_SCAN_MS:600000}
     logistics-sync-initial-delay-ms: ${SHOP_TEST_LOGISTICS_SYNC_INITIAL_DELAY_MS:30000}
+  notification:
+    email:
+      enabled: ${SHOP_TEST_EMAIL_NOTIFICATION_ENABLED:false}
+      from: ${SHOP_TEST_EMAIL_FROM:}
+      subject-prefix: ${SHOP_TEST_EMAIL_SUBJECT_PREFIX:Henfon商城}
   integration:
     logistics:
       kuaidi100:

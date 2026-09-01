@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.henfon.shop.content.dto.NotificationEventRequest;
 import com.henfon.shop.integration.messaging.DomainEvent;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
@@ -21,6 +22,7 @@ public class ContentNotificationEventHandler {
 
     private final ContentNotificationService notificationService;
     private final ObjectMapper objectMapper;
+    private final EmailNotificationService emailNotificationService;
 
     /**
      * 创建领域事件通知处理器。
@@ -32,8 +34,25 @@ public class ContentNotificationEventHandler {
      */
     public ContentNotificationEventHandler(ContentNotificationService notificationService,
                                            ObjectMapper objectMapper) {
+        this(notificationService, objectMapper, null);
+    }
+
+    /**
+     * 创建带邮件通知能力的领域事件处理器。
+     *
+     * @param notificationService 通知落库服务
+     * @param objectMapper JSON 解析器
+     * @param emailNotificationService 邮件通知适配器
+     * @author Henfon
+     * @date 2026-09-01
+     */
+    @Autowired
+    public ContentNotificationEventHandler(ContentNotificationService notificationService,
+                                           ObjectMapper objectMapper,
+                                           EmailNotificationService emailNotificationService) {
         this.notificationService = notificationService;
         this.objectMapper = objectMapper;
+        this.emailNotificationService = emailNotificationService;
     }
 
     /**
@@ -60,8 +79,13 @@ public class ContentNotificationEventHandler {
         String title = title(eventType);
         String content = content(eventType, payload, orderNo, businessId);
         // 与 Outbox 轮询兜底消费者共用事件幂等键，避免两条链路同时消费产生重复通知。
+        String dedupeKey = "ROCKETMQ:" + event.eventId();
         notificationService.saveEvent(new NotificationEventRequest(memberId, orderId, businessId,
-                eventType, title, content, "ROCKETMQ:" + event.eventId()));
+                eventType, title, content, dedupeKey));
+        // 邮件适配器未配置时安全跳过，仅保留站内通知；发送失败也不阻断事件消费。
+        if (emailNotificationService != null) {
+            emailNotificationService.sendIfConfigured(memberId, eventType, title, content, dedupeKey);
+        }
     }
 
     /**
@@ -113,6 +137,7 @@ public class ContentNotificationEventHandler {
             case "REFUND_SUCCEEDED" -> "退款成功";
             case "AFTER_SALE_CREATED" -> "售后申请已提交";
             case "AFTER_SALE_APPROVED" -> "售后审核通过";
+            case "AFTER_SALE_RETURN_RECEIVED" -> "退货已入库";
             case "AFTER_SALE_REJECTED" -> "售后申请被驳回";
             case "AFTER_SALE_CANCELLED" -> "售后申请已取消";
             case "AFTER_SALE_COMPLETED" -> "售后处理完成";
@@ -138,6 +163,7 @@ public class ContentNotificationEventHandler {
             case "REFUND_SUCCEEDED" -> "订单 " + orderNo + " 退款已完成。";
             case "AFTER_SALE_CREATED" -> "售后单 " + businessId + " 已提交，等待商家审核。";
             case "AFTER_SALE_APPROVED" -> "售后单 " + businessId + " 已审核通过，平台将继续处理。";
+            case "AFTER_SALE_RETURN_RECEIVED" -> "售后单 " + businessId + " 的退货已入库，退款将继续处理。";
             case "AFTER_SALE_REJECTED" -> "售后单 " + businessId + " 未通过审核，请查看售后备注。";
             case "AFTER_SALE_CANCELLED" -> "售后单 " + businessId + " 已取消。";
             case "AFTER_SALE_COMPLETED" -> "售后单 " + businessId + " 已处理完成。";
