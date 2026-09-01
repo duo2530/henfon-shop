@@ -176,6 +176,7 @@ export default function App() {
   const [banners, setBanners] = useState<PortalBanner[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [skuKeyword, setSkuKeyword] = useState<string>('');
   const [sortBy, setSortBy] = useState<SortOption>('featured');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
 
@@ -394,6 +395,7 @@ export default function App() {
       categoryId,
       minPrice: priceRange[0] > 0 ? priceRange[0] : undefined,
       maxPrice: priceRange[1] < 2000 ? priceRange[1] : undefined,
+      skuKeyword: skuKeyword.trim() || undefined,
       sortBy: sortBy === 'rating' ? 'featured' : sortBy,
       current: productPage,
       size: 24,
@@ -418,7 +420,7 @@ export default function App() {
     return () => {
       active = false;
     };
-  }, [productPage, productReloadKey, selectedCategory, searchQuery, sortBy, priceRange, portalCategories]);
+  }, [productPage, productReloadKey, selectedCategory, searchQuery, skuKeyword, sortBy, priceRange, portalCategories]);
 
   // Claimed coupons in user's account
   const [claimedCouponCodes, setClaimedCouponCodes] = useState<string[]>(() => {
@@ -1713,6 +1715,16 @@ export default function App() {
           const matchCat = prod.categoryLabel.toLowerCase().includes(q);
           if (!matchTitle && !matchSub && !matchBrand && !matchCat) return false;
         }
+        if (skuKeyword.trim()) {
+          const query = skuKeyword.trim().toLowerCase();
+          const matchSku = (prod.skus || []).some((sku) => {
+            const attributes = Object.entries(sku.attributes || {}).map(([name, value]) => `${name}:${value}`).join(' ');
+            return sku.skuCode.toLowerCase().includes(query)
+              || sku.skuName.toLowerCase().includes(query)
+              || attributes.toLowerCase().includes(query);
+          });
+          if (!matchSku) return false;
+        }
         // Stock filter
         if (onlyInStock && prod.stock <= 0) return false;
         // Discount filter
@@ -1739,7 +1751,7 @@ export default function App() {
             return 0;
         }
       });
-  }, [products, selectedCategory, searchQuery, onlyInStock, onlyDiscount, priceRange, sortBy]);
+  }, [products, selectedCategory, searchQuery, skuKeyword, onlyInStock, onlyDiscount, priceRange, sortBy]);
 
   const wishlistedProductsList = products.filter((p) => wishlist.includes(p.id));
   const comparedProductsList = products.filter((p) => compareProductIds.includes(p.id));
@@ -1856,6 +1868,16 @@ export default function App() {
 
             {/* Right: Quick toggles & Sort selector & View Mode */}
             <div className="flex items-center gap-2.5 sm:gap-3 flex-wrap">
+              <label className="flex items-center gap-2 text-xs text-zinc-500">
+                <span className="sr-only">SKU 筛选</span>
+                <input
+                  value={skuKeyword}
+                  onChange={(event) => { setSkuKeyword(event.target.value); setProductPage(1); }}
+                  placeholder="筛选 SKU 编码/规格"
+                  aria-label="筛选 SKU 编码或规格"
+                  className="h-8 w-40 rounded-xl border border-zinc-200 px-3 text-xs text-zinc-700 outline-none focus:border-zinc-500"
+                />
+              </label>
               {/* Compare Mode Button */}
               <div className="flex items-center gap-1.5">
                 <button
