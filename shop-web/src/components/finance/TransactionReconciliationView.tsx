@@ -1,19 +1,15 @@
-import React, { useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { useAdmin } from '../../context/AdminContext';
+import { listPaymentReconciliation, BackendPaymentReconciliationRecord } from '../../api/adminApi';
 import { 
   DollarSign, 
   ArrowUpRight, 
   ArrowDownLeft, 
   Search, 
   Download, 
-  Filter, 
   CheckCircle2, 
   Clock, 
-  AlertTriangle, 
   CreditCard, 
-  TrendingUp, 
-  FileSpreadsheet, 
-  Calendar 
 } from 'lucide-react';
 
 export interface FinanceTransaction {
@@ -31,99 +27,49 @@ export interface FinanceTransaction {
   notes?: string;
 }
 
-const mockTransactions: FinanceTransaction[] = [
-  {
-    id: 'tx-1001',
-    transNo: 'TX2026082910001',
-    orderNumber: 'ORD20260829101',
-    type: 'order_income',
-    channel: 'wechat_pay',
-    amount: 1299.00,
-    fee: 7.79, // 0.6% fee
-    netAmount: 1291.21,
-    status: 'reconciled',
-    settledAt: '2026-08-29 10:45:12',
-    accountNumber: 'wx_mch_18920199',
-    notes: '极客降噪无线耳机 订单收款'
-  },
-  {
-    id: 'tx-1002',
-    transNo: 'TX2026082910002',
-    orderNumber: 'ORD20260829102',
-    type: 'order_income',
-    channel: 'alipay',
-    amount: 458.00,
-    fee: 2.75,
-    netAmount: 455.25,
-    status: 'reconciled',
-    settledAt: '2026-08-29 11:12:05',
-    accountNumber: '2088719201928371',
-    notes: '智能无线充电座 订单收款'
-  },
-  {
-    id: 'tx-1003',
-    transNo: 'TX2026082910003',
-    orderNumber: 'ORD20260828089',
-    type: 'refund_payout',
-    channel: 'wechat_pay',
-    amount: -320.00,
-    fee: 0,
-    netAmount: -320.00,
-    status: 'reconciled',
-    settledAt: '2026-08-29 12:00:33',
-    accountNumber: 'wx_mch_18920199',
-    notes: '客户协商原路全额退款'
-  },
-  {
-    id: 'tx-1004',
-    transNo: 'TX2026082910004',
-    orderNumber: 'ORD20260829110',
-    type: 'order_income',
-    channel: 'balance_pay',
-    amount: 890.00,
-    fee: 0,
-    netAmount: 890.00,
-    status: 'reconciled',
-    settledAt: '2026-08-29 13:20:18',
-    accountNumber: 'MEMBER_WALLET',
-    notes: '会员卡钱包余额快捷抵扣'
-  },
-  {
-    id: 'tx-1005',
-    transNo: 'TX2026082910005',
-    orderNumber: 'ORD20260829115',
-    type: 'order_income',
-    channel: 'unionpay',
-    amount: 2850.00,
-    fee: 14.25,
-    netAmount: 2835.75,
-    status: 'pending_settle',
-    settledAt: '2026-08-29 14:10:00',
-    accountNumber: 'UP_62284819283',
-    notes: '企业大宗采购银行卡转账（T+1入账中）'
-  },
-  {
-    id: 'tx-1006',
-    transNo: 'TX2026082910006',
-    orderNumber: 'ORD20260828060',
-    type: 'commission_fee',
-    channel: 'wechat_pay',
-    amount: -45.60,
-    fee: 0,
-    netAmount: -45.60,
-    status: 'reconciled',
-    settledAt: '2026-08-28 23:59:59',
-    accountNumber: 'wx_mch_18920199',
-    notes: '微信支付日结商户结算手续费'
-  }
-];
+function toFinanceTransaction(record: BackendPaymentReconciliationRecord): FinanceTransaction {
+  return {
+    id: record.id,
+    transNo: record.transNo,
+    orderNumber: record.orderNumber,
+    type: record.type,
+    channel: record.channel,
+    amount: Number(record.amount || 0),
+    fee: Number(record.fee || 0),
+    netAmount: Number(record.netAmount || 0),
+    status: record.status,
+    settledAt: record.settledAt || '-',
+    accountNumber: record.accountNumber || '-',
+    notes: record.notes,
+  };
+}
 
 export const TransactionReconciliationView: React.FC = () => {
   const { showToast } = useAdmin();
-  const [transactions, setTransactions] = useState<FinanceTransaction[]>(mockTransactions);
+  const [transactions, setTransactions] = useState<FinanceTransaction[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [typeFilter, setTypeFilter] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<string>('all');
+
+  const loadTransactions = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const page = await listPaymentReconciliation({ current: 1, size: 200 });
+      setTransactions((page.records || []).map(toFinanceTransaction));
+    } catch (err) {
+      setTransactions([]);
+      setError(err instanceof Error ? err.message : '财务流水加载失败');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void loadTransactions();
+  }, []);
 
   const filtered = useMemo(() => {
     return transactions.filter((t) => {
@@ -191,11 +137,11 @@ export const TransactionReconciliationView: React.FC = () => {
 
         <div className="flex items-center gap-3">
           <button
-            onClick={() => showToast('正在与微信支付/支付宝官方接口同步最新出入金对账单...', 'info')}
+            onClick={() => { void loadTransactions(); }}
             className="h-[36px] px-3.5 rounded-lg border border-[#E2E8F0] bg-white text-gray-700 hover:bg-gray-50 flex items-center gap-2 text-xs font-semibold shadow-2xs transition-colors cursor-pointer"
           >
             <Clock className="w-4 h-4 text-gray-500" />
-            <span>拉取三方对账单</span>
+            <span>{loading ? '正在加载流水...' : '刷新真实流水'}</span>
           </button>
 
           <button
@@ -296,6 +242,12 @@ export const TransactionReconciliationView: React.FC = () => {
         </div>
 
         <div className="overflow-x-auto">
+          {error && (
+            <div className="m-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 flex items-center justify-between gap-3">
+              <span>{error}</span>
+              <button type="button" onClick={() => { void loadTransactions(); }} className="font-semibold underline">重新加载</button>
+            </div>
+          )}
           <table className="w-full text-left border-collapse">
             <thead className="bg-[#F8FAFC] border-b border-[#E2E8F0] text-xs font-semibold text-gray-600 uppercase tracking-wider">
               <tr>
@@ -309,7 +261,11 @@ export const TransactionReconciliationView: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100 text-sm text-gray-800">
-              {filtered.map((t) => (
+              {loading ? (
+                <tr><td colSpan={7} className="py-12 text-center text-gray-500">正在加载真实财务流水...</td></tr>
+              ) : filtered.length === 0 ? (
+                <tr><td colSpan={7} className="py-12 text-center text-gray-500">暂无符合条件的财务流水</td></tr>
+              ) : filtered.map((t) => (
                 <tr key={t.id} className="hover:bg-[#F8FAFC] transition-colors">
                   <td className="py-3 px-4">
                     <div className="font-mono font-bold text-gray-900 text-xs sm:text-sm">{t.transNo}</div>

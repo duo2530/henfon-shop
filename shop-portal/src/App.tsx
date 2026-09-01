@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Navbar } from './components/Navbar';
 import { HeroBanner } from './components/HeroBanner';
 import { ProductCard } from './components/ProductCard';
@@ -229,6 +229,8 @@ export default function App() {
       return [];
     }
   });
+  // 记录已尝试合并的会员，避免商品或其他会员数据刷新时重复提交本地购物车。
+  const cartMergeMemberRef = useRef<number | null>(null);
 
   const [wishlist, setWishlist] = useState<string[]>(() => {
     try {
@@ -449,7 +451,17 @@ export default function App() {
   // 登录会员存在可映射的数字 ID 时，加载服务端购物车、收藏和订单。
   useEffect(() => {
     const memberId = resolveMemberId(currentUser);
-    if (!memberId) return;
+    if (!memberId) {
+      // 退出后清除标记，下一位会员登录时允许再次执行合并。
+      cartMergeMemberRef.current = null;
+      return;
+    }
+    const shouldMergeLocalCart = !DEMO_MODE && cartMergeMemberRef.current !== memberId;
+    if (shouldMergeLocalCart) cartMergeMemberRef.current = memberId;
+    // 只提取登录前的本地条目，已经同步到服务端的 server-* 条目不再重复提交。
+    const localCartItems = shouldMergeLocalCart
+      ? cartItems.filter((item) => !item.id.startsWith('server-'))
+      : [];
     let active = true;
     Promise.all([
       fetchPortalCart(memberId),
@@ -457,8 +469,38 @@ export default function App() {
       fetchPortalOrders(memberId),
       fetchPortalAddresses(memberId),
     ])
-      .then(async ([remoteCart, remoteFavorites, remoteOrders, remoteAddresses]) => {
+      .then(async ([initialRemoteCart, remoteFavorites, remoteOrders, remoteAddresses]) => {
         if (!active) return;
+        let remoteCart = initialRemoteCart;
+        const failedLocalItems: CartItem[] = [];
+        if (shouldMergeLocalCart && localCartItems.length > 0) {
+          // 逐项合并，单条失败不阻断其余商品同步，并保留失败条目供用户重试。
+          const mergeResults = await Promise.all(localCartItems.map(async (item) => {
+            const productId = Number(item.productId.replace(/^prod-/, ''));
+            if (!Number.isFinite(productId) || productId <= 0) return { item, success: false };
+            try {
+              await addPortalCartItem(memberId, productId, item.quantity, item.skuId);
+              return { item, success: true };
+            } catch (error) {
+              console.warn(`本地购物车商品 ${item.productId} 合并失败`, error);
+              return { item, success: false };
+            }
+          }));
+          failedLocalItems.push(...mergeResults.filter((result) => !result.success).map((result) => result.item));
+          if (mergeResults.some((result) => result.success)) {
+            try {
+              // 合并成功后重新读取，获得服务端生成的条目 ID 和最新库存状态。
+              remoteCart = await fetchPortalCart(memberId);
+            } catch (error) {
+              console.warn('购物车合并后刷新服务端数据失败', error);
+              failedLocalItems.splice(0, failedLocalItems.length, ...localCartItems);
+              showToast('购物车已尝试合并，但服务端刷新失败，暂保留本地商品', 'info');
+            }
+          }
+          if (failedLocalItems.length > 0) {
+            showToast(`${failedLocalItems.length} 件本地购物车商品暂未同步，请稍后重试`, 'info');
+          }
+        }
         const productMap = new Map<number, Product>(
           products.map((product): [number, Product] => [Number(product.id.replace('prod-', '')), product])
         );
@@ -478,7 +520,8 @@ export default function App() {
             } as CartItem;
           })
           .filter((item): item is CartItem => Boolean(item));
-        if (mappedCart.length > 0) setCartItems(mappedCart);
+        // 服务端条目优先展示，合并失败条目追加在末尾，避免登录后丢失本地商品。
+        setCartItems([...mappedCart, ...failedLocalItems]);
         if (remoteFavorites.length > 0) setWishlist(remoteFavorites.map((item) => `prod-${item.productId}`));
         if (remoteAddresses.length > 0) {
           setMemberAddresses(remoteAddresses.map((address) => ({

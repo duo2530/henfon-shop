@@ -184,10 +184,9 @@ public class MarketingPortalService {
         if (!Integer.valueOf(10).equals(order.getOrderStatus()) || !Integer.valueOf(0).equals(order.getPaymentStatus())) {
             throw new BusinessException("MARKETING_COUPON_ORDER_STATUS_INVALID", "订单当前状态不允许使用优惠券");
         }
-        validateCouponCategory(coupon, request.orderId());
-        BigDecimal subtotal = order.getSubtotalAmount() == null ? BigDecimal.ZERO : order.getSubtotalAmount();
+        BigDecimal subtotal = calculateApplicableSubtotal(coupon, request.orderId(), order);
         if (subtotal.compareTo(coupon.getMinSpend()) < 0) {
-            throw new BusinessException("MARKETING_COUPON_MIN_SPEND", "订单金额未达到优惠券使用门槛");
+            throw new BusinessException("MARKETING_COUPON_MIN_SPEND", "优惠券适用商品金额未达到使用门槛");
         }
         BigDecimal configuredDiscount = coupon.getDiscountAmount() == null ? BigDecimal.ZERO : coupon.getDiscountAmount();
         if (configuredDiscount.signum() < 0) {
@@ -214,34 +213,49 @@ public class MarketingPortalService {
     }
 
     /**
-     * 校验优惠券适用类目，空类目编码代表全场优惠券；类目券要求订单内所有商品均属于该类目。
+     * 计算优惠券可抵扣的商品金额，类目券只统计命中类目的订单明细。
      *
      * @param coupon 优惠券
      * @param orderId 订单ID
+     * @param order 订单主表
+     * @return 可参与门槛和抵扣计算的商品金额
      * @author Henfon
      * @date 2026-09-01
      */
-    private void validateCouponCategory(MarketingCoupon coupon, Long orderId) {
+    private BigDecimal calculateApplicableSubtotal(MarketingCoupon coupon, Long orderId, TradeOrder order) {
+        BigDecimal orderSubtotal = order.getSubtotalAmount() == null ? BigDecimal.ZERO : order.getSubtotalAmount();
         String couponCategoryCode = coupon.getCategoryCode();
         if (!StringUtils.hasText(couponCategoryCode)) {
-            return;
+            return orderSubtotal;
         }
         List<TradeOrderItem> items = tradeOrderService.listItems(orderId);
         if (items == null || items.isEmpty()) {
             throw new BusinessException("MARKETING_COUPON_CATEGORY_MISMATCH", "订单商品不适用该优惠券");
         }
+        BigDecimal applicableSubtotal = BigDecimal.ZERO;
         for (TradeOrderItem item : items) {
             if (item == null || item.getProductId() == null) {
-                throw new BusinessException("MARKETING_COUPON_CATEGORY_MISMATCH", "订单商品不适用该优惠券");
+                continue;
             }
             CatalogProduct product = catalogProductMapper.selectById(item.getProductId());
             CatalogCategory category = product == null || product.getCategoryId() == null
                     ? null : catalogCategoryMapper.selectById(product.getCategoryId());
-            if (category == null || !StringUtils.hasText(category.getCategoryCode())
-                    || !couponCategoryCode.trim().equalsIgnoreCase(category.getCategoryCode().trim())) {
-                throw new BusinessException("MARKETING_COUPON_CATEGORY_MISMATCH", "订单商品不适用该优惠券");
+            if (category != null && StringUtils.hasText(category.getCategoryCode())
+                    && couponCategoryCode.trim().equalsIgnoreCase(category.getCategoryCode().trim())) {
+                // 优先使用订单明细金额，兼容历史数据缺少 itemAmount 的场景再按单价乘数量计算。
+                BigDecimal itemAmount = item.getItemAmount();
+                if (itemAmount == null && item.getUnitPrice() != null && item.getQuantity() != null) {
+                    itemAmount = item.getUnitPrice().multiply(BigDecimal.valueOf(item.getQuantity()));
+                }
+                if (itemAmount != null && itemAmount.signum() > 0) {
+                    applicableSubtotal = applicableSubtotal.add(itemAmount);
+                }
             }
         }
+        if (applicableSubtotal.signum() <= 0) {
+            throw new BusinessException("MARKETING_COUPON_CATEGORY_MISMATCH", "订单商品不适用该优惠券");
+        }
+        return applicableSubtotal;
     }
 
     /**

@@ -48,9 +48,19 @@ public class TradeCartService {
      * @author Henfon
      * @date 2026-08-29
      */
+    @Transactional
     public List<TradeCartItem> list(Long memberId) {
-        return mapper.selectList(new LambdaQueryWrapper<TradeCartItem>()
+        List<TradeCartItem> items = mapper.selectList(new LambdaQueryWrapper<TradeCartItem>()
                 .eq(TradeCartItem::getMemberId, memberId).orderByDesc(TradeCartItem::getUpdatedAt));
+        // 查询时主动清理已下架、规格失效或库存归零的明细，避免结算页继续展示不可购买商品。
+        items.removeIf(item -> {
+            if (!isAvailable(item)) {
+                mapper.deleteById(item.getId());
+                return true;
+            }
+            return false;
+        });
+        return items;
     }
 
     /**
@@ -151,6 +161,35 @@ public class TradeCartService {
         if (quantity <= 0 || stock == null || quantity > stock) {
             throw new BusinessException("TRADE_CART_STOCK_NOT_ENOUGH", "商品库存不足");
         }
+    }
+
+    /**
+     * 判断购物车明细当前是否仍可售。
+     *
+     * @param item 购物车明细
+     * @return 商品、规格和库存均有效时返回 true
+     * @author Henfon
+     * @date 2026-09-01
+     */
+    private boolean isAvailable(TradeCartItem item) {
+        if (item == null || item.getProductId() == null || item.getQuantity() == null || item.getQuantity() <= 0) {
+            return false;
+        }
+        CatalogProduct product = productMapper.selectById(item.getProductId());
+        if (product == null || !Integer.valueOf(1).equals(product.getStatus())) {
+            return false;
+        }
+        Integer stock = product.getCurrentStock();
+        if (item.getSkuId() != null) {
+            CatalogSku sku = skuMapper.selectById(item.getSkuId());
+            if (sku == null || !item.getProductId().equals(sku.getProductId())
+                    || !Integer.valueOf(1).equals(sku.getStatus())) {
+                return false;
+            }
+            stock = sku.getStock();
+        }
+        // 库存不足的明细保留给用户调整数量，只有库存归零才判定为失效并自动清理。
+        return stock != null && stock > 0;
     }
 
     /**

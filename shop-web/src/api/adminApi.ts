@@ -288,6 +288,34 @@ export interface BackendMarketingCoupon {
   updatedAt?: string;
 }
 
+export interface BackendMarketingFlashSale {
+  id: number;
+  activityCode: string;
+  activityName: string;
+  startAt: string;
+  endAt: string;
+  limitPerMember: number;
+  status: number;
+  createdAt?: string;
+  updatedAt?: string;
+  version?: number;
+}
+
+export interface BackendMarketingFlashSaleItem {
+  id: number;
+  activityId: number;
+  productId: number;
+  skuId?: number;
+  activityPrice: number;
+  totalStock: number;
+  soldStock: number;
+  limitPerMember: number;
+  status: number;
+  createdAt?: string;
+  updatedAt?: string;
+  version?: number;
+}
+
 export interface BackendPaymentInvoice {
   id: number;
   invoiceNo: string;
@@ -307,6 +335,21 @@ export interface BackendPaymentInvoice {
   createdAt?: string;
   updatedAt?: string;
   remark?: string;
+}
+
+export interface BackendPaymentReconciliationRecord {
+  id: string;
+  transNo: string;
+  orderNumber: string;
+  type: 'order_income' | 'refund_payout' | 'commission_fee' | 'withdrawal';
+  channel: 'wechat_pay' | 'alipay' | 'unionpay' | 'balance_pay';
+  amount: number;
+  fee: number;
+  netAmount: number;
+  status: 'reconciled' | 'pending_settle' | 'discrepancy';
+  settledAt?: string;
+  accountNumber?: string;
+  notes?: string;
 }
 
 export interface BackendTradeOrder {
@@ -1020,6 +1063,20 @@ export function updatePaymentInvoiceStatus(invoiceNo: string, payload: {
   });
 }
 
+export function listPaymentReconciliation(params: {
+  current?: number;
+  size?: number;
+  keyword?: string;
+  type?: string;
+  status?: string;
+} = {}): Promise<BackendPage<BackendPaymentReconciliationRecord>> {
+  const query = new URLSearchParams({ current: String(params.current || 1), size: String(params.size || 20) });
+  if (params.keyword) query.set('keyword', params.keyword);
+  if (params.type && params.type !== 'all') query.set('type', params.type);
+  if (params.status && params.status !== 'all') query.set('status', params.status);
+  return request<BackendPage<BackendPaymentReconciliationRecord>>(`/api/admin/payment/reconciliation?${query.toString()}`);
+}
+
 export function saveMarketingCoupon(payload: {
   id?: number;
   couponCode: string;
@@ -1043,6 +1100,48 @@ export function updateMarketingCouponStatus(id: number, status: number): Promise
 
 export function deleteMarketingCoupon(id: number): Promise<void> {
   return request<void>(`/api/admin/marketing/coupons/${id}`, { method: 'DELETE' });
+}
+
+export function listMarketingFlashSales(params: { current?: number; size?: number; keyword?: string; status?: number } = {}): Promise<BackendPage<BackendMarketingFlashSale>> {
+  const query = new URLSearchParams({ current: String(params.current || 1), size: String(params.size || 20) });
+  if (params.keyword) query.set('keyword', params.keyword);
+  if (params.status !== undefined) query.set('status', String(params.status));
+  return request<BackendPage<BackendMarketingFlashSale>>(`/api/admin/marketing/flash-sales?${query.toString()}`);
+}
+
+export function listMarketingFlashSaleItems(id: number): Promise<BackendMarketingFlashSaleItem[]> {
+  return request<BackendMarketingFlashSaleItem[]>(`/api/admin/marketing/flash-sales/${id}/items`);
+}
+
+export function saveMarketingFlashSale(payload: {
+  id?: number;
+  activityCode: string;
+  activityName: string;
+  startAt: string;
+  endAt: string;
+  limitPerMember: number;
+  status: number;
+  items: Array<{
+    id?: number;
+    productId: number;
+    skuId?: number;
+    activityPrice: number;
+    totalStock: number;
+    limitPerMember: number;
+    status: number;
+    version?: number;
+  }>;
+  version?: number;
+}): Promise<number> {
+  return request<number>('/api/admin/marketing/flash-sales', { method: 'POST', body: JSON.stringify(payload) });
+}
+
+export function updateMarketingFlashSaleStatus(id: number, status: number): Promise<void> {
+  return request<void>(`/api/admin/marketing/flash-sales/${id}/status?status=${status}`, { method: 'PUT' });
+}
+
+export function deleteMarketingFlashSale(id: number): Promise<void> {
+  return request<void>(`/api/admin/marketing/flash-sales/${id}`, { method: 'DELETE' });
 }
 
 export function listTradeOrders(params: { current?: number; size?: number; keyword?: string; orderStatus?: number } = {}): Promise<BackendPage<BackendTradeOrder>> {
