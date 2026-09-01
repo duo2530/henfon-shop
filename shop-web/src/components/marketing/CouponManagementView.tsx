@@ -37,13 +37,13 @@ export interface CouponItem {
   minSpend: number;
   totalQuantity: number;
   claimedQuantity: number;
-  usedQuantity: number;
+  /** 后端暂未返回核销统计时保持 undefined，避免展示虚构数据。 */
+  usedQuantity?: number;
   status: 'active' | 'scheduled' | 'expired' | 'disabled';
   startDate: string;
   endDate: string;
   scope: 'all' | 'category' | 'single_product';
   scopeTargetName?: string;
-  perUserLimit: number;
 }
 
 function mapBackendCoupon(record: BackendMarketingCoupon): CouponItem {
@@ -53,130 +53,31 @@ function mapBackendCoupon(record: BackendMarketingCoupon): CouponItem {
   const status: CouponItem['status'] = record.status !== 1
     ? 'disabled'
     : now < start ? 'scheduled' : now > end ? 'expired' : 'active';
+  const couponType = record.tag?.trim().toLowerCase();
   return {
     id: String(record.id),
     name: record.couponTitle,
     code: record.couponCode,
-    type: 'cash',
+    // tag 沿用后台保存的券型标识，未知值按现金券展示以兼容历史数据。
+    type: couponType === 'discount' || couponType === 'shipping' ? couponType : 'cash',
     discountValue: Number(record.discountAmount || 0),
     minSpend: Number(record.minSpend || 0),
     totalQuantity: Number(record.totalQuantity || 0),
     claimedQuantity: Number(record.claimedQuantity || 0),
-    usedQuantity: 0,
+    usedQuantity: record.usedQuantity == null ? undefined : Number(record.usedQuantity),
     status,
     startDate: record.startAt?.slice(0, 10) || '',
     endDate: record.endAt?.slice(0, 10) || '',
     scope: record.categoryCode ? 'category' : 'all',
     scopeTargetName: record.categoryCode,
-    perUserLimit: 1,
   };
 }
 
-const mockCoupons: CouponItem[] = [
-  {
-    id: 'cpn-001',
-    name: '新人无门槛立减券',
-    code: 'NEWUSER2026',
-    type: 'cash',
-    discountValue: 30,
-    minSpend: 99,
-    totalQuantity: 5000,
-    claimedQuantity: 3840,
-    usedQuantity: 2150,
-    status: 'active',
-    startDate: '2026-08-01',
-    endDate: '2026-10-31',
-    scope: 'all',
-    perUserLimit: 1
-  },
-  {
-    id: 'cpn-002',
-    name: '数码极客专属 9 折券',
-    code: 'DIGITAL90',
-    type: 'discount',
-    discountValue: 90, // 9折
-    minSpend: 499,
-    totalQuantity: 2000,
-    claimedQuantity: 1980,
-    usedQuantity: 1420,
-    status: 'active',
-    startDate: '2026-08-15',
-    endDate: '2026-09-15',
-    scope: 'category',
-    scopeTargetName: '电子数码',
-    perUserLimit: 2
-  },
-  {
-    id: 'cpn-003',
-    name: '全场满300减50大促券',
-    code: 'FESTIVAL300',
-    type: 'cash',
-    discountValue: 50,
-    minSpend: 300,
-    totalQuantity: 10000,
-    claimedQuantity: 8900,
-    usedQuantity: 6200,
-    status: 'active',
-    startDate: '2026-08-20',
-    endDate: '2026-09-10',
-    scope: 'all',
-    perUserLimit: 3
-  },
-  {
-    id: 'cpn-004',
-    name: '秋季美妆护肤满200减30',
-    code: 'BEAUTYAUTUMN',
-    type: 'cash',
-    discountValue: 30,
-    minSpend: 200,
-    totalQuantity: 3000,
-    claimedQuantity: 1200,
-    usedQuantity: 650,
-    status: 'active',
-    startDate: '2026-08-25',
-    endDate: '2026-09-30',
-    scope: 'category',
-    scopeTargetName: '美妆个护',
-    perUserLimit: 1
-  },
-  {
-    id: 'cpn-005',
-    name: '中秋礼遇全场免运费券',
-    code: 'FREESHIP2026',
-    type: 'shipping',
-    discountValue: 15,
-    minSpend: 0,
-    totalQuantity: 5000,
-    claimedQuantity: 0,
-    usedQuantity: 0,
-    status: 'scheduled',
-    startDate: '2026-09-15',
-    endDate: '2026-09-25',
-    scope: 'all',
-    perUserLimit: 1
-  },
-  {
-    id: 'cpn-006',
-    name: '夏末狂欢 8 折爆款券',
-    code: 'SUMMEREND80',
-    type: 'discount',
-    discountValue: 80,
-    minSpend: 199,
-    totalQuantity: 2000,
-    claimedQuantity: 2000,
-    usedQuantity: 1890,
-    status: 'expired',
-    startDate: '2026-07-01',
-    endDate: '2026-08-15',
-    scope: 'all',
-    perUserLimit: 1
-  }
-];
-
 export const CouponManagementView: React.FC = () => {
   const { showToast } = useAdmin();
-  const [coupons, setCoupons] = useState<CouponItem[]>(mockCoupons);
-  const [loading, setLoading] = useState(false);
+  const [coupons, setCoupons] = useState<CouponItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [typeFilter, setTypeFilter] = useState<'all' | 'cash' | 'discount' | 'shipping'>('all');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'scheduled' | 'expired' | 'disabled'>('all');
@@ -198,17 +99,19 @@ export const CouponManagementView: React.FC = () => {
     endDate: new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0],
     scope: 'all',
     scopeTargetName: '',
-    perUserLimit: 1
   });
 
   const loadCoupons = async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       const page = await listMarketingCoupons({ size: 200 });
       setCoupons((page.records || []).map(mapBackendCoupon));
     } catch (error) {
-      console.warn('优惠券列表加载失败，暂使用演示数据', error);
-      showToast('优惠券接口暂不可用，当前显示演示数据', 'warning');
+      console.error('优惠券列表加载失败', error);
+      setCoupons([]);
+      setLoadError(error instanceof Error ? error.message : '优惠券接口暂不可用');
+      showToast('优惠券列表加载失败，请稍后重试', 'error');
     } finally {
       setLoading(false);
     }
@@ -229,7 +132,8 @@ export const CouponManagementView: React.FC = () => {
 
   const totalIssued = coupons.reduce((sum, c) => sum + c.totalQuantity, 0);
   const totalClaimed = coupons.reduce((sum, c) => sum + c.claimedQuantity, 0);
-  const totalUsed = coupons.reduce((sum, c) => sum + c.usedQuantity, 0);
+  const totalUsed = coupons.reduce((sum, c) => sum + (c.usedQuantity || 0), 0);
+  const hasUsageMetrics = coupons.some((coupon) => coupon.usedQuantity != null);
   const claimRate = totalIssued > 0 ? ((totalClaimed / totalIssued) * 100).toFixed(1) : '0';
   const useRate = totalClaimed > 0 ? ((totalUsed / totalClaimed) * 100).toFixed(1) : '0';
 
@@ -301,7 +205,7 @@ export const CouponManagementView: React.FC = () => {
       filteredCoupons
         .map(
           (c) =>
-            `"${c.id}","${c.name}","${c.code}","${c.type}",${c.discountValue},${c.minSpend},${c.totalQuantity},${c.claimedQuantity},${c.usedQuantity},"${c.status}","${c.startDate} ~ ${c.endDate}"`
+            `"${c.id}","${c.name}","${c.code}","${c.type}",${c.discountValue},${c.minSpend},${c.totalQuantity},${c.claimedQuantity},${c.usedQuantity ?? ''},"${c.status}","${c.startDate} ~ ${c.endDate}"`
         )
         .join('\n');
     const encodedUri = encodeURI(csvContent);
@@ -354,8 +258,7 @@ export const CouponManagementView: React.FC = () => {
                 startDate: new Date().toISOString().split('T')[0],
                 endDate: new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0],
                 scope: 'all',
-                scopeTargetName: '',
-                perUserLimit: 1
+                scopeTargetName: ''
               });
               setIsCreateModalOpen(true);
             }}
@@ -398,8 +301,12 @@ export const CouponManagementView: React.FC = () => {
               <CheckCircle2 className="w-4 h-4" />
             </div>
           </div>
-          <div className="text-2xl md:text-3xl font-bold text-emerald-700 mt-1">{totalUsed.toLocaleString()}</div>
-          <p className="text-xs text-emerald-600 mt-1">核销转化率 {useRate}%</p>
+          <div className="text-2xl md:text-3xl font-bold text-emerald-700 mt-1">
+            {hasUsageMetrics ? totalUsed.toLocaleString() : '待同步'}
+          </div>
+          <p className="text-xs text-emerald-600 mt-1">
+            {hasUsageMetrics ? `核销转化率 ${useRate}%` : '后端暂未返回核销统计'}
+          </p>
         </div>
 
         <div className="bg-white p-4.5 rounded-xl border border-[#E2E8F0] shadow-xs">
@@ -474,6 +381,21 @@ export const CouponManagementView: React.FC = () => {
                 <tr>
                   <td colSpan={7} className="text-center py-16 text-gray-400">正在加载优惠券数据…</td>
                 </tr>
+              ) : loadError ? (
+                <tr>
+                  <td colSpan={7} className="text-center py-16 text-red-500">
+                    <AlertCircle className="w-10 h-10 mx-auto mb-2 opacity-70" />
+                    <p className="text-sm font-medium">优惠券数据加载失败</p>
+                    <p className="text-xs text-gray-400 mt-1">{loadError}</p>
+                    <button
+                      type="button"
+                      onClick={() => void loadCoupons()}
+                      className="mt-3 px-3 py-1.5 rounded-lg border border-red-200 text-xs font-semibold text-red-600 hover:bg-red-50"
+                    >
+                      重新加载
+                    </button>
+                  </td>
+                </tr>
               ) : filteredCoupons.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="text-center py-16 text-gray-400">
@@ -484,7 +406,6 @@ export const CouponManagementView: React.FC = () => {
               ) : (
                 filteredCoupons.map((coupon) => {
                   const claimPercent = coupon.totalQuantity > 0 ? (coupon.claimedQuantity / coupon.totalQuantity) * 100 : 0;
-                  const usePercent = coupon.claimedQuantity > 0 ? (coupon.usedQuantity / coupon.claimedQuantity) * 100 : 0;
 
                   return (
                     <tr key={coupon.id} className="hover:bg-[#F8FAFC] transition-colors">
@@ -518,7 +439,6 @@ export const CouponManagementView: React.FC = () => {
                             全免运费 (抵扣¥{coupon.discountValue})
                           </div>
                         )}
-                        <div className="text-[11px] text-gray-400">限领 {coupon.perUserLimit} 张/人</div>
                       </td>
 
                       <td className="py-3 px-4">
@@ -533,7 +453,7 @@ export const CouponManagementView: React.FC = () => {
                       <td className="py-3 px-4 min-w-[180px]">
                         <div className="flex justify-between text-xs text-gray-600 mb-1">
                           <span>已领: {coupon.claimedQuantity}/{coupon.totalQuantity}</span>
-                          <span>核销: {coupon.usedQuantity}</span>
+                          <span>核销: {coupon.usedQuantity == null ? '待同步' : coupon.usedQuantity}</span>
                         </div>
                         <div className="w-full bg-gray-100 rounded-full h-1.5 overflow-hidden">
                           <div
@@ -660,7 +580,9 @@ export const CouponManagementView: React.FC = () => {
                 </div>
                 <div className="p-2.5 bg-gray-50 rounded-lg">
                   <span className="text-gray-400 block mb-0.5">实际核销订单</span>
-                  <span className="font-bold text-emerald-700">{inspectCoupon.usedQuantity} 笔</span>
+                  <span className="font-bold text-emerald-700">
+                    {inspectCoupon.usedQuantity == null ? '待同步' : `${inspectCoupon.usedQuantity} 笔`}
+                  </span>
                 </div>
               </div>
 
@@ -707,20 +629,18 @@ export const CouponManagementView: React.FC = () => {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-gray-700 mb-1">优惠券类型</label>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">优惠券类型（当前后端仅支持现金抵扣）</label>
                   <select
                     value={formData.type}
-                    onChange={(e) => setFormData({ ...formData, type: e.target.value as any })}
+                    disabled
                     className="w-full h-[36px] px-3 rounded-lg border border-gray-300 outline-none text-sm bg-white"
                   >
                     <option value="cash">满减现金券 (¥)</option>
-                    <option value="discount">折扣比率券 (%)</option>
-                    <option value="shipping">免运费券</option>
                   </select>
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-gray-700 mb-1">面值 / 折扣额度 *</label>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1">抵扣金额（¥） *</label>
                   <input
                     type="number"
                     required

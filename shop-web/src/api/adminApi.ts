@@ -279,6 +279,8 @@ export interface BackendMarketingCoupon {
   description?: string;
   totalQuantity: number;
   claimedQuantity: number;
+  /** 可选核销统计，后端未返回时前端展示为待同步。 */
+  usedQuantity?: number;
   startAt: string;
   endAt: string;
   status: number;
