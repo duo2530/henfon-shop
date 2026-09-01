@@ -19,6 +19,8 @@ import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
 import java.util.LinkedHashMap;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.List;
 import java.util.Map;
 
@@ -75,6 +77,27 @@ public class CatalogPortalService {
      */
     public IPage<CatalogProduct> page(String keyword, Long categoryId, BigDecimal minPrice,
                                       BigDecimal maxPrice, String sortBy, long current, long size) {
+        return page(keyword, categoryId, minPrice, maxPrice, sortBy, null, current, size);
+    }
+
+    /**
+     * 分页查询门户商品并支持 SKU 关键字筛选。
+     *
+     * @param keyword 商品名称、编码或品牌关键字
+     * @param categoryId 类目ID
+     * @param minPrice 最低价格
+     * @param maxPrice 最高价格
+     * @param sortBy 排序方式
+     * @param skuKeyword SKU 编码、名称或属性关键字
+     * @param current 页码
+     * @param size 页大小
+     * @return 商品分页结果
+     * @author Henfon
+     * @date 2026-09-01
+     */
+    public IPage<CatalogProduct> page(String keyword, Long categoryId, BigDecimal minPrice,
+                                      BigDecimal maxPrice, String sortBy, String skuKeyword,
+                                      long current, long size) {
         if ((minPrice != null && minPrice.signum() < 0) || (maxPrice != null && maxPrice.signum() < 0)) {
             throw new BusinessException("CATALOG_PRICE_RANGE_INVALID", "价格区间不能为负数");
         }
@@ -91,6 +114,14 @@ public class CatalogPortalService {
                 .and(StringUtils.hasText(keyword), q -> q.like(CatalogProduct::getProductName, keyword)
                         .or().like(CatalogProduct::getProductCode, keyword)
                         .or().like(CatalogProduct::getBrandName, keyword));
+        if (StringUtils.hasText(skuKeyword)) {
+            Set<Long> skuProductIds = findSkuProductIds(skuKeyword.trim());
+            // 无匹配 SKU 时直接返回空分页，避免构造无意义的 IN 条件。
+            if (skuProductIds.isEmpty()) {
+                return new Page<>(safeCurrent, safeSize, 0);
+            }
+            wrapper.in(CatalogProduct::getId, skuProductIds);
+        }
         // 排序字段使用白名单映射，避免将前端参数直接拼接进SQL。
         switch (sortBy == null ? "featured" : sortBy) {
             case "price-asc" -> wrapper.orderByAsc(CatalogProduct::getPrice);
@@ -102,6 +133,29 @@ public class CatalogPortalService {
         }
         wrapper.orderByAsc(CatalogProduct::getId);
         return productMapper.selectPage(new Page<>(safeCurrent, safeSize), wrapper);
+    }
+
+    /**
+     * 根据 SKU 编码、名称或属性 JSON 查找商品ID集合。
+     *
+     * @param skuKeyword SKU 查询关键字
+     * @return 命中的商品ID集合
+     * @author Henfon
+     * @date 2026-09-01
+     */
+    private Set<Long> findSkuProductIds(String skuKeyword) {
+        Set<Long> productIds = new HashSet<>();
+        skuMapper.selectList(new LambdaQueryWrapper<CatalogSku>()
+                        .eq(CatalogSku::getStatus, 1)
+                        .and(query -> query.like(CatalogSku::getSkuCode, skuKeyword)
+                                .or().like(CatalogSku::getSkuName, skuKeyword)
+                                .or().like(CatalogSku::getAttributesJson, skuKeyword)))
+                .forEach(sku -> {
+                    if (sku.getProductId() != null) {
+                        productIds.add(sku.getProductId());
+                    }
+                });
+        return productIds;
     }
 
     /**

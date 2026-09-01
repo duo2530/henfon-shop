@@ -68,7 +68,7 @@ HTTP 状态：成功 2xx；参数/业务错误 400；认证失败 401；无权�
 
 ### shop-catalog（商品、SKU、类目）
 
-- 门户：`GET /api/portal/catalog/products`（关键词、类目、价格区间、排序、分页）、`GET /products/{id}`、`GET /categories`。
+- 门户：`GET /api/portal/catalog/products`（商品关键词、SKU 编码/名称/属性关键字、类目、价格区间、排序、分页）、`GET /products/{id}`、`GET /categories`。
 - 管理：`GET/POST /api/admin/catalog/products`、`DELETE /products/{id}`；SKU `GET/POST /products/{productId}/skus`、`DELETE /products/{productId}/skus/{skuId}`；内容 `GET/PUT /products/{productId}/content`；类目 `GET /categories|categories/manage`、`POST /categories`、`DELETE /categories/{id}`。
 
 ### shop-inventory（仓库、库存、盘点、供应商）

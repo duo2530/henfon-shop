@@ -296,6 +296,7 @@ export async function fetchPortalProducts(options: {
   categoryId?: number;
   minPrice?: number;
   maxPrice?: number;
+  skuKeyword?: string;
   sortBy?: 'featured' | 'sales' | 'price-asc' | 'price-desc' | 'newest';
   current?: number;
   size?: number;
@@ -317,6 +318,7 @@ export async function fetchPortalProductsPage(options: {
   categoryId?: number;
   minPrice?: number;
   maxPrice?: number;
+  skuKeyword?: string;
   sortBy?: 'featured' | 'sales' | 'price-asc' | 'price-desc' | 'newest';
   current?: number;
   size?: number;
@@ -326,6 +328,7 @@ export async function fetchPortalProductsPage(options: {
   if (options.categoryId !== undefined) params.set('categoryId', String(options.categoryId));
   if (options.minPrice !== undefined) params.set('minPrice', String(options.minPrice));
   if (options.maxPrice !== undefined) params.set('maxPrice', String(options.maxPrice));
+  if (options.skuKeyword) params.set('skuKeyword', options.skuKeyword);
   if (options.sortBy) params.set('sortBy', options.sortBy);
   if (options.current !== undefined) params.set('current', String(options.current));
   if (options.size !== undefined) params.set('size', String(options.size));

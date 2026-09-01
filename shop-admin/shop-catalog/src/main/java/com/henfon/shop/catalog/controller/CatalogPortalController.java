@@ -50,6 +50,7 @@ public class CatalogPortalController {
      * @param minPrice 最低价格
      * @param maxPrice 最高价格
      * @param sortBy 排序方式：featured、newest、sales、price-asc、price-desc
+     * @param skuKeyword SKU 编码、名称或属性关键字
      * @param current 页码
      * @param size 页大小
      * @return 商品分页数据
@@ -62,9 +63,10 @@ public class CatalogPortalController {
                                                         @RequestParam(required = false) BigDecimal minPrice,
                                                         @RequestParam(required = false) BigDecimal maxPrice,
                                                         @RequestParam(required = false) String sortBy,
+                                                        @RequestParam(required = false) String skuKeyword,
                                                         @RequestParam(defaultValue = "1") long current,
                                                         @RequestParam(defaultValue = "20") long size) {
-        return ApiResponse.success(portalService.page(keyword, categoryId, minPrice, maxPrice, sortBy, current, size), MDC.get("requestId"));
+        return ApiResponse.success(portalService.page(keyword, categoryId, minPrice, maxPrice, sortBy, skuKeyword, current, size), MDC.get("requestId"));
     }
 
     /**
