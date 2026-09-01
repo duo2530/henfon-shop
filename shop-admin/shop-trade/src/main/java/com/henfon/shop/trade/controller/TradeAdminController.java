@@ -10,6 +10,7 @@ import com.henfon.shop.trade.dto.TradeOrderCancelRequest;
 import com.henfon.shop.trade.dto.TradeOrderRemarkRequest;
 import com.henfon.shop.trade.dto.TradeOrderRefundRequest;
 import com.henfon.shop.trade.dto.TradeOrderLogisticsRequest;
+import com.henfon.shop.trade.dto.TradeOrderLogisticsSyncResult;
 import jakarta.validation.Valid;
 import com.henfon.shop.trade.service.TradeOrderService;
 import org.slf4j.MDC;
@@ -95,6 +96,20 @@ public class TradeAdminController {
     @PreAuthorize("hasAuthority('trade:order:query')")
     public ApiResponse<List<TradeOrderLogistics>> listLogistics(@PathVariable Long orderId) {
         return ApiResponse.success(tradeOrderService.listLogistics(orderId), MDC.get("requestId"));
+    }
+
+    /**
+     * 调用已配置的物流服务商同步订单轨迹。
+     *
+     * @param orderId 订单ID
+     * @return 同步结果
+     * @author Henfon
+     * @date 2026-09-01
+     */
+    @PostMapping("/orders/{orderId}/logistics/sync")
+    @PreAuthorize("hasAuthority('trade:order:ship')")
+    public ApiResponse<TradeOrderLogisticsSyncResult> syncLogistics(@PathVariable Long orderId) {
+        return ApiResponse.success(tradeOrderService.syncLogistics(orderId), MDC.get("requestId"));
     }
 
     /**

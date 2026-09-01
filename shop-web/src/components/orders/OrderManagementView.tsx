@@ -32,6 +32,7 @@ export const OrderManagementView: React.FC = () => {
     orders, 
     addOrder, 
     updateOrderStatus, 
+    syncOrderLogistics,
     cancelOrder, 
     batchShipOrders,
     batchCancelOrders,
@@ -1038,6 +1039,16 @@ export const OrderManagementView: React.FC = () => {
             </div>
 
             <div className="pt-3 border-t border-gray-200 flex justify-end gap-2">
+              {inspectOrder.status === 'shipped' && (
+                <PermissionGate permission="order:ship">
+                  <button
+                    onClick={() => void syncOrderLogistics(inspectOrder.id)}
+                    className="px-4 py-2 bg-blue-50 text-blue-700 text-xs font-semibold rounded-lg hover:bg-blue-100 transition-colors"
+                  >
+                    同步物流
+                  </button>
+                </PermissionGate>
+              )}
               <button
                 onClick={() => setInspectOrder(null)}
                 className="px-4 py-2 bg-gray-100 text-gray-700 text-xs font-semibold rounded-lg hover:bg-gray-200 transition-colors"

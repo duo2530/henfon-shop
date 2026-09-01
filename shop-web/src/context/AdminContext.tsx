@@ -65,6 +65,7 @@ import {
   saveCatalogProductContent,
   listTradeOrders,
   shipTradeOrder,
+  syncTradeOrderLogistics,
   cancelTradeOrder,
   updateTradeOrderRemark,
   refundTradeOrder
@@ -116,6 +117,7 @@ interface AdminContextType {
   // Order actions
   addOrder: (order: Omit<Order, 'id' | 'createdAt'>) => void;
   updateOrderStatus: (id: string, status: Order['status'], trackingNumber?: string, carrier?: string) => void;
+  syncOrderLogistics: (id: string) => Promise<void>;
   cancelOrder: (id: string) => void;
   batchShipOrders: (shipments: { orderId: string; carrier: string; trackingNumber: string }[]) => void;
   batchCancelOrders: (ids: string[], reason?: string) => void;
@@ -640,6 +642,22 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         showToast('订单状态已更新本地状态，但服务端发货失败', 'warning');
         void hydrateTradeMetadata();
       });
+    }
+  };
+
+  const syncOrderLogistics = async (id: string) => {
+    if (!requirePermission('order:ship', '同步物流')) return;
+    const numericId = Number(id);
+    if (!Number.isFinite(numericId)) {
+      showToast('当前订单不是服务端订单，无法同步真实物流', 'warning');
+      return;
+    }
+    try {
+      const result = await syncTradeOrderLogistics(numericId);
+      await hydrateTradeMetadata();
+      showToast(`物流同步完成：${result.syncedCount} 个节点`, 'success');
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : '物流同步失败，请稍后重试', 'error');
     }
   };
 
@@ -1324,6 +1342,7 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         adjustProductStock,
         addOrder,
         updateOrderStatus,
+        syncOrderLogistics,
         cancelOrder,
         batchShipOrders,
         batchCancelOrders,

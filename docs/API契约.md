@@ -81,7 +81,7 @@ HTTP 状态：成功 2xx；参数/业务错误 400；认证失败 401；无权�
 
 - 购物车：`GET /api/portal/trade/cart`、`POST /items`、`PUT /items/{id}`、`DELETE /items/{id}`。
 - 门户订单：`GET /api/portal/trade/orders`（分页）、`GET /orders/{id}`、`GET /orders/{id}/logistics`、`POST /orders`、`PUT /orders/{id}/cancel|confirm`。
-- 管理订单：`GET /api/admin/trade/orders`（分页）、`GET /orders/{id}/items|logistics`、`POST /orders/{id}/logistics`、`PUT /orders/{id}/logistics/{logisticsId}`、`PUT /orders/{id}/ship|cancel|remark|refund`。备注接口请求体为 `{sellerRemark, flagColor, version}`，标旗支持 `red/yellow/green/blue/purple` 或 `null` 清空，并通过 `version` 乐观锁校验。
+- 管理订单：`GET /api/admin/trade/orders`（分页）、`GET /orders/{id}/items|logistics`、`POST /orders/{id}/logistics`、`POST /orders/{id}/logistics/sync`、`PUT /orders/{id}/logistics/{logisticsId}`、`PUT /orders/{id}/ship|cancel|remark|refund`。`logistics/sync` 调用已配置的物流服务商（当前为快递100）并将轨迹幂等写入现有物流表；未配置服务商时返回 `TRADE_LOGISTICS_SYNC_FAILED`。备注接口请求体为 `{sellerRemark, flagColor, version}`，标旗支持 `red/yellow/green/blue/purple` 或 `null` 清空，并通过 `version` 乐观锁校验。
 - 售后：门户 `GET/POST /api/portal/trade/after-sales`、`DELETE /after-sales/{id}`；管理 `GET /api/admin/trade/after-sales`（分页）、`PUT /{id}/approve|reject`。
 - Outbox 运维：`GET /api/admin/trade/outbox/dead-events`（按事件类型、主题、聚合 ID 分页筛选）、`POST /api/admin/trade/outbox/{eventId}/retry`（仅允许死信事件人工重试，需 `trade:outbox:query/retry` 权限）。
 

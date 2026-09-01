@@ -24,7 +24,11 @@ import com.henfon.shop.catalog.entity.CatalogSku;
 import com.henfon.shop.catalog.mapper.CatalogProductMapper;
 import com.henfon.shop.catalog.mapper.CatalogSkuMapper;
 import com.henfon.shop.integration.messaging.RocketMqTopics;
+import com.henfon.shop.integration.logistics.LogisticsProvider;
+import com.henfon.shop.integration.logistics.LogisticsTrackNode;
+import com.henfon.shop.integration.logistics.LogisticsTrackResult;
 import com.henfon.shop.identity.service.MemberAdminService;
+import com.henfon.shop.trade.dto.TradeOrderLogisticsSyncResult;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -56,6 +60,7 @@ public class TradeOrderService {
     private final CatalogProductMapper catalogProductMapper;
     private final CatalogSkuMapper catalogSkuMapper;
     private final MemberAdminService memberAdminService;
+    private final LogisticsProvider logisticsProvider;
 
     /**
      * 创建交易订单服务。
@@ -70,7 +75,8 @@ public class TradeOrderService {
                              TradeEventOutboxService tradeEventOutboxService,
                              CatalogProductMapper catalogProductMapper,
                              CatalogSkuMapper catalogSkuMapper,
-                             MemberAdminService memberAdminService) {
+                             MemberAdminService memberAdminService,
+                             LogisticsProvider logisticsProvider) {
         this.tradeOrderMapper = tradeOrderMapper;
         this.tradeOrderItemMapper = tradeOrderItemMapper;
         this.tradeOrderLogisticsMapper = tradeOrderLogisticsMapper;
@@ -79,6 +85,7 @@ public class TradeOrderService {
         this.catalogProductMapper = catalogProductMapper;
         this.catalogSkuMapper = catalogSkuMapper;
         this.memberAdminService = memberAdminService;
+        this.logisticsProvider = logisticsProvider;
     }
 
     /**
@@ -150,6 +157,45 @@ public class TradeOrderService {
         // 先校验订单归属，再读取轨迹，避免通过订单 ID 越权查看物流信息。
         requireMemberOrder(memberId, orderId);
         return listLogistics(orderId);
+    }
+
+    /**
+     * 从物流服务商同步订单轨迹。
+     *
+     * <p>同步结果写入现有物流轨迹表，门户查询接口无需改动；第三方调用失败时不覆盖已有人工节点。</p>
+     *
+     * @param orderId 订单ID
+     * @return 同步结果
+     * @author Henfon
+     * @date 2026-09-01
+     */
+    @Transactional
+    public TradeOrderLogisticsSyncResult syncLogistics(Long orderId) {
+        TradeOrder order = requireOrder(orderId);
+        if (!StringUtils.hasText(order.getLogisticsCompany()) || !StringUtils.hasText(order.getTrackingNo())) {
+            throw new BusinessException("TRADE_LOGISTICS_NOT_SHIPPED", "订单尚未填写物流公司和运单号");
+        }
+
+        LogisticsTrackResult result = logisticsProvider.query(order.getLogisticsCompany(), order.getTrackingNo());
+        if (!result.success()) {
+            throw new BusinessException("TRADE_LOGISTICS_SYNC_FAILED", result.message());
+        }
+        int syncedCount = 0;
+        for (int index = 0; index < result.nodes().size(); index++) {
+            LogisticsTrackNode node = result.nodes().get(index);
+            TradeOrderLogisticsRequest request = new TradeOrderLogisticsRequest(
+                    null,
+                    order.getLogisticsCompany(),
+                    order.getTrackingNo(),
+                    node.status(),
+                    node.eventTime(),
+                    node.description(),
+                    node.location(),
+                    index + 1);
+            upsertLogistics(orderId, request);
+            syncedCount++;
+        }
+        return new TradeOrderLogisticsSyncResult(true, result.provider(), result.status(), syncedCount, result.message());
     }
 
     /**

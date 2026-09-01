@@ -35,6 +35,16 @@ shop:
     order-timeout-initial-delay-ms: ${SHOP_TEST_ORDER_TIMEOUT_INITIAL_DELAY_MS:15000}
     outbox-scan-ms: ${SHOP_TEST_OUTBOX_SCAN_MS:5000}
     outbox-initial-delay-ms: ${SHOP_TEST_OUTBOX_INITIAL_DELAY_MS:10000}
+  integration:
+    logistics:
+      kuaidi100:
+        # 自动化测试默认关闭外部物流调用，避免测试依赖公网服务。
+        enabled: ${SHOP_TEST_KUAIDI100_ENABLED:false}
+        customer: ${SHOP_TEST_KUAIDI100_CUSTOMER:}
+        key: ${SHOP_TEST_KUAIDI100_KEY:}
+        query-url: ${SHOP_TEST_KUAIDI100_QUERY_URL:https://poll.kuaidi100.com/poll/query.do}
+        connect-timeout-ms: ${SHOP_TEST_KUAIDI100_CONNECT_TIMEOUT_MS:3000}
+        read-timeout-ms: ${SHOP_TEST_KUAIDI100_READ_TIMEOUT_MS:10000}
   payment:
     wechat:
       # ==================== 微信支付 V3 测试环境配置 ====================
