@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { 
   TrendingUp, 
   Users, 
@@ -12,6 +12,7 @@ import {
   Smartphone, 
   Globe 
 } from 'lucide-react';
+import { getReportingMemberAnalysis, BackendReportingMemberAnalysis } from '../../api/adminApi';
 import { 
   AreaChart, 
   Area, 
@@ -56,6 +57,45 @@ const funnelData = [
 
 export const AnalyticsOverviewView: React.FC = () => {
   const [timeRange, setTimeRange] = useState<'today' | '7d' | '30d'>('today');
+  const [memberAnalysis, setMemberAnalysis] = useState<BackendReportingMemberAnalysis | null>(null);
+  const [memberAnalysisLoading, setMemberAnalysisLoading] = useState(false);
+  const [memberAnalysisError, setMemberAnalysisError] = useState<string | null>(null);
+
+  const memberAnalysisStartDate = useMemo(() => {
+    const end = new Date();
+    const days = timeRange === 'today' ? 0 : timeRange === '7d' ? 6 : 29;
+    const start = new Date(end);
+    start.setDate(end.getDate() - days);
+    return start.toISOString().slice(0, 10);
+  }, [timeRange]);
+
+  useEffect(() => {
+    let active = true;
+    setMemberAnalysisLoading(true);
+    setMemberAnalysisError(null);
+    void getReportingMemberAnalysis(memberAnalysisStartDate)
+      .then((result) => {
+        if (active) setMemberAnalysis(result);
+      })
+      .catch((error) => {
+        if (active) {
+          setMemberAnalysis(null);
+          setMemberAnalysisError(error instanceof Error ? error.message : '会员分析加载失败');
+        }
+      })
+      .finally(() => {
+        if (active) setMemberAnalysisLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [memberAnalysisStartDate]);
+
+  const memberLevelChartData = (memberAnalysis?.levelStats || []).map((item) => ({
+    level: item.memberLevel,
+    members: Number(item.memberCount || 0),
+    active: Number(item.activeMemberCount || 0),
+  }));
 
   return (
     <div className="space-y-6 animate-in fade-in-50 duration-200">
@@ -275,6 +315,57 @@ export const AnalyticsOverviewView: React.FC = () => {
             </div>
           ))}
         </div>
+      </div>
+
+      {/* Real member analysis */}
+      <div className="bg-white rounded-xl border border-[#E2E8F0] shadow-xs p-5">
+        <div className="flex items-center justify-between gap-3 mb-4">
+          <div>
+            <h3 className="text-sm font-bold text-gray-900">会员经营分析（真实数据）</h3>
+            <p className="text-xs text-gray-400">统计范围：{memberAnalysis?.startDate || memberAnalysisStartDate} 至 {memberAnalysis?.endDate || '今天'}</p>
+          </div>
+          {memberAnalysisLoading && <span className="text-xs text-blue-600">加载中...</span>}
+        </div>
+        {memberAnalysisError ? (
+          <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+            {memberAnalysisError}，请确认已登录且具备报表权限。
+          </div>
+        ) : memberAnalysis ? (
+          <>
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-5">
+              {[
+                ['会员总数', memberAnalysis.totalMemberCount],
+                ['新增会员', memberAnalysis.newMemberCount],
+                ['活跃会员', memberAnalysis.activeMemberCount],
+                ['复购率', `${Number(memberAnalysis.repurchaseRate || 0).toFixed(2)}%`],
+                ['支付金额', `¥${Number(memberAnalysis.paidAmount || 0).toFixed(2)}`],
+              ].map(([label, value]) => (
+                <div key={String(label)} className="rounded-lg bg-slate-50 border border-slate-100 p-3">
+                  <div className="text-xs text-gray-500">{label}</div>
+                  <div className="mt-1 text-lg font-bold text-slate-900">{value}</div>
+                </div>
+              ))}
+            </div>
+            <div className="h-[220px] w-full">
+              {memberLevelChartData.length > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={memberLevelChartData}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F1F5F9" />
+                    <XAxis dataKey="level" stroke="#94A3B8" fontSize={11} tickLine={false} />
+                    <YAxis stroke="#94A3B8" fontSize={11} tickLine={false} axisLine={false} allowDecimals={false} />
+                    <Tooltip />
+                    <Bar dataKey="members" name="会员数" fill="#6366F1" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="active" name="活跃会员" fill="#10B981" radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="h-full flex items-center justify-center text-xs text-gray-400">当前范围暂无会员等级数据</div>
+              )}
+            </div>
+          </>
+        ) : (
+          <div className="py-10 text-center text-xs text-gray-400">暂无会员分析数据</div>
+        )}
       </div>
     </div>
   );
