@@ -1,18 +1,19 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { 
-  TrendingUp, 
   Users, 
   ShoppingBag, 
   DollarSign, 
-  ArrowUpRight, 
-  ArrowDownRight, 
-  Activity, 
-  PieChart as PieChartIcon, 
-  Layers, 
-  Smartphone, 
-  Globe 
+  Package,
+  RefreshCw
 } from 'lucide-react';
-import { getReportingMemberAnalysis, BackendReportingMemberAnalysis } from '../../api/adminApi';
+import {
+  getReportingDashboardMetrics,
+  getReportingMemberAnalysis,
+  getReportingSalesTrend,
+  BackendReportingDashboardMetrics,
+  BackendReportingMemberAnalysis,
+  BackendReportingSalesTrendPoint,
+} from '../../api/adminApi';
 import { 
   AreaChart, 
   Area, 
@@ -23,40 +24,15 @@ import {
   CartesianGrid, 
   Tooltip, 
   ResponsiveContainer, 
-  PieChart, 
-  Pie, 
-  Cell 
 } from 'recharts';
-
-const trafficHourly = [
-  { time: '00:00', pv: 420, uv: 280, gmv: 3200 },
-  { time: '03:00', pv: 180, uv: 110, gmv: 980 },
-  { time: '06:00', pv: 520, uv: 390, gmv: 4100 },
-  { time: '09:00', pv: 2800, uv: 1950, gmv: 24800 },
-  { time: '12:00', pv: 4200, uv: 2900, gmv: 38900 },
-  { time: '15:00', pv: 3600, uv: 2400, gmv: 31200 },
-  { time: '18:00', pv: 4900, uv: 3400, gmv: 45600 },
-  { time: '21:00', pv: 6800, uv: 4800, gmv: 68900 },
-  { time: '23:00', pv: 3100, uv: 2100, gmv: 29400 }
-];
-
-const channelShare = [
-  { name: '微信小程序 / 公众号', value: 48, color: '#10B981' },
-  { name: '移动端 App 直达', value: 28, color: '#3B82F6' },
-  { name: '抖音/小红书直播流', value: 16, color: '#F59E0B' },
-  { name: '搜索引擎 & 网页版', value: 8, color: '#8B5CF6' }
-];
-
-const funnelData = [
-  { stage: '1. 页面浏览 (PV)', count: '128,400', rate: '100%' },
-  { stage: '2. 商品详情查看', count: '64,200', rate: '50.0%' },
-  { stage: '3. 加入购物车 / 立即买', count: '19,260', rate: '15.0%' },
-  { stage: '4. 提交订单结算', count: '8,988', rate: '7.0%' },
-  { stage: '5. 成功支付完成', count: '6,420', rate: '5.0%' }
-];
 
 export const AnalyticsOverviewView: React.FC = () => {
   const [timeRange, setTimeRange] = useState<'today' | '7d' | '30d'>('today');
+  const [dashboardMetrics, setDashboardMetrics] = useState<BackendReportingDashboardMetrics | null>(null);
+  const [salesTrend, setSalesTrend] = useState<BackendReportingSalesTrendPoint[]>([]);
+  const [overviewLoading, setOverviewLoading] = useState(true);
+  const [overviewError, setOverviewError] = useState<string | null>(null);
+  const [overviewReloadKey, setOverviewReloadKey] = useState(0);
   const [memberAnalysis, setMemberAnalysis] = useState<BackendReportingMemberAnalysis | null>(null);
   const [memberAnalysisLoading, setMemberAnalysisLoading] = useState(false);
   const [memberAnalysisError, setMemberAnalysisError] = useState<string | null>(null);
@@ -68,6 +44,40 @@ export const AnalyticsOverviewView: React.FC = () => {
     start.setDate(end.getDate() - days);
     return start.toISOString().slice(0, 10);
   }, [timeRange]);
+
+  useEffect(() => {
+    let active = true;
+    const endDate = new Date();
+    const days = timeRange === 'today' ? 0 : timeRange === '7d' ? 6 : 29;
+    const startDate = new Date(endDate);
+    startDate.setDate(endDate.getDate() - days);
+    const toDate = (value: Date) => value.toISOString().slice(0, 10);
+
+    setOverviewLoading(true);
+    setOverviewError(null);
+    void Promise.all([
+      // 首页指标始终取服务端业务当天，避免浏览器时区导致查询未来日期。
+      getReportingDashboardMetrics(),
+      getReportingSalesTrend(toDate(startDate), toDate(endDate)),
+    ])
+      .then(([metrics, trend]) => {
+        if (!active) return;
+        setDashboardMetrics(metrics);
+        setSalesTrend(trend || []);
+      })
+      .catch((error) => {
+        if (!active) return;
+        setDashboardMetrics(null);
+        setSalesTrend([]);
+        setOverviewError(error instanceof Error ? error.message : '经营概览加载失败');
+      })
+      .finally(() => {
+        if (active) setOverviewLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [timeRange, overviewReloadKey]);
 
   useEffect(() => {
     let active = true;
@@ -97,6 +107,19 @@ export const AnalyticsOverviewView: React.FC = () => {
     active: Number(item.activeMemberCount || 0),
   }));
 
+  const salesTrendChartData = salesTrend.map((item) => ({
+    time: item.date ? item.date.slice(5) : '-',
+    salesAmount: Number(item.salesAmount || 0),
+    orderCount: Number(item.orderCount || 0),
+  }));
+
+  const formatAmount = (value?: number) => overviewLoading || overviewError || value === undefined
+    ? '—'
+    : `¥${Number(value || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const formatCount = (value?: number) => overviewLoading || overviewError || value === undefined
+    ? '—'
+    : Number(value || 0).toLocaleString('zh-CN');
+
   return (
     <div className="space-y-6 animate-in fade-in-50 duration-200">
       {/* Header */}
@@ -111,7 +134,7 @@ export const AnalyticsOverviewView: React.FC = () => {
             </span>
           </div>
           <p className="text-xs md:text-sm text-[#434655] mt-0.5">
-            实时流量全景走势、访客转化漏斗分析、全渠道来源占比与客单价测算。
+            基于订单、商品和会员报表聚合，展示可追溯的经营趋势。
           </p>
         </div>
 
@@ -143,56 +166,59 @@ export const AnalyticsOverviewView: React.FC = () => {
         </div>
       </div>
 
+      {overviewError && (
+        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 flex items-center justify-between gap-3" role="alert">
+          <span>经营概览加载失败：{overviewError}</span>
+          <button type="button" onClick={() => setOverviewReloadKey((value) => value + 1)} className="inline-flex items-center gap-1 rounded-md border border-red-300 bg-white px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-100">
+            <RefreshCw className="w-3.5 h-3.5" />重试
+          </button>
+        </div>
+      )}
+
       {/* KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-white p-4.5 rounded-xl border border-[#E2E8F0] shadow-xs">
           <div className="flex justify-between items-start mb-2">
-            <span className="text-xs font-semibold uppercase tracking-wider text-gray-500">今日全店 GMV</span>
+            <span className="text-xs font-semibold uppercase tracking-wider text-gray-500">今日销售额</span>
             <div className="p-2 bg-blue-50 text-blue-600 rounded-lg">
               <DollarSign className="w-4 h-4" />
             </div>
           </div>
-          <div className="text-2xl md:text-3xl font-bold text-gray-900 mt-1">¥246,880</div>
-          <div className="flex items-center gap-1 text-xs text-emerald-600 mt-1 font-semibold">
-            <ArrowUpRight className="w-3.5 h-3.5" /> 较昨日同期 +18.4%
-          </div>
+          <div className="text-2xl md:text-3xl font-bold text-gray-900 mt-1">{formatAmount(dashboardMetrics?.todaySalesAmount)}</div>
+          <div className="text-xs text-gray-400 mt-1">已支付且未退款订单</div>
         </div>
 
         <div className="bg-white p-4.5 rounded-xl border border-[#E2E8F0] shadow-xs">
           <div className="flex justify-between items-start mb-2">
-            <span className="text-xs font-semibold uppercase tracking-wider text-gray-500">全站访客数 (UV)</span>
+            <span className="text-xs font-semibold uppercase tracking-wider text-gray-500">今日订单数</span>
             <div className="p-2 bg-purple-50 text-purple-600 rounded-lg">
+              <Package className="w-4 h-4" />
+            </div>
+          </div>
+          <div className="text-2xl md:text-3xl font-bold text-gray-900 mt-1">{formatCount(dashboardMetrics?.todayOrderCount)}</div>
+          <div className="text-xs text-gray-400 mt-1">按订单创建日期统计</div>
+        </div>
+
+        <div className="bg-white p-4.5 rounded-xl border border-[#E2E8F0] shadow-xs">
+          <div className="flex justify-between items-start mb-2">
+            <span className="text-xs font-semibold uppercase tracking-wider text-gray-500">今日新增会员</span>
+            <div className="p-2 bg-emerald-50 text-emerald-600 rounded-lg">
               <Users className="w-4 h-4" />
             </div>
           </div>
-          <div className="text-2xl md:text-3xl font-bold text-gray-900 mt-1">18,430</div>
-          <div className="flex items-center gap-1 text-xs text-emerald-600 mt-1 font-semibold">
-            <ArrowUpRight className="w-3.5 h-3.5" /> PV 浏览量 128,400 次
-          </div>
+          <div className="text-2xl md:text-3xl font-bold text-emerald-700 mt-1">{formatCount(dashboardMetrics?.todayMemberCount)}</div>
+          <div className="text-xs text-gray-400 mt-1">按会员注册日期统计</div>
         </div>
 
         <div className="bg-white p-4.5 rounded-xl border border-[#E2E8F0] shadow-xs">
           <div className="flex justify-between items-start mb-2">
-            <span className="text-xs font-semibold uppercase tracking-wider text-gray-500">全链路支付转化率</span>
-            <div className="p-2 bg-emerald-50 text-emerald-600 rounded-lg">
-              <Activity className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="text-2xl md:text-3xl font-bold text-emerald-700 mt-1">5.0%</div>
-          <div className="text-xs text-gray-400 mt-1">行业同类中位数 3.2%</div>
-        </div>
-
-        <div className="bg-white p-4.5 rounded-xl border border-[#E2E8F0] shadow-xs">
-          <div className="flex justify-between items-start mb-2">
-            <span className="text-xs font-semibold uppercase tracking-wider text-gray-500">平均笔单价 (AOV)</span>
+            <span className="text-xs font-semibold uppercase tracking-wider text-gray-500">累计商品数</span>
             <div className="p-2 bg-amber-50 text-amber-600 rounded-lg">
               <ShoppingBag className="w-4 h-4" />
             </div>
           </div>
-          <div className="text-2xl md:text-3xl font-bold text-amber-700 mt-1">¥248.50</div>
-          <div className="flex items-center gap-1 text-xs text-emerald-600 mt-1 font-semibold">
-            <ArrowUpRight className="w-3.5 h-3.5" /> 连带件数 2.4 件/单
-          </div>
+          <div className="text-2xl md:text-3xl font-bold text-amber-700 mt-1">{formatCount(dashboardMetrics?.totalProductCount)}</div>
+          <div className="text-xs text-gray-400 mt-1">截至今日已创建商品</div>
         </div>
       </div>
 
@@ -202,28 +228,28 @@ export const AnalyticsOverviewView: React.FC = () => {
         <div className="lg:col-span-2 bg-white rounded-xl border border-[#E2E8F0] shadow-xs p-5">
           <div className="flex items-center justify-between mb-4">
             <div>
-              <h3 className="text-sm font-bold text-gray-900">24小时实时流量与GMV走势 (Hourly Trend)</h3>
-              <p className="text-xs text-gray-400">实时反映波峰波谷与高峰购买转化时段</p>
+              <h3 className="text-sm font-bold text-gray-900">销售额与订单趋势</h3>
+              <p className="text-xs text-gray-400">按支付时间聚合，日期范围与上方筛选一致</p>
             </div>
             <div className="flex items-center gap-4 text-xs font-medium text-gray-600">
               <span className="flex items-center gap-1.5">
-                <span className="w-2.5 h-2.5 rounded-full bg-blue-600" /> GMV 销售额
+                <span className="w-2.5 h-2.5 rounded-full bg-blue-600" /> 销售额
               </span>
               <span className="flex items-center gap-1.5">
-                <span className="w-2.5 h-2.5 rounded-full bg-purple-500" /> UV 访客数
+                <span className="w-2.5 h-2.5 rounded-full bg-purple-500" /> 成交订单数
               </span>
             </div>
           </div>
 
           <div className="h-[280px] w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={trafficHourly}>
+            {overviewLoading ? <div className="h-full flex items-center justify-center text-sm text-gray-400">正在加载销售趋势...</div> : salesTrendChartData.length === 0 ? <div className="h-full flex items-center justify-center text-sm text-gray-400">当前范围暂无销售趋势数据</div> : <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={salesTrendChartData}>
                 <defs>
-                  <linearGradient id="gmvGradient" x1="0" y1="0" x2="0" y2="1">
+                    <linearGradient id="salesGradient" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor="#2563EB" stopOpacity={0.25} />
                     <stop offset="95%" stopColor="#2563EB" stopOpacity={0} />
                   </linearGradient>
-                  <linearGradient id="uvGradient" x1="0" y1="0" x2="0" y2="1">
+                    <linearGradient id="ordersGradient" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor="#8B5CF6" stopOpacity={0.2} />
                     <stop offset="95%" stopColor="#8B5CF6" stopOpacity={0} />
                   </linearGradient>
@@ -233,8 +259,8 @@ export const AnalyticsOverviewView: React.FC = () => {
                 <YAxis stroke="#94A3B8" fontSize={11} tickLine={false} axisLine={false} />
                 <Tooltip
                   formatter={(value: any, name: any) => {
-                    if (name === 'gmv') return [`¥${value.toLocaleString()}`, '销售GMV'];
-                    if (name === 'uv') return [`${value.toLocaleString()} 人`, 'UV访客'];
+                    if (name === 'salesAmount') return [`¥${Number(value).toLocaleString('zh-CN', { minimumFractionDigits: 2 })}`, '销售额'];
+                    if (name === 'orderCount') return [`${Number(value).toLocaleString('zh-CN')} 单`, '成交订单数'];
                     return [value, name];
                   }}
                   contentStyle={{
@@ -245,76 +271,22 @@ export const AnalyticsOverviewView: React.FC = () => {
                     boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'
                   }}
                 />
-                <Area type="monotone" dataKey="gmv" stroke="#2563EB" strokeWidth={2} fillOpacity={1} fill="url(#gmvGradient)" />
-                <Area type="monotone" dataKey="uv" stroke="#8B5CF6" strokeWidth={2} fillOpacity={1} fill="url(#uvGradient)" />
+                <Area type="monotone" dataKey="salesAmount" stroke="#2563EB" strokeWidth={2} fillOpacity={1} fill="url(#salesGradient)" />
+                <Area type="monotone" dataKey="orderCount" stroke="#8B5CF6" strokeWidth={2} fillOpacity={1} fill="url(#ordersGradient)" />
               </AreaChart>
-            </ResponsiveContainer>
+            </ResponsiveContainer>}
           </div>
         </div>
 
-        {/* Channel Share Pie Chart (1 col) */}
-        <div className="bg-white rounded-xl border border-[#E2E8F0] shadow-xs p-5 flex flex-col justify-between">
-          <div>
-            <h3 className="text-sm font-bold text-gray-900">全渠道客流来源占比 (Channels)</h3>
-            <p className="text-xs text-gray-400">微信生态与移动端贡献主要客流</p>
-          </div>
-
-          <div className="h-[200px] w-full flex items-center justify-center my-2">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={channelShare}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={50}
-                  outerRadius={75}
-                  paddingAngle={4}
-                  dataKey="value"
-                >
-                  {channelShare.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.color} />
-                  ))}
-                </Pie>
-                <Tooltip formatter={(value) => [`${value}%`, '占比']} />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-
-          <div className="space-y-1.5 text-xs">
-            {channelShare.map((item) => (
-              <div key={item.name} className="flex items-center justify-between text-gray-600">
-                <span className="flex items-center gap-1.5">
-                  <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: item.color }} />
-                  {item.name}
-                </span>
-                <span className="font-bold text-gray-900">{item.value}%</span>
-              </div>
-            ))}
-          </div>
+        <div className="bg-white rounded-xl border border-dashed border-[#CBD5E1] shadow-xs p-5 flex flex-col justify-center">
+          <h3 className="text-sm font-bold text-gray-900">渠道来源分析</h3>
+          <p className="mt-2 text-xs leading-5 text-gray-500">当前报表接口尚未接入访问埋点，暂不展示估算占比。接入渠道埋点后将在此处显示真实来源数据。</p>
         </div>
       </div>
 
-      {/* Conversion Funnel */}
-      <div className="bg-white rounded-xl border border-[#E2E8F0] shadow-xs p-5">
-        <h3 className="text-sm font-bold text-gray-900 mb-1">全链路用户交易转化漏斗 (Conversion Funnel)</h3>
-        <p className="text-xs text-gray-400 mb-4">从公域浏览至最终付款的逐层流失与转化效能</p>
-
-        <div className="space-y-3">
-          {funnelData.map((stage, idx) => (
-            <div key={stage.stage} className="relative">
-              <div className="flex items-center justify-between text-xs font-semibold text-gray-800 mb-1">
-                <span>{stage.stage}</span>
-                <span className="text-blue-600">{stage.count} 人 ({stage.rate})</span>
-              </div>
-              <div className="w-full bg-gray-100 h-3 rounded-full overflow-hidden">
-                <div
-                  className="h-3 rounded-full bg-gradient-to-r from-blue-600 to-indigo-600"
-                  style={{ width: stage.rate }}
-                />
-              </div>
-            </div>
-          ))}
-        </div>
+      <div className="bg-white rounded-xl border border-dashed border-[#CBD5E1] shadow-xs p-5">
+        <h3 className="text-sm font-bold text-gray-900 mb-1">用户转化漏斗</h3>
+        <p className="text-xs text-gray-500">当前报表接口未采集页面浏览、加购和结算埋点，暂不使用静态数据填充漏斗。</p>
       </div>
 
       {/* Real member analysis */}

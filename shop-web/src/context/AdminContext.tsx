@@ -15,7 +15,7 @@ import {
   Department,
   DataRule
 } from '../types';
-import { initialProducts, initialOrders, initialUsers, initialTodos, initialNotifications } from '../data/mockData';
+import { initialProducts, initialOrders, initialTodos, initialNotifications } from '../data/mockData';
 import { 
   initialRoles, 
   initialSystemUsers, 
@@ -32,6 +32,7 @@ import {
   getCurrentAdmin,
   logoutAdmin,
   listMemberUsers,
+  createMemberUser,
   updateMemberStatus,
   updateMemberProfile,
   adjustMemberAssets,
@@ -128,7 +129,7 @@ interface AdminContextType {
   auditOrder: (id: string, approved: boolean, remark?: string) => Promise<void>;
   
   // User actions (Customer members)
-  addUser: (user: Omit<User, 'id' | 'registeredAt' | 'totalSpent' | 'orderCount' | 'lastActive'>) => void;
+  addUser: (user: Omit<User, 'id' | 'registeredAt' | 'totalSpent' | 'orderCount' | 'lastActive'>) => Promise<void>;
   updateUserStatus: (id: string, status: User['status']) => void;
   updateUser: (id: string, updates: Partial<User>) => void;
   batchUpdateUserStatus: (ids: string[], status: UserStatus) => void;
@@ -269,7 +270,8 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   const [currentTab, setCurrentTabState] = useState<NavigationTab>('dashboard');
   const [products, setProducts] = useState<Product[]>(initialProducts);
   const [orders, setOrders] = useState<Order[]>(initialOrders);
-  const [users, setUsers] = useState<User[]>(initialUsers);
+  // 会员列表以服务端返回为唯一事实来源，避免管理端展示本地演示会员。
+  const [users, setUsers] = useState<User[]>([]);
   const [catalogCategories, setCatalogCategories] = useState<Array<{ id: number; code: ProductCategory; name: string }>>([]);
   const [todos, setTodos] = useState<TodoItem[]>(initialTodos);
   const [notifications, setNotifications] = useState<NotificationItem[]>(initialNotifications);
@@ -400,8 +402,11 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       setRoles((previous) => previous.map((role) => ({ ...role, userCount: userCountByRole.get(role.id) || 0 })));
     }
     if (memberResult.status === 'fulfilled') {
-      // 会员接口成功后以服务端事实替换本地演示数据，接口失败则保留演示数据。
+      // 会员接口成功后以服务端事实替换当前快照，不混入本地演示会员。
       setUsers(backendMembersToFrontend(memberResult.value.records));
+    } else {
+      // 查询失败时清空列表，避免把过期或演示数据误当成线上会员。
+      setUsers([]);
     }
   };
 
@@ -833,23 +838,35 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   };
 
   // User Methods
-  const addUser = (userData: Omit<User, 'id' | 'registeredAt' | 'totalSpent' | 'orderCount' | 'lastActive'>) => {
-    const now = new Date();
-    const formattedDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-    const newUser: User = {
-      ...userData,
-      id: `usr-${Date.now()}`,
-      registeredAt: formattedDate,
-      totalSpent: 0,
-      orderCount: 0,
-      lastActive: '刚刚',
-      balance: 0,
-      points: 0,
-      growthValue: 0,
-      tags: ['新注册会员']
-    };
-    setUsers((prev) => [newUser, ...prev]);
-    showToast(`会员 ${newUser.name} 已成功录入`, 'success');
+  const addUser = async (userData: Omit<User, 'id' | 'registeredAt' | 'totalSpent' | 'orderCount' | 'lastActive'>) => {
+    try {
+      // 新增会员统一写入服务端，避免刷新页面后回退到本地演示数据。
+      const record = await createMemberUser({
+        nickname: userData.name,
+        phone: userData.phone,
+        email: userData.email,
+        memberLevel: userData.tier,
+        status: userData.status === 'active' ? 1 : 0,
+        avatarUrl: userData.avatar,
+        remark: userData.notes,
+      });
+      const synced = backendMembersToFrontend([record])[0];
+      setUsers((prev) => [synced, ...prev]);
+      if (userData.tags?.length && Number.isFinite(Number(record.id))) {
+        try {
+          const tagged = await updateMemberTags(Number(record.id), userData.tags);
+          const taggedUser = backendMembersToFrontend([tagged])[0];
+          setUsers((prev) => prev.map((user) => user.id === synced.id ? taggedUser : user));
+        } catch {
+          // 会员已成功创建，标签失败仅提示并保留创建结果，便于稍后在画像面板重试。
+          showToast('会员已创建，但默认标签保存失败，请稍后补充', 'warning');
+        }
+      }
+      showToast(`会员 ${synced.name} 已成功录入`, 'success');
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : '会员创建失败，请稍后重试', 'warning');
+      throw error;
+    }
   };
 
   const updateUserStatus = (id: string, status: User['status']) => {
@@ -909,7 +926,7 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       .map((id) => Number(id))
       .filter((id) => Number.isFinite(id));
     if (numericIds.length === 0) {
-      showToast('当前选中的会员尚未同步到服务端，状态仅在本地演示数据中更新', 'info');
+      showToast('当前选中的会员没有可提交的服务端编号', 'warning');
       return;
     }
     showToast(`正在批量${status === 'active' ? '解冻' : '冻结'} ${numericIds.length} 位会员账号`, 'info');

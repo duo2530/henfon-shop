@@ -11,8 +11,8 @@ export interface InvoiceRecord {
   title: string;
   taxCode: string;
   amount: number;
-  taxRate: number;
-  taxAmount: number;
+  /** 当前发票接口只返回含税金额，税额待开票平台回传后展示。 */
+  taxAmount?: number;
   applicantEmail: string;
   status: 'issued' | 'pending' | 'issuing' | 'rejected' | 'red_ink';
   createdAt: string;
@@ -36,8 +36,6 @@ function toInvoiceRecord(invoice: BackendPaymentInvoice): InvoiceRecord {
     title: invoice.title,
     taxCode: invoice.taxNo || '-',
     amount: Number(invoice.amount || 0),
-    taxRate: 13,
-    taxAmount: Number(invoice.amount || 0) * 13 / 113,
     applicantEmail: invoice.email || '-',
     status,
     createdAt: invoice.createdAt || invoice.requestedAt || '-',
@@ -167,7 +165,7 @@ export const InvoiceManagementView: React.FC = () => {
                 <th className="py-3 px-4">发票类型</th>
                 <th className="py-3 px-4">抬头与纳税人识别号</th>
                 <th className="py-3 px-4 text-right">开票金额 (¥)</th>
-                <th className="py-3 px-4 text-right">税额 (13%)</th>
+                <th className="py-3 px-4 text-right">税额</th>
                 <th className="py-3 px-4 text-center">状态</th>
                 <th className="py-3 px-4 text-right">操作</th>
               </tr>
@@ -206,7 +204,7 @@ export const InvoiceManagementView: React.FC = () => {
                   </td>
 
                   <td className="py-3 px-4 text-right font-mono text-gray-500 text-xs">
-                    ¥{inv.taxAmount.toFixed(2)}
+                    {inv.taxAmount === undefined ? '待平台返回' : `¥${inv.taxAmount.toFixed(2)}`}
                   </td>
 
                   <td className="py-3 px-4 text-center">

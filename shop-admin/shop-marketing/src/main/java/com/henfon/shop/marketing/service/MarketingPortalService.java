@@ -70,12 +70,8 @@ public class MarketingPortalService {
      */
     public List<MarketingCoupon> coupons() {
         LocalDateTime now = LocalDateTime.now();
-        return couponMapper.selectList(new LambdaQueryWrapper<MarketingCoupon>()
-                .eq(MarketingCoupon::getStatus, 1)
-                .le(MarketingCoupon::getStartAt, now)
-                .ge(MarketingCoupon::getEndAt, now)
-                .apply("(claimed_quantity < total_quantity OR total_quantity = 0)")
-                .orderByDesc(MarketingCoupon::getDiscountAmount));
+        // 通过显式字段查询兼容未执行领取上限迁移的历史开发库，避免 MyBatis 自动拼接不存在的列。
+        return couponMapper.selectActiveCoupons(now);
     }
 
     /**

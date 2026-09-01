@@ -35,7 +35,8 @@ mybatis-plus:
     log-impl: org.apache.ibatis.logging.nologging.NoLoggingImpl
 
 rocketmq:
-  name-server: ${ROCKETMQ_NAME_SERVER}
+  # 未显式注入时使用本机开发 NameServer，避免空环境变量导致客户端以 null 地址启动。
+  name-server: ${ROCKETMQ_NAME_SERVER:127.0.0.1:9876}
   producer:
     group: ${ROCKETMQ_PRODUCER_GROUP:shop-admin-prod-producer}
     send-message-timeout: ${ROCKETMQ_SEND_TIMEOUT:5000}
@@ -98,6 +99,10 @@ shop:
       connect-timeout: ${SHOP_WECHAT_PAY_CONNECT_TIMEOUT:3s}
       read-timeout: ${SHOP_WECHAT_PAY_READ_TIMEOUT:10s}
   security:
+    member-password-reset:
+      url: ${SHOP_MEMBER_PASSWORD_RESET_URL:}
+      ttl-minutes: ${SHOP_MEMBER_PASSWORD_RESET_TTL_MINUTES:15}
+      cooldown-seconds: ${SHOP_MEMBER_PASSWORD_RESET_COOLDOWN_SECONDS:60}
     jwt:
       # 生产环境必须使用长度足够且定期轮换的密钥。
       secret: ${SHOP_JWT_SECRET}

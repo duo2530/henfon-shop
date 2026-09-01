@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useAdmin } from '../../context/AdminContext';
 import { User, UserStatus } from '../../types';
+import { PermissionGate } from '../common/PermissionGate';
 import { 
   Users, 
   UserPlus, 
@@ -13,7 +14,6 @@ import {
   Lock, 
   Unlock, 
   X, 
-  TrendingUp, 
   Award,
   Calendar,
   Mail,
@@ -57,6 +57,7 @@ export const UserManagementView: React.FC = () => {
   const [inspectUser, setInspectUser] = useState<User | null>(null);
   const [isAddUserModalOpen, setIsAddUserModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
+  const [isSubmittingUser, setIsSubmittingUser] = useState(false);
 
   // Balance & Points Adjustment Modal
   const [adjustingUser, setAdjustingUser] = useState<User | null>(null);
@@ -89,6 +90,13 @@ export const UserManagementView: React.FC = () => {
     users.forEach((u) => u.tags?.forEach((t) => set.add(t)));
     return Array.from(set);
   }, [users]);
+
+  const userStats = useMemo(() => ({
+    total: users.length,
+    vip: users.filter((user) => user.tier === 'platinum' || user.tier === 'gold').length,
+    balance: users.reduce((sum, user) => sum + Number(user.balance || 0), 0),
+    points: users.reduce((sum, user) => sum + Number(user.points || 0), 0)
+  }), [users]);
 
   // Filtered Users
   const filteredUsers = useMemo(() => {
@@ -145,9 +153,9 @@ export const UserManagementView: React.FC = () => {
     setEditingUser(null);
     setFormData({
       name: '',
-      phone: '13900139000',
+      phone: '',
       email: '',
-      userCode: `USR-${Math.floor(1000 + Math.random() * 9000)}`,
+      userCode: '',
       status: 'active',
       tier: 'regular',
       avatar: '',
@@ -175,19 +183,27 @@ export const UserManagementView: React.FC = () => {
     setIsAddUserModalOpen(true);
   };
 
-  const handleSubmitUser = (e: React.FormEvent) => {
+  const handleSubmitUser = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmittingUser) return;
     if (!formData.name.trim()) {
       showToast('请输入用户姓名', 'error');
       return;
     }
 
-    if (editingUser) {
-      updateUser(editingUser.id, formData);
-    } else {
-      addUser(formData);
+    setIsSubmittingUser(true);
+    try {
+      if (editingUser) {
+        updateUser(editingUser.id, formData);
+      } else {
+        await addUser(formData);
+      }
+      setIsAddUserModalOpen(false);
+    } catch {
+      // 创建失败时保留表单内容，方便修正资料后重试。
+    } finally {
+      setIsSubmittingUser(false);
     }
-    setIsAddUserModalOpen(false);
   };
 
   const handleOpenAdjustment = (user: User) => {
@@ -305,14 +321,16 @@ export const UserManagementView: React.FC = () => {
             <span>导出会员名单</span>
           </button>
 
-          <button
-            id="btn-add-user"
-            onClick={handleOpenAddModal}
-            className="h-[36px] px-4 rounded-lg bg-[#2563EB] text-white hover:bg-blue-700 flex items-center justify-center gap-2 text-xs font-semibold shadow-xs transition-colors cursor-pointer"
-          >
-            <UserPlus className="w-4 h-4" />
-            <span>录入会员 (New Member)</span>
-          </button>
+          <PermissionGate permission="member:user:status">
+            <button
+              id="btn-add-user"
+              onClick={handleOpenAddModal}
+              className="h-[36px] px-4 rounded-lg bg-[#2563EB] text-white hover:bg-blue-700 flex items-center justify-center gap-2 text-xs font-semibold shadow-xs transition-colors cursor-pointer"
+            >
+              <UserPlus className="w-4 h-4" />
+              <span>录入会员 (New Member)</span>
+            </button>
+          </PermissionGate>
         </div>
       </div>
 
@@ -328,11 +346,10 @@ export const UserManagementView: React.FC = () => {
             </div>
           </div>
           <div className="text-2xl md:text-3xl font-bold text-gray-900 mt-1">
-            {users.length + 12840}
+            {userStats.total.toLocaleString()}
           </div>
-          <div className="mt-1 flex items-center gap-1 text-xs font-medium text-emerald-600">
-            <TrendingUp className="w-3.5 h-3.5" />
-            <span>月环比增长 +6.8%</span>
+          <div className="mt-1 text-xs text-gray-500 font-medium">
+            当前筛选结果来自服务端同步
           </div>
         </div>
 
@@ -346,10 +363,10 @@ export const UserManagementView: React.FC = () => {
             </div>
           </div>
           <div className="text-2xl md:text-3xl font-bold text-gray-900 mt-1">
-            2,480
+            {userStats.vip.toLocaleString()}
           </div>
           <div className="mt-1 text-xs text-purple-700 font-medium">
-            贡献 64% 核心销售额
+            白金 / 金卡会员
           </div>
         </div>
 
@@ -363,7 +380,7 @@ export const UserManagementView: React.FC = () => {
             </div>
           </div>
           <div className="text-2xl md:text-3xl font-bold text-gray-900 mt-1">
-            ¥892,400
+            ¥{userStats.balance.toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
           </div>
           <div className="mt-1 text-xs text-emerald-600 font-medium">
             钱包可用总余额
@@ -380,7 +397,7 @@ export const UserManagementView: React.FC = () => {
             </div>
           </div>
           <div className="text-2xl md:text-3xl font-bold text-gray-900 mt-1">
-            1.68M
+            {userStats.points.toLocaleString('zh-CN')}
           </div>
           <div className="mt-1 text-xs text-amber-700 font-medium">
             待兑换商城权益
@@ -799,7 +816,7 @@ export const UserManagementView: React.FC = () => {
                 <div>
                   <span className="text-xs text-gray-500">成长值</span>
                   <div className="text-base font-bold text-purple-700 mt-0.5">
-                    {inspectUser.growthValue || 1200}
+                    {inspectUser.growthValue ?? 0}
                   </div>
                 </div>
               </div>
@@ -1131,9 +1148,10 @@ export const UserManagementView: React.FC = () => {
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 rounded-lg bg-[#2563EB] text-white hover:bg-blue-700 text-xs font-semibold shadow-xs"
+                  disabled={isSubmittingUser}
+                  className="px-5 py-2 rounded-lg bg-[#2563EB] text-white hover:bg-blue-700 text-xs font-semibold shadow-xs disabled:opacity-60 disabled:cursor-not-allowed"
                 >
-                  {editingUser ? '保存修改' : '确认新增'}
+                  {isSubmittingUser ? '保存中...' : editingUser ? '保存修改' : '确认新增'}
                 </button>
               </div>
             </form>

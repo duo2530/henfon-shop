@@ -3,6 +3,7 @@ package com.henfon.shop.content.service;
 import com.henfon.shop.content.config.EmailNotificationProperties;
 import com.henfon.shop.identity.entity.MemberUser;
 import com.henfon.shop.identity.mapper.MemberUserMapper;
+import com.henfon.shop.identity.service.MemberEmailSender;
 import jakarta.mail.internet.AddressException;
 import jakarta.mail.internet.InternetAddress;
 import org.slf4j.Logger;
@@ -26,7 +27,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * @date 2026-09-01
  */
 @Service
-public class EmailNotificationService {
+public class EmailNotificationService implements MemberEmailSender {
 
     private static final Logger log = LoggerFactory.getLogger(EmailNotificationService.class);
 
@@ -50,6 +51,42 @@ public class EmailNotificationService {
         this.mailSenderProvider = mailSenderProvider;
         this.memberUserMapper = memberUserMapper;
         this.properties = properties;
+    }
+
+    /**
+     * 向指定邮箱发送认证邮件，供身份模块的密码找回流程复用。
+     *
+     * @param recipient 收件人邮箱
+     * @param subject 邮件主题
+     * @param content 邮件正文
+     * @author Henfon
+     * @date 2026-09-01
+     */
+    @Override
+    public void send(String recipient, String subject, String content) {
+        if (!properties.isEnabled() || !StringUtils.hasText(recipient) || !isValidEmail(recipient)) {
+            return;
+        }
+        JavaMailSender mailSender = mailSenderProvider.getIfAvailable();
+        if (mailSender == null) {
+            log.debug("邮件通知已启用但 SMTP 未配置，跳过认证邮件");
+            return;
+        }
+        SimpleMailMessage message = new SimpleMailMessage();
+        message.setTo(recipient.trim());
+        if (StringUtils.hasText(properties.getFrom())) {
+            message.setFrom(properties.getFrom().trim());
+        }
+        String prefix = StringUtils.hasText(properties.getSubjectPrefix())
+                ? properties.getSubjectPrefix().trim() + " - " : "";
+        message.setSubject(prefix + (StringUtils.hasText(subject) ? subject.trim() : "会员认证通知"));
+        message.setText(StringUtils.hasText(content) ? content.trim() : "您有一封会员认证邮件，请登录商城查看详情。");
+        try {
+            mailSender.send(message);
+        } catch (RuntimeException exception) {
+            // 认证流程不因 SMTP 暂时不可用而暴露账号状态或阻塞请求。
+            log.warn("认证邮件发送失败，recipient={}", recipient, exception);
+        }
     }
 
     /**

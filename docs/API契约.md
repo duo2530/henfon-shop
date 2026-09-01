@@ -45,7 +45,7 @@ HTTP 状态：成功 2xx；参数/业务错误 400；认证失败 401；无权�
 
 ## 5. 错误码
 
-通用错误码：`VALIDATION_ERROR`（参数校验）、`AUTH_INVALID`/`AUTH_REFRESH_INVALID`/`MEMBER_AUTH_INVALID`（凭证无效）、`AUTH_DISABLED`/`MEMBER_AUTH_DISABLED`（账号禁用）、`AUTH_RATE_LIMITED`（登录限流）、`AUTH_LOCKED`（管理员连续失败锁定）、`AUTH_PASSWORD_INVALID`/`AUTH_PASSWORD_UNCHANGED`（密码修改失败）、`MEMBER_AUTH_REQUIRED`、`MEMBER_ID_MISMATCH`、`MARKETING_COUPON_CATEGORY_MISMATCH`（优惠券适用类目不匹配）、`*_NOT_FOUND`（资源不存在）、`*_CONCURRENT[_UPDATE]`（乐观锁冲突）、`*_STATUS_INVALID`（非法状态流转）、`SYSTEM_ERROR`。各领域错误码沿用代码中 `BusinessException` 的稳定字符串前缀（如 `TRADE_`、`INVENTORY_`、`PAYMENT_`、`MARKETING_`、`CATALOG_`、`CONTENT_`）；客户端应按 `code` 分支，不能匹配中文 `message`。
+通用错误码：`VALIDATION_ERROR`（参数校验）、`AUTH_INVALID`/`AUTH_REFRESH_INVALID`/`MEMBER_AUTH_INVALID`（凭证无效）、`AUTH_DISABLED`/`MEMBER_AUTH_DISABLED`（账号禁用）、`AUTH_RATE_LIMITED`（登录限流）、`AUTH_LOCKED`（管理员连续失败锁定）、`AUTH_PASSWORD_INVALID`/`AUTH_PASSWORD_UNCHANGED`（密码修改失败）、`MEMBER_PASSWORD_RESET_INVALID`（邮箱重置令牌无效或过期）、`MEMBER_AUTH_REQUIRED`、`MEMBER_ID_MISMATCH`、`MARKETING_COUPON_CATEGORY_MISMATCH`（优惠券适用类目不匹配）、`*_NOT_FOUND`（资源不存在）、`*_CONCURRENT[_UPDATE]`（乐观锁冲突）、`*_STATUS_INVALID`（非法状态流转）、`SYSTEM_ERROR`。各领域错误码沿用代码中 `BusinessException` 的稳定字符串前缀（如 `TRADE_`、`INVENTORY_`、`PAYMENT_`、`MARKETING_`、`CATALOG_`、`CONTENT_`）；客户端应按 `code` 分支，不能匹配中文 `message`。
 
 ## 6. 现有模块主要接口
 
@@ -61,9 +61,9 @@ HTTP 状态：成功 2xx；参数/业务错误 400；认证失败 401；无权�
 ### shop-identity（认证、会员、RBAC、审计）
 
 - 管理认证：`POST /api/admin/auth/login`、`POST /api/admin/auth/refresh`、`POST /api/admin/auth/password`、`POST /api/admin/auth/logout`、`GET /api/admin/auth/me`、`GET /api/admin/auth/menus`。登录返回 8 小时访问令牌和 30 天刷新令牌；刷新请求体为 `{ "refreshToken": "..." }`，刷新令牌使用 Redis 原子消费并一次性轮换，旧令牌立即失效。修改密码请求体为 `{ "oldPassword": "...", "newPassword": "..." }`，新密码长度 6～64 位；退出接口允许在访问令牌过期时调用，会将当前 JWT（如仍有效）加入黑名单，并删除请求体中的刷新令牌。
-- 会员认证：`POST /api/portal/auth/login|register|refresh|logout`。
+- 会员认证：`POST /api/portal/auth/login|register|refresh|logout`；邮箱找回密码申请 `POST /api/portal/auth/password-reset/request`（请求 `{ "email": "buyer@example.com" }`，无论邮箱是否存在均返回统一成功响应），确认 `POST /api/portal/auth/password-reset/confirm`（请求 `{ "token": "...", "newPassword": "..." }`，令牌 Redis 短时有效且原子消费，仅可使用一次）。
 - 会员门户：`GET /api/portal/member/profile|addresses|favorites|compare/history`；地址 `POST /addresses`、`PUT/DELETE /addresses/{id}`、`PUT /addresses/{id}/default`；收藏 `POST /favorites/{productId}/toggle`；对比历史 `POST /compare/history`。
-- 会员管理：`GET /api/admin/member/users`（分页）、`PUT /users/{id}`、`PUT /users/{id}/status`、`PUT /users/{id}/assets`、标签 `GET/PUT /tags`、`PUT /tags/{id}`、`PUT /users/{id}/tags`。
+- 会员管理：`GET /api/admin/member/users`（分页）、`POST /users`（后台会员建档）、`PUT /users/{id}`、`PUT /users/{id}/status`、`PUT /users/{id}/assets`、标签 `GET/PUT /tags`、`PUT /tags/{id}`、`PUT /users/{id}/tags`。
 - 系统管理：`/api/admin/system/users|depts|roles|menus|data-rules` 的分页/创建/更新/删除，以及用户角色、角色菜单、角色数据规则的 `GET/PUT` 关联接口。
 - 审计：`GET /api/admin/audit/login-logs`、`GET /api/admin/audit/operation-logs`（均分页）。
 
@@ -74,7 +74,7 @@ HTTP 状态：成功 2xx；参数/业务错误 400；认证失败 401；无权�
 
 ### shop-inventory（仓库、库存、盘点、供应商）
 
-- 仓库/库存：`GET /api/admin/inventory/warehouses|warehouses/enabled`、`PUT /warehouses/{id}/status`；`GET /stocks`、`GET /stocks/warnings`、`PUT /stocks/{stockId}/adjust`。
+- 仓库/库存：`GET /api/admin/inventory/warehouses|warehouses/enabled`、`PUT /warehouses/{id}/status`；`GET /stocks`、`GET /stocks/warnings`、`GET /locks`（按订单/状态查询库存锁定流水，状态 0=已预占、1=已释放、2=已扣减）、`PUT /stocks/{stockId}/adjust`。
 - 供应商：`GET/POST /api/admin/inventory/suppliers`、`PUT /suppliers/{id}/status`、`DELETE /suppliers/{id}`。
 - 盘点：`GET /api/admin/inventory/stocktakes`、`GET /stocktakes/{id}/items`、`POST /stocktakes`、`POST /stocktakes/{id}/complete`；导入明细一次最多 5000 条。
 

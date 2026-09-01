@@ -47,8 +47,13 @@ public class SecurityConfiguration {
                                 "/actuator/health", "/error",
                                 "/api/wx/pay/notify", "/api/wx/pay/refund/notify").permitAll()
                         // 商品、内容、可领取优惠券和秒杀活动查询面向访客开放；会员数据和交易接口必须携带会员 JWT。
-                        .requestMatchers("/api/portal/auth/**", "/api/portal/catalog/**", "/api/portal/content/**",
-                                "/api/portal/marketing/coupons", "/api/portal/marketing/flash-sales").permitAll()
+                        // 同时放行带尾斜杠的 GET 请求，兼容浏览器或网关规范化后的门户地址。
+                        .requestMatchers("/api/portal/auth/**", "/api/portal/catalog/**", "/api/portal/content/**")
+                        .permitAll()
+                        .requestMatchers(HttpMethod.GET,
+                                "/api/portal/marketing/coupons", "/api/portal/marketing/coupons/",
+                                "/api/portal/marketing/flash-sales", "/api/portal/marketing/flash-sales/")
+                        .permitAll()
                         .requestMatchers("/api/portal/member/**", "/api/portal/trade/**",
                                 "/api/portal/marketing/member-coupons").authenticated()
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()

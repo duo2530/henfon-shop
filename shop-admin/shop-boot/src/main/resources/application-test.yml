@@ -94,6 +94,10 @@ shop:
       connect-timeout: ${SHOP_TEST_WECHAT_PAY_CONNECT_TIMEOUT:3s}
       read-timeout: ${SHOP_TEST_WECHAT_PAY_READ_TIMEOUT:10s}
   security:
+    member-password-reset:
+      url: ${SHOP_TEST_MEMBER_PASSWORD_RESET_URL:http://localhost:3000/}
+      ttl-minutes: ${SHOP_TEST_MEMBER_PASSWORD_RESET_TTL_MINUTES:15}
+      cooldown-seconds: ${SHOP_TEST_MEMBER_PASSWORD_RESET_COOLDOWN_SECONDS:1}
     jwt:
       secret: ${SHOP_TEST_JWT_SECRET:henfon-shop-test-jwt-secret-key-change-me-2026}
       expiration-seconds: ${SHOP_TEST_JWT_EXPIRATION_SECONDS:3600}

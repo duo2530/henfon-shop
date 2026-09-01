@@ -6,6 +6,7 @@ import com.baomidou.mybatisplus.extension.plugins.inner.OptimisticLockerInnerInt
 import com.baomidou.mybatisplus.extension.plugins.inner.PaginationInnerInterceptor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
@@ -16,6 +17,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
  * @date 2026-08-29
  */
 @Configuration
+@EnableConfigurationProperties(MemberPasswordResetProperties.class)
 public class IdentityConfiguration {
 
     /**

@@ -31,10 +31,20 @@ export interface ReviewItem {
 }
 
 function reviewStatus(status: number): ReviewItem['status'] {
-  // 后端约定：0待审核、1审核通过、2已隐藏。
+  // 后端约定：0隐藏、1展示；后台审核接口不再使用演示态“待审核”。
   if (status === 1) return 'approved';
-  if (status === 2) return 'hidden';
-  return 'pending';
+  return 'hidden';
+}
+
+function parseReviewImages(imageUrls?: string): string[] {
+  if (!imageUrls) return [];
+  try {
+    const parsed: unknown = JSON.parse(imageUrls);
+    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string' && item.trim().length > 0) : [];
+  } catch {
+    // 兼容早期数据以逗号分隔图片地址的存储格式。
+    return imageUrls.split(',').map((item) => item.trim()).filter(Boolean);
+  }
 }
 
 export const ReviewManagementView: React.FC = () => {
@@ -45,12 +55,19 @@ export const ReviewManagementView: React.FC = () => {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [replyingId, setReplyingId] = useState<string | null>(null);
   const [statusUpdatingId, setStatusUpdatingId] = useState<string | null>(null);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'all' | '0' | '1'>('all');
 
   const loadReviews = useCallback(async () => {
     setLoading(true);
     setLoadError(null);
     try {
-      const page = await listContentReviews({ current: 1, size: 100 });
+      const page = await listContentReviews({
+        current: 1,
+        size: 100,
+        keyword: searchTerm.trim() || undefined,
+        status: statusFilter === 'all' ? undefined : Number(statusFilter),
+      });
       setReviews((page.records || []).map((review) => ({
         id: String(review.id),
         userName: review.memberName,
@@ -58,6 +75,7 @@ export const ReviewManagementView: React.FC = () => {
         productName: `商品 #${review.productId}`,
         rating: review.rating,
         content: review.reviewContent,
+        images: parseReviewImages(review.imageUrls),
         reply: review.replyContent || '',
         status: reviewStatus(review.status),
         createdAt: review.createdAt || review.reviewedAt || '',
@@ -71,10 +89,11 @@ export const ReviewManagementView: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [showToast]);
+  }, [searchTerm, showToast, statusFilter]);
 
   useEffect(() => {
-    void loadReviews();
+    const timer = window.setTimeout(() => void loadReviews(), 250);
+    return () => window.clearTimeout(timer);
   }, [loadReviews]);
 
   const handleReplySubmit = async (id: string) => {
@@ -99,7 +118,7 @@ export const ReviewManagementView: React.FC = () => {
   };
 
   const handleToggleStatus = async (review: ReviewItem) => {
-    const nextStatus = review.status === 'approved' ? 2 : 1;
+    const nextStatus = review.status === 'approved' ? 0 : 1;
     const previous = reviews;
     const nextFrontendStatus: ReviewItem['status'] = nextStatus === 1 ? 'approved' : 'hidden';
     setStatusUpdatingId(review.id);
@@ -132,6 +151,36 @@ export const ReviewManagementView: React.FC = () => {
             买家真实口碑、晒图审核、差评安抚拦截、官方客服快捷回复与精选置顶。
           </p>
         </div>
+      </div>
+
+      <div className="bg-white rounded-xl border border-[#E2E8F0] shadow-xs p-4 flex flex-wrap items-center gap-3">
+        <div className="relative flex-1 min-w-[220px] max-w-md">
+          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+          <input
+            type="search"
+            value={searchTerm}
+            onChange={(event) => setSearchTerm(event.target.value)}
+            placeholder="搜索评价内容或会员名称…"
+            className="w-full h-[36px] pl-9 pr-3 text-sm rounded-lg border border-[#E2E8F0] bg-white outline-none focus:border-blue-500"
+          />
+        </div>
+        <select
+          value={statusFilter}
+          onChange={(event) => setStatusFilter(event.target.value as 'all' | '0' | '1')}
+          className="h-[36px] px-3 text-sm rounded-lg border border-[#E2E8F0] bg-white text-gray-700 outline-none"
+          aria-label="评价展示状态"
+        >
+          <option value="all">全部状态</option>
+          <option value="1">已展示</option>
+          <option value="0">已隐藏</option>
+        </select>
+        <button
+          type="button"
+          onClick={() => void loadReviews()}
+          className="h-[36px] px-3 rounded-lg border border-[#E2E8F0] text-sm text-gray-700 hover:bg-gray-50 inline-flex items-center gap-1.5"
+        >
+          <RefreshCw className="w-4 h-4" />刷新
+        </button>
       </div>
 
       {/* Review List */}

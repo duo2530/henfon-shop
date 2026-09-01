@@ -22,6 +22,10 @@ services:
         condition: service_started
       minio:
         condition: service_started
+      rocketmq-namesrv:
+        condition: service_started
+      rocketmq-broker:
+        condition: service_started
 
   mysql:
     image: mysql:8.4
@@ -60,7 +64,33 @@ services:
     volumes:
       - minio-data:/data
 
+  # RocketMQ NameServer/Broker 为订单 Outbox、通知和报表事件提供本地消息基础设施。
+  # Broker 对外公布 host.docker.internal，保证宿主机启动的 Spring Boot 也能访问消息服务。
+  rocketmq-namesrv:
+    image: apache/rocketmq:5.3.1
+    restart: unless-stopped
+    command: sh mqnamesrv
+    ports:
+      - "9876:9876"
+
+  rocketmq-broker:
+    image: apache/rocketmq:5.3.1
+    restart: unless-stopped
+    depends_on:
+      rocketmq-namesrv:
+        condition: service_started
+    environment:
+      NAMESRV_ADDR: rocketmq-namesrv:9876
+    command: sh -c "echo 'brokerIP1=host.docker.internal' > /home/rocketmq/rocketmq-5.3.1/conf/broker.conf && sh mqbroker -n rocketmq-namesrv:9876 -c /home/rocketmq/rocketmq-5.3.1/conf/broker.conf"
+    ports:
+      - "10909:10909"
+      - "10911:10911"
+      - "10912:10912"
+    volumes:
+      - rocketmq-store:/home/rocketmq/store
+
 volumes:
   mysql-data:
   redis-data:
   minio-data:
+  rocketmq-store:

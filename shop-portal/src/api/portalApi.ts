@@ -401,6 +401,22 @@ export async function registerPortalMember(payload: {
   return response;
 }
 
+/** 申请通过绑定邮箱发送会员密码重置链接。 */
+export async function requestPortalPasswordReset(email: string): Promise<void> {
+  await request<void>('/api/portal/auth/password-reset/request', {
+    method: 'POST',
+    body: JSON.stringify({ email }),
+  });
+}
+
+/** 使用邮箱链接中的一次性令牌设置新的会员登录密码。 */
+export async function confirmPortalPasswordReset(token: string, newPassword: string): Promise<void> {
+  await request<void>('/api/portal/auth/password-reset/confirm', {
+    method: 'POST',
+    body: JSON.stringify({ token, newPassword }),
+  });
+}
+
 function saveMemberTokens(response: MemberAuthResponse): void {
   memberSessionExpiredNotified = false;
   localStorage.setItem(MEMBER_TOKEN_KEY, response.accessToken);

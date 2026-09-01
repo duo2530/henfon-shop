@@ -259,8 +259,11 @@ export interface BackendContentReview {
   rating: number;
   reviewContent: string;
   variantSummary?: string;
+  /** 评价图片地址 JSON 数组，后台审核页面用于晒单预览。 */
+  imageUrls?: string;
   helpfulCount: number;
-  status: 0 | 1 | 2;
+  /** 后端约定：0 隐藏，1 展示。 */
+  status: 0 | 1;
   reviewedAt?: string;
   replyContent?: string;
   repliedAt?: string;
@@ -410,6 +413,23 @@ export interface BackendInventoryStock {
   lockedStock: number;
   soldStock: number;
   safetyStock: number;
+  updatedAt?: string;
+  remark?: string;
+}
+
+export interface BackendInventoryStockLock {
+  id: number;
+  lockNo: string;
+  orderId: number;
+  orderNo: string;
+  stockId: number;
+  skuId: number;
+  quantity: number;
+  status: number;
+  expireAt?: string;
+  releasedAt?: string;
+  deductedAt?: string;
+  createdAt?: string;
   updatedAt?: string;
   remark?: string;
 }
@@ -664,6 +684,22 @@ export async function listMemberUsers(params: { current?: number; size?: number;
   if (params.memberLevel) query.set('memberLevel', params.memberLevel);
   if (params.status !== undefined) query.set('status', String(params.status));
   return request<BackendPage<BackendMemberUser>>(`/api/admin/member/users?${query.toString()}`);
+}
+
+export function createMemberUser(payload: {
+  nickname: string;
+  username?: string;
+  phone?: string;
+  email?: string;
+  memberLevel?: string;
+  status?: number;
+  avatarUrl?: string;
+  remark?: string;
+}): Promise<BackendMemberUser> {
+  return request<BackendMemberUser>('/api/admin/member/users', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
 }
 
 export function updateMemberStatus(id: number, status: number): Promise<void> {
@@ -991,7 +1027,7 @@ export function listContentReviews(params: { current?: number; size?: number; pr
   return request<BackendPage<BackendContentReview>>(`/api/admin/content/reviews?${query.toString()}`);
 }
 
-export function updateContentReviewStatus(id: number, status: 0 | 1 | 2): Promise<void> {
+export function updateContentReviewStatus(id: number, status: 0 | 1): Promise<void> {
   return request<void>(`/api/admin/content/reviews/${id}/status?status=${status}`, { method: 'PUT' });
 }
 
@@ -1357,6 +1393,13 @@ export function listInventoryStocks(params: { current?: number; size?: number; s
   const query = new URLSearchParams({ current: String(params.current || 1), size: String(params.size || 200) });
   if (params.skuId !== undefined) query.set('skuId', String(params.skuId));
   return request<BackendPage<BackendInventoryStock>>(`/api/admin/inventory/stocks?${query.toString()}`);
+}
+
+export function listInventoryStockLocks(params: { current?: number; size?: number; orderId?: number; status?: number } = {}): Promise<BackendPage<BackendInventoryStockLock>> {
+  const query = new URLSearchParams({ current: String(params.current || 1), size: String(params.size || 200) });
+  if (params.orderId !== undefined) query.set('orderId', String(params.orderId));
+  if (params.status !== undefined) query.set('status', String(params.status));
+  return request<BackendPage<BackendInventoryStockLock>>(`/api/admin/inventory/locks?${query.toString()}`);
 }
 
 export function saveInventoryStock(payload: {

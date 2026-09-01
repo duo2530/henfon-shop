@@ -2,7 +2,9 @@ import React, { FormEvent, useCallback, useEffect, useState } from 'react';
 import { useAdmin } from '../../context/AdminContext';
 import {
   BackendInventoryWarehouse,
+  BackendInventoryStockLock,
   deleteInventoryWarehouse,
+  listInventoryStockLocks,
   listInventoryWarehouses,
   saveInventoryWarehouse,
   updateInventoryWarehouseStatus
@@ -42,61 +44,7 @@ export interface StockOrder {
   remarks?: string;
 }
 
-const mockStockOrders: StockOrder[] = [
-  {
-    id: 'stk-001',
-    orderNo: 'IN20260829001',
-    type: 'inbound_purchase',
-    warehouseName: '华东一号中心仓 (上海)',
-    productName: '极客降噪无线蓝牙耳机 Pro Max',
-    sku: 'SKU-GEEK-001',
-    quantity: 500,
-    operator: '王仓管',
-    status: 'completed',
-    createdAt: '2026-08-29 09:30:00',
-    remarks: '供应商深蓝数码批次到货验收入库'
-  },
-  {
-    id: 'stk-002',
-    orderNo: 'TR20260829002',
-    type: 'transfer',
-    warehouseName: '华东一号中心仓 (上海)',
-    targetWarehouse: '静安前置自提微仓',
-    productName: '智能磁吸无线充电底座',
-    sku: 'SKU-CHG-002',
-    quantity: 120,
-    operator: '赵主管',
-    status: 'processing',
-    createdAt: '2026-08-29 11:20:00',
-    remarks: '前置仓补货同城冷链调拨'
-  },
-  {
-    id: 'stk-003',
-    orderNo: 'OUT20260829003',
-    type: 'outbound_sale',
-    warehouseName: '华南二号中心仓 (广州)',
-    productName: '太空慢回弹记忆棉护颈深睡枕',
-    sku: 'SKU-PILLOW-003',
-    quantity: 65,
-    operator: '系统自动打单',
-    status: 'completed',
-    createdAt: '2026-08-29 13:00:15',
-    remarks: '顺丰大促批量波次发货出库'
-  },
-  {
-    id: 'stk-004',
-    orderNo: 'AUD20260829004',
-    type: 'loss_audit',
-    warehouseName: '华东一号中心仓 (上海)',
-    productName: '天然有机大马士革玫瑰纯露',
-    sku: 'SKU-ROSE-004',
-    quantity: -2,
-    operator: '周盘点员',
-    status: 'completed',
-    createdAt: '2026-08-29 14:15:00',
-    remarks: '月末例行抽检外包装微损报损'
-  }
-];
+// 进销存单据历史待接入库存流水接口，当前仅展示服务端库存锁定流水，避免伪造业务记录。
 
 interface WarehouseForm {
   id?: number;
@@ -118,7 +66,7 @@ const emptyWarehouseForm = (): WarehouseForm => ({
 
 export const WarehouseStockView: React.FC = () => {
   const { showToast } = useAdmin();
-  const [stockOrders, setStockOrders] = useState<StockOrder[]>(mockStockOrders);
+  const [stockOrders] = useState<StockOrder[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [typeFilter, setTypeFilter] = useState('all');
   const [warehouses, setWarehouses] = useState<BackendInventoryWarehouse[]>([]);
@@ -127,6 +75,9 @@ export const WarehouseStockView: React.FC = () => {
   const [editingWarehouse, setEditingWarehouse] = useState<WarehouseForm | null>(null);
   const [warehouseSaving, setWarehouseSaving] = useState(false);
   const [warehouseActionId, setWarehouseActionId] = useState<number | null>(null);
+  const [stockLocks, setStockLocks] = useState<BackendInventoryStockLock[]>([]);
+  const [stockLocksLoading, setStockLocksLoading] = useState(true);
+  const [stockLocksError, setStockLocksError] = useState<string | null>(null);
 
   const loadWarehouses = useCallback(async () => {
     setWarehouseLoading(true);
@@ -146,6 +97,25 @@ export const WarehouseStockView: React.FC = () => {
   useEffect(() => {
     void loadWarehouses();
   }, [loadWarehouses]);
+
+  const loadStockLocks = useCallback(async () => {
+    setStockLocksLoading(true);
+    setStockLocksError(null);
+    try {
+      const page = await listInventoryStockLocks({ current: 1, size: 100 });
+      setStockLocks(page.records || []);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '库存锁定流水加载失败';
+      setStockLocksError(message);
+      showToast(`${message}，请稍后重试`, 'error');
+    } finally {
+      setStockLocksLoading(false);
+    }
+  }, [showToast]);
+
+  useEffect(() => {
+    void loadStockLocks();
+  }, [loadStockLocks]);
 
   const openWarehouseForm = (warehouse?: BackendInventoryWarehouse) => {
     setEditingWarehouse(warehouse ? {
@@ -359,6 +329,34 @@ export const WarehouseStockView: React.FC = () => {
         {warehouses.length === 0 && !warehouseLoading && !warehouseError && <div className="sm:col-span-3 text-center text-xs text-gray-400 py-4">暂无仓库摘要</div>}
       </div>
 
+      <section className="bg-white rounded-xl border border-[#E2E8F0] shadow-xs overflow-hidden">
+        <div className="p-4 border-b border-[#E2E8F0] bg-[#F8FAFC]/50 flex items-center justify-between">
+          <div>
+            <h3 className="text-sm font-bold text-gray-900">库存锁定流水</h3>
+            <p className="text-xs text-gray-500 mt-1">订单预占、释放和发货扣减均由服务端记录，可用于库存对账。</p>
+          </div>
+          <button type="button" onClick={() => void loadStockLocks()} disabled={stockLocksLoading} className="h-9 px-3 rounded-lg border border-[#E2E8F0] text-xs font-semibold text-gray-600 hover:text-blue-600 disabled:opacity-50 flex items-center gap-1.5">
+            <RefreshCw className={`w-4 h-4 ${stockLocksLoading ? 'animate-spin' : ''}`} />刷新
+          </button>
+        </div>
+        {stockLocksLoading ? (
+          <div className="flex items-center justify-center py-10 text-sm text-gray-500"><Loader2 className="w-4 h-4 mr-2 animate-spin" />正在加载锁定流水…</div>
+        ) : stockLocksError ? (
+          <div className="py-10 text-center text-sm text-red-600"><p>{stockLocksError}</p><button type="button" onClick={() => void loadStockLocks()} className="mt-3 text-blue-600 hover:underline">重新加载</button></div>
+        ) : stockLocks.length === 0 ? (
+          <div className="py-10 text-center text-sm text-gray-400">暂无库存锁定流水</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead className="bg-white border-b border-[#E2E8F0] text-xs font-semibold text-gray-500"><tr><th className="py-3 px-4">锁定单号</th><th className="py-3 px-4">订单号</th><th className="py-3 px-4">SKU</th><th className="py-3 px-4 text-right">数量</th><th className="py-3 px-4 text-center">状态</th><th className="py-3 px-4 text-right">创建时间</th></tr></thead>
+              <tbody className="divide-y divide-gray-100 text-sm">
+                {stockLocks.map((lock) => <tr key={lock.id} className="hover:bg-[#F8FAFC]"><td className="py-3 px-4 text-xs font-mono font-semibold text-gray-800">{lock.lockNo}</td><td className="py-3 px-4 text-xs font-mono text-gray-600">{lock.orderNo || `订单 #${lock.orderId}`}</td><td className="py-3 px-4 text-xs font-mono text-gray-600">{lock.skuId}</td><td className="py-3 px-4 text-right text-xs font-mono font-bold text-gray-800">{lock.quantity}</td><td className="py-3 px-4 text-center"><span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${lock.status === 0 ? 'bg-amber-50 text-amber-700' : lock.status === 1 ? 'bg-emerald-50 text-emerald-700' : lock.status === 2 ? 'bg-blue-50 text-blue-700' : 'bg-gray-100 text-gray-600'}`}>{lock.status === 0 ? '已预占' : lock.status === 1 ? '已释放' : lock.status === 2 ? '已扣减' : `状态 ${lock.status}`}</span></td><td className="py-3 px-4 text-right text-xs font-mono text-gray-500">{lock.createdAt || '—'}</td></tr>)}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
       {/* Table */}
       <div className="bg-white rounded-xl border border-[#E2E8F0] shadow-xs overflow-hidden">
         <div className="p-4 border-b border-[#E2E8F0] bg-[#F8FAFC]/50 flex flex-wrap gap-3 items-center justify-between">
@@ -400,6 +398,7 @@ export const WarehouseStockView: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100 text-sm">
+              {filtered.length === 0 && <tr><td colSpan={7} className="py-12 text-center text-sm text-gray-400">暂无进销存单据流水，库存预占记录请查看上方“库存锁定流水”。</td></tr>}
               {filtered.map((item) => (
                 <tr key={item.id} className="hover:bg-[#F8FAFC]">
                   <td className="py-3 px-4 font-mono font-bold text-gray-900 text-xs">

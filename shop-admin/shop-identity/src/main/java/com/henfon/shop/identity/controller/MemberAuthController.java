@@ -6,7 +6,10 @@ import com.henfon.shop.identity.dto.MemberLoginResponse;
 import com.henfon.shop.identity.dto.MemberRegisterRequest;
 import com.henfon.shop.identity.dto.MemberRefreshRequest;
 import com.henfon.shop.identity.dto.MemberLogoutRequest;
+import com.henfon.shop.identity.dto.MemberPasswordResetConfirmRequest;
+import com.henfon.shop.identity.dto.MemberPasswordResetRequest;
 import com.henfon.shop.identity.service.MemberAuthService;
+import com.henfon.shop.identity.service.MemberPasswordResetService;
 import jakarta.validation.Valid;
 import org.slf4j.MDC;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -26,6 +29,7 @@ import org.springframework.security.core.Authentication;
 public class MemberAuthController {
 
     private final MemberAuthService memberAuthService;
+    private final MemberPasswordResetService memberPasswordResetService;
 
     /**
      * 创建会员认证控制器。
@@ -34,8 +38,9 @@ public class MemberAuthController {
      * @author Henfon
      * @date 2026-08-30
      */
-    public MemberAuthController(MemberAuthService memberAuthService) {
+    public MemberAuthController(MemberAuthService memberAuthService, MemberPasswordResetService memberPasswordResetService) {
         this.memberAuthService = memberAuthService;
+        this.memberPasswordResetService = memberPasswordResetService;
     }
 
     /**
@@ -92,6 +97,34 @@ public class MemberAuthController {
                                     Authentication authentication) {
         // 请求体可为空，服务层仍会吊销当前访问令牌。
         memberAuthService.logout(authentication, request == null ? null : request.refreshToken());
+        return ApiResponse.success(MDC.get("requestId"));
+    }
+
+    /**
+     * 申请会员邮箱找回密码。
+     *
+     * @param request 找回密码申请
+     * @return 统一空响应，避免暴露邮箱是否注册
+     * @author Henfon
+     * @date 2026-09-01
+     */
+    @PostMapping("/password-reset/request")
+    public ApiResponse<Void> requestPasswordReset(@Valid @RequestBody MemberPasswordResetRequest request) {
+        memberPasswordResetService.requestReset(request);
+        return ApiResponse.success(MDC.get("requestId"));
+    }
+
+    /**
+     * 使用邮箱中的一次性令牌设置新密码。
+     *
+     * @param request 重置确认请求
+     * @return 空响应
+     * @author Henfon
+     * @date 2026-09-01
+     */
+    @PostMapping("/password-reset/confirm")
+    public ApiResponse<Void> confirmPasswordReset(@Valid @RequestBody MemberPasswordResetConfirmRequest request) {
+        memberPasswordResetService.confirmReset(request);
         return ApiResponse.success(MDC.get("requestId"));
     }
 }

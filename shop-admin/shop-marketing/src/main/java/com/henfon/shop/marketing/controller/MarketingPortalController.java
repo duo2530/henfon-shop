@@ -54,7 +54,7 @@ public class MarketingPortalController {
      * @author Henfon
      * @date 2026-08-29
      */
-    @GetMapping("/coupons")
+    @GetMapping({"/coupons", "/coupons/"})
     public ApiResponse<List<MarketingCoupon>> coupons() {
         return ApiResponse.success(service.coupons(), MDC.get("requestId"));
     }
@@ -66,7 +66,7 @@ public class MarketingPortalController {
      * @author Henfon
      * @date 2026-09-01
      */
-    @GetMapping("/flash-sales")
+    @GetMapping({"/flash-sales", "/flash-sales/"})
     public ApiResponse<List<MarketingFlashSalePortalResponse>> flashSales() {
         return ApiResponse.success(flashSalePortalService.activeFlashSales(), MDC.get("requestId"));
     }

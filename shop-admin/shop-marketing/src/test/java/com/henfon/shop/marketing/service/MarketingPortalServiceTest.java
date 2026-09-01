@@ -46,6 +46,26 @@ class MarketingPortalServiceTest {
             usageMapper, tradeOrderService, catalogProductMapper, catalogCategoryMapper);
 
     /**
+     * 验证门户优惠券查询走兼容历史数据库结构的显式字段 SQL。
+     *
+     * @author Henfon
+     * @date 2026-09-01
+     */
+    @Test
+    void shouldLoadActiveCouponsThroughCompatibilityQuery() {
+        MarketingCoupon coupon = activeCategoryCoupon(11L, "DIGITAL");
+        when(couponMapper.selectActiveCoupons(any(LocalDateTime.class))).thenReturn(List.of(coupon));
+
+        // 调用门户查询，确保不会触发基于实体全字段生成的 selectList。
+        List<MarketingCoupon> result = service.coupons();
+
+        assertEquals(1, result.size());
+        assertEquals(coupon, result.get(0));
+        verify(couponMapper).selectActiveCoupons(any(LocalDateTime.class));
+        verify(couponMapper, never()).selectList(any());
+    }
+
+    /**
      * 验证类目券只按命中类目的订单明细计算门槛和抵扣金额。
      *
      * @author Henfon

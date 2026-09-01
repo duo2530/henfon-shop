@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.henfon.shop.common.api.ApiResponse;
 import com.henfon.shop.identity.entity.MemberUser;
 import com.henfon.shop.identity.dto.MemberAdminAdjustRequest;
+import com.henfon.shop.identity.dto.MemberAdminCreateRequest;
 import com.henfon.shop.identity.dto.MemberAdminUpdateRequest;
 import com.henfon.shop.identity.dto.MemberTagSaveRequest;
 import com.henfon.shop.identity.dto.MemberUserTagsRequest;
@@ -66,6 +67,21 @@ public class MemberAdminController {
         // 分页和筛选逻辑集中在服务层，控制器只负责参数接收和权限校验。
         return ApiResponse.success(memberAdminService.page(keyword, memberLevel, status, current, size),
                 MDC.get("requestId"));
+    }
+
+    /**
+     * 新增后台会员档案。
+     *
+     * @param request 新会员资料
+     * @return 创建后的会员
+     * @author Henfon
+     * @date 2026-09-01
+     */
+    @org.springframework.web.bind.annotation.PostMapping("/users")
+    @PreAuthorize("hasAuthority('member:user:status')")
+    public ApiResponse<MemberUser> create(@Valid @RequestBody MemberAdminCreateRequest request) {
+        // 后台录入用于线下会员建档，登录密码仍由会员注册流程单独设置。
+        return ApiResponse.success(memberAdminService.create(request), MDC.get("requestId"));
     }
 
     /**

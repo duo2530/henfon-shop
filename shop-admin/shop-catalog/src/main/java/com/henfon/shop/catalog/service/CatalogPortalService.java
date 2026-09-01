@@ -14,6 +14,7 @@ import com.henfon.shop.catalog.mapper.CatalogProductMediaMapper;
 import com.henfon.shop.catalog.mapper.CatalogProductSpecMapper;
 import com.henfon.shop.catalog.mapper.CatalogSkuMapper;
 import com.henfon.shop.common.exception.BusinessException;
+import com.henfon.shop.integration.storage.MinioStorageService;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
@@ -23,6 +24,7 @@ import java.util.HashSet;
 import java.util.Set;
 import java.util.List;
 import java.util.Map;
+import java.util.HashMap;
 
 /**
  * 门户商品查询服务。
@@ -37,6 +39,7 @@ public class CatalogPortalService {
     private final CatalogProductSpecMapper specMapper;
     private final CatalogSkuMapper skuMapper;
     private final CatalogProductMediaMapper mediaMapper;
+    private final MinioStorageService minioStorageService;
 
     /**
      * 创建门户商品查询服务。
@@ -46,6 +49,7 @@ public class CatalogPortalService {
      * @param specMapper 参数数据访问对象
      * @param skuMapper SKU 数据访问对象
      * @param mediaMapper 媒体数据访问对象
+     * @param minioStorageService MinIO 文件服务
      * @author Henfon
      * @date 2026-08-29
      */
@@ -53,12 +57,14 @@ public class CatalogPortalService {
                                 CatalogProductFeatureMapper featureMapper,
                                 CatalogProductSpecMapper specMapper,
                                 CatalogSkuMapper skuMapper,
-                                CatalogProductMediaMapper mediaMapper) {
+                                CatalogProductMediaMapper mediaMapper,
+                                MinioStorageService minioStorageService) {
         this.productMapper = productMapper;
         this.featureMapper = featureMapper;
         this.specMapper = specMapper;
         this.skuMapper = skuMapper;
         this.mediaMapper = mediaMapper;
+        this.minioStorageService = minioStorageService;
     }
 
     /**
@@ -132,7 +138,10 @@ public class CatalogPortalService {
                     .orderByDesc(CatalogProduct::getCreatedAt);
         }
         wrapper.orderByAsc(CatalogProduct::getId);
-        return productMapper.selectPage(new Page<>(safeCurrent, safeSize), wrapper);
+        IPage<CatalogProduct> result = productMapper.selectPage(new Page<>(safeCurrent, safeSize), wrapper);
+        // 列表接口也动态刷新封面地址，避免数据库中持久化的预签名 URL 过期。
+        refreshMainImageUrls(result.getRecords());
+        return result;
     }
 
     /**
@@ -180,8 +189,144 @@ public class CatalogPortalService {
                 .eq(CatalogProductSpec::getProductId, productId).orderByAsc(CatalogProductSpec::getSortNo)));
         result.put("skus", skuMapper.selectList(new LambdaQueryWrapper<CatalogSku>()
                 .eq(CatalogSku::getProductId, productId).eq(CatalogSku::getStatus, 1).orderByAsc(CatalogSku::getId)));
-        result.put("media", mediaMapper.selectList(new LambdaQueryWrapper<CatalogProductMedia>()
-                .eq(CatalogProductMedia::getProductId, productId).orderByAsc(CatalogProductMedia::getSortNo)));
+        List<CatalogProductMedia> media = mediaMapper.selectList(new LambdaQueryWrapper<CatalogProductMedia>()
+                .eq(CatalogProductMedia::getProductId, productId).orderByAsc(CatalogProductMedia::getSortNo));
+        // 详情接口返回前动态生成预签名地址，客户端无需感知 URL 的有效期。
+        refreshMediaUrls(media);
+        refreshMainImageUrl(product, media);
+        result.put("media", media);
         return result;
+    }
+
+    /**
+     * 批量刷新商品列表中的封面访问地址。
+     *
+     * @param products 门户商品列表
+     * @author Henfon
+     * @date 2026-09-01
+     */
+    private void refreshMainImageUrls(List<CatalogProduct> products) {
+        if (products == null || products.isEmpty()) {
+            return;
+        }
+        List<Long> productIds = products.stream()
+                .map(CatalogProduct::getId)
+                .filter(java.util.Objects::nonNull)
+                .toList();
+        if (productIds.isEmpty()) {
+            return;
+        }
+        List<CatalogProductMedia> mediaList = mediaMapper.selectList(new LambdaQueryWrapper<CatalogProductMedia>()
+                .in(CatalogProductMedia::getProductId, productIds)
+                .orderByAsc(CatalogProductMedia::getSortNo)
+                .orderByAsc(CatalogProductMedia::getId));
+        Map<Long, CatalogProductMedia> coverMedia = new HashMap<>();
+        for (CatalogProductMedia media : mediaList) {
+            if (media.getProductId() != null && isImageMedia(media)) {
+                // 优先使用明确标记的封面，未标记时保留排序最靠前的一张。
+                CatalogProductMedia existing = coverMedia.get(media.getProductId());
+                if (existing == null || (existing.getIsCover() == null || existing.getIsCover() != 1)
+                        && media.getIsCover() != null && media.getIsCover() == 1) {
+                    coverMedia.put(media.getProductId(), media);
+                }
+            }
+        }
+        for (CatalogProduct product : products) {
+            CatalogProductMedia cover = coverMedia.get(product.getId());
+            if (cover != null) {
+                product.setMainImageUrl(resolveMediaUrl(cover));
+            }
+        }
+    }
+
+    /**
+     * 刷新商品详情中的所有媒体访问地址。
+     *
+     * @param media 商品媒体列表
+     * @author Henfon
+     * @date 2026-09-01
+     */
+    private void refreshMediaUrls(List<CatalogProductMedia> media) {
+        if (media == null || media.isEmpty()) {
+            return;
+        }
+        for (CatalogProductMedia item : media) {
+            item.setMediaUrl(resolveMediaUrl(item));
+        }
+    }
+
+    /**
+     * 使用封面媒体覆盖商品主图地址。
+     *
+     * @param product 商品实体
+     * @param media 媒体列表
+     * @author Henfon
+     * @date 2026-09-01
+     */
+    private void refreshMainImageUrl(CatalogProduct product, List<CatalogProductMedia> media) {
+        if (product == null || media == null || media.isEmpty()) {
+            return;
+        }
+        CatalogProductMedia cover = media.stream()
+                .filter(this::isImageMedia)
+                .filter(item -> item.getIsCover() != null && item.getIsCover() == 1)
+                .findFirst()
+                .orElseGet(() -> media.stream().filter(this::isImageMedia).findFirst().orElse(null));
+        if (cover != null) {
+            product.setMainImageUrl(cover.getMediaUrl());
+        }
+    }
+
+    /**
+     * 根据对象键动态生成 MinIO 预签名地址，并兼容历史外部地址。
+     *
+     * @param media 商品媒体
+     * @return 当前有效的访问地址
+     * @author Henfon
+     * @date 2026-09-01
+     */
+    private String resolveMediaUrl(CatalogProductMedia media) {
+        if (media == null) {
+            return null;
+        }
+        String objectKey = media.getObjectKey();
+        if (!StringUtils.hasText(objectKey)) {
+            return media.getMediaUrl();
+        }
+        if (isExternalAddress(objectKey)) {
+            // 兼容历史数据将外部 URL 误存到对象键字段的情况，不向 MinIO 发起无效签名请求。
+            return media.getMediaUrl() != null ? media.getMediaUrl() : objectKey;
+        }
+        try {
+            return minioStorageService.presign(objectKey.trim());
+        } catch (BusinessException exception) {
+            // MinIO 暂时不可用时返回数据库地址，避免门户商品整体查询失败。
+            return media.getMediaUrl();
+        }
+    }
+
+    /**
+     * 判断字符串是否已经是外部访问地址。
+     *
+     * @param value 待判断字符串
+     * @return 是否为 HTTP(S) 地址
+     * @author Henfon
+     * @date 2026-09-01
+     */
+    private boolean isExternalAddress(String value) {
+        String normalized = value.trim().toLowerCase(java.util.Locale.ROOT);
+        return normalized.startsWith("http://") || normalized.startsWith("https://");
+    }
+
+    /**
+     * 判断媒体是否为商品图片。
+     *
+     * @param media 商品媒体
+     * @return 是否为图片媒体
+     * @author Henfon
+     * @date 2026-09-01
+     */
+    private boolean isImageMedia(CatalogProductMedia media) {
+        return media != null && "IMAGE".equalsIgnoreCase(media.getMediaType());
     }
 }

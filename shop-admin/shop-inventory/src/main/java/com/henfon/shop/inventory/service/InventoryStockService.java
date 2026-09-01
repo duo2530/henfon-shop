@@ -17,6 +17,7 @@ import com.henfon.shop.inventory.mapper.InventoryStockMapper;
 import com.henfon.shop.inventory.mapper.InventoryWarehouseMapper;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
 import java.util.LinkedHashMap;
@@ -78,6 +79,29 @@ public class InventoryStockService {
     }
 
     /**
+     * 分页查询订单库存锁定流水，供后台核对预占、释放和发货扣减结果。
+     *
+     * @param orderId 订单ID，可选
+     * @param status 锁定状态，可选，0锁定、1已释放、2已扣减
+     * @param current 当前页
+     * @param size 页大小
+     * @return 库存锁定流水分页结果
+     * @author Henfon
+     * @date 2026-09-01
+     */
+    public IPage<InventoryStockLock> pageLocks(Long orderId, Integer status, long current, long size) {
+        // 锁定流水是库存审计的重要依据，统一按创建时间倒序并限制单页上限。
+        long safeCurrent = Math.max(current, 1);
+        long safeSize = Math.min(Math.max(size, 1), 200);
+        return lockMapper.selectPage(new Page<>(safeCurrent, safeSize),
+                new LambdaQueryWrapper<InventoryStockLock>()
+                        .eq(orderId != null, InventoryStockLock::getOrderId, orderId)
+                        .eq(status != null, InventoryStockLock::getStatus, status)
+                        .orderByDesc(InventoryStockLock::getCreatedAt)
+                        .orderByDesc(InventoryStockLock::getId));
+    }
+
+    /**
      * 查询低于安全库存的台账，用于后台预警和补货。
      *
      * @return 低库存台账列表
@@ -102,22 +126,40 @@ public class InventoryStockService {
      */
     @Transactional
     public void reserve(Long orderId, String orderNo, List<InventoryReservationItem> items) {
-        InventoryWarehouse warehouse = defaultWarehouse();
+        // 库存台账按 SKU 建模，缺少 SKU 时不能静默跳过，否则订单会在无锁库存的情况下进入待付款。
+        if (orderId == null) {
+            throw new BusinessException("INVENTORY_ORDER_REQUIRED", "订单ID不能为空");
+        }
+        if (!StringUtils.hasText(orderNo)) {
+            throw new BusinessException("INVENTORY_ORDER_NO_REQUIRED", "订单号不能为空");
+        }
+        if (items == null || items.isEmpty()) {
+            throw new BusinessException("INVENTORY_ITEMS_REQUIRED", "订单库存明细不能为空");
+        }
         // 合并同一订单中的重复 SKU，避免多行商品导致只锁定第一行数量。
         Map<Long, InventoryReservationItem> mergedItems = new LinkedHashMap<>();
         for (InventoryReservationItem item : items) {
-            if (item.skuId() == null) {
-                continue;
+            if (item == null || item.skuId() == null) {
+                throw new BusinessException("INVENTORY_SKU_REQUIRED", "订单明细必须指定SKU");
             }
-            InventoryReservationItem previous = mergedItems.get(item.skuId());
-            mergedItems.put(item.skuId(), previous == null
-                    ? item
-                    : new InventoryReservationItem(item.productId(), item.skuId(), previous.quantity() + item.quantity()));
-        }
-        for (InventoryReservationItem item : mergedItems.values()) {
             if (item.quantity() <= 0) {
                 throw new BusinessException("INVENTORY_QUANTITY_INVALID", "库存数量必须大于0");
             }
+            InventoryReservationItem previous = mergedItems.get(item.skuId());
+            if (previous == null) {
+                mergedItems.put(item.skuId(), item);
+            } else {
+                try {
+                    mergedItems.put(item.skuId(), new InventoryReservationItem(item.productId(), item.skuId(),
+                            Math.addExact(previous.quantity(), item.quantity())));
+                } catch (ArithmeticException exception) {
+                    throw new BusinessException("INVENTORY_QUANTITY_INVALID", "库存数量超出可处理范围");
+                }
+            }
+        }
+        // 只有请求明细完成基础校验后才访问仓库，避免错误请求触发无意义的数据库查询。
+        InventoryWarehouse warehouse = defaultWarehouse();
+        for (InventoryReservationItem item : mergedItems.values()) {
             InventoryStockLock existed = lockMapper.selectOne(new LambdaQueryWrapper<InventoryStockLock>()
                     .eq(InventoryStockLock::getOrderId, orderId)
                     .eq(InventoryStockLock::getSkuId, item.skuId())

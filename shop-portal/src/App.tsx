@@ -460,6 +460,15 @@ export default function App() {
   const [authModalMode, setAuthModalMode] = useState<AuthMode>('login-pwd');
   const [isUserProfileModalOpen, setIsUserProfileModalOpen] = useState(false);
 
+  // 邮件重置链接直接打开密码重置表单，避免用户还需在登录页手动寻找入口。
+  useEffect(() => {
+    const resetToken = new URLSearchParams(window.location.search).get('resetToken');
+    if (resetToken) {
+      setAuthModalMode('reset-pwd');
+      setIsAuthModalOpen(true);
+    }
+  }, []);
+
   // 登录会员存在可映射的数字 ID 时，加载服务端购物车、收藏和订单。
   useEffect(() => {
     const memberId = resolveMemberId(currentUser);

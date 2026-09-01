@@ -6,6 +6,7 @@ import com.henfon.shop.inventory.dto.InventoryAdjustRequest;
 import com.henfon.shop.inventory.dto.InventoryStockSaveRequest;
 import com.henfon.shop.inventory.dto.InventoryWarehouseSaveRequest;
 import com.henfon.shop.inventory.entity.InventoryStock;
+import com.henfon.shop.inventory.entity.InventoryStockLock;
 import com.henfon.shop.inventory.entity.InventoryWarehouse;
 import com.henfon.shop.inventory.service.InventoryStockService;
 import com.henfon.shop.inventory.service.InventoryReservationExpiryService;
@@ -149,6 +150,28 @@ public class InventoryAdminController {
                                                    @RequestParam(defaultValue = "1") long current,
                                                    @RequestParam(defaultValue = "20") long size) {
         return ApiResponse.success(inventoryStockService.page(skuId, current, size), MDC.get("requestId"));
+    }
+
+    /**
+     * 分页查询库存锁定流水。
+     *
+     * @param orderId 订单ID，可选
+     * @param status 锁定状态，可选
+     * @param current 当前页
+     * @param size 页大小
+     * @return 库存锁定流水分页数据
+     * @author Henfon
+     * @date 2026-09-01
+     */
+    @GetMapping("/locks")
+    @PreAuthorize("hasAuthority('inventory:stock:query')")
+    public ApiResponse<IPage<InventoryStockLock>> pageLocks(
+            @RequestParam(required = false) Long orderId,
+            @RequestParam(required = false) Integer status,
+            @RequestParam(defaultValue = "1") long current,
+            @RequestParam(defaultValue = "20") long size) {
+        return ApiResponse.success(inventoryStockService.pageLocks(orderId, status, current, size),
+                MDC.get("requestId"));
     }
 
     /**

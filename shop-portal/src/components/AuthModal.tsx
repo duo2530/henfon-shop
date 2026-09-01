@@ -19,9 +19,15 @@ import {
   HelpCircle,
 } from 'lucide-react';
 import { UserProfile, MemberLevel } from '../types/ecommerce';
-import { loginPortalMember, registerPortalMember, MemberAuthResponse } from '../api/portalApi';
+import {
+  loginPortalMember,
+  registerPortalMember,
+  requestPortalPasswordReset,
+  confirmPortalPasswordReset,
+  MemberAuthResponse,
+} from '../api/portalApi';
 
-export type AuthMode = 'login-pwd' | 'login-sms' | 'register' | 'forgot-pwd';
+export type AuthMode = 'login-pwd' | 'login-sms' | 'register' | 'forgot-pwd' | 'reset-pwd';
 
 // 首期仅开放账号密码登录和邮箱找回密码，短信及第三方授权暂不接入。
 const ENABLE_SMS_LOGIN = false;
@@ -121,6 +127,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [smsCodeInput, setSmsCodeInput] = useState('');
   const [nicknameInput, setNicknameInput] = useState('');
   const [confirmPasswordInput, setConfirmPasswordInput] = useState('');
+  const [resetTokenInput, setResetTokenInput] = useState(() => {
+    if (typeof window === 'undefined') return '';
+    return new URLSearchParams(window.location.search).get('resetToken') || '';
+  });
   const [countryCode, setCountryCode] = useState('+86');
 
   // SMS Timer state
@@ -134,7 +144,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
   useEffect(() => {
     if (isOpen) {
-      setMode(initialMode);
+      const queryToken = typeof window === 'undefined'
+        ? ''
+        : new URLSearchParams(window.location.search).get('resetToken') || '';
+      setMode(queryToken ? 'reset-pwd' : initialMode);
+      if (queryToken) setResetTokenInput(queryToken);
       setErrorMsg(null);
       setSuccessMsg(null);
     }
@@ -276,52 +290,60 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         return;
       }
 
-    setIsLoading(true);
-    setTimeout(() => {
-      setIsLoading(false);
+    if (mode === 'login-sms') {
+      // 短信登录入口当前关闭，保留分支仅兼容历史调用方。
+      setErrorMsg('短信登录暂未开放');
+      return;
+    }
 
-      if (mode === 'login-sms') {
-        if (!phoneInput) {
-          setErrorMsg('请输入手机号');
-          return;
-        }
-        if (!smsCodeInput) {
-          setErrorMsg('请输入短信验证码');
-          return;
-        }
-
-        const newUser: UserProfile = {
-          id: `usr-sms-${Date.now()}`,
-          username: `phone_${phoneInput.slice(-4)}`,
-          nickname: `Henfon用户_${phoneInput.slice(-4)}`,
-          email: `${phoneInput}@henfon-user.com`,
-          phone: phoneInput,
-          avatar:
-            'https://images.unsplash.com/photo-1580489944761-15a19d654956?w=150&auto=format&fit=crop&q=80',
-          memberLevel: '普通会员',
-          points: 800,
-          balance: 60.0,
-          couponsCount: 4,
-          joinedDate: new Date().toISOString().split('T')[0],
-        };
-
-        onLoginSuccess(newUser, '手机快捷验证成功！已为您登录账号');
-        onClose();
-      } else if (mode === 'forgot-pwd') {
-        if (!accountInput) {
-          setErrorMsg('请输入您的注册邮箱');
-          return;
-        }
-        if (!accountInput.includes('@')) {
-          setErrorMsg('密码找回暂仅支持邮箱地址');
-          return;
-        }
-        setSuccessMsg('重置密码链接与临时验证码已发送至您的账号，请查收！');
-        setTimeout(() => {
-          setMode('login-pwd');
-        }, 1800);
+    if (mode === 'forgot-pwd') {
+      if (!accountInput || !accountInput.includes('@')) {
+        setErrorMsg('请输入正确的注册邮箱');
+        return;
       }
-    }, 450);
+      setIsLoading(true);
+      try {
+        await requestPortalPasswordReset(accountInput.trim());
+        // 后端无论邮箱是否注册都返回统一结果，避免账号枚举。
+        setSuccessMsg('如果该邮箱已绑定会员账号，重置链接将很快发送，请查收邮件。');
+        setResetTokenInput('');
+        setMode('reset-pwd');
+      } catch (error) {
+        setErrorMsg(error instanceof Error ? error.message : '邮件发送失败，请稍后重试');
+      } finally {
+        setIsLoading(false);
+      }
+      return;
+    }
+
+    if (mode === 'reset-pwd') {
+      if (!resetTokenInput.trim()) {
+        setErrorMsg('请输入邮件中的重置令牌');
+        return;
+      }
+      if (passwordInput.length < 6) {
+        setErrorMsg('密码长度不能少于 6 位字符');
+        return;
+      }
+      if (passwordInput !== confirmPasswordInput) {
+        setErrorMsg('两次输入的密码不一致');
+        return;
+      }
+      setIsLoading(true);
+      try {
+        await confirmPortalPasswordReset(resetTokenInput.trim(), passwordInput);
+        setSuccessMsg('密码重置成功，请使用新密码登录。');
+        setPasswordInput('');
+        setConfirmPasswordInput('');
+        setResetTokenInput('');
+        if (typeof window !== 'undefined') window.history.replaceState({}, document.title, window.location.pathname);
+        setTimeout(() => setMode('login-pwd'), 1000);
+      } catch (error) {
+        setErrorMsg(error instanceof Error ? error.message : '重置失败，链接可能已过期');
+      } finally {
+        setIsLoading(false);
+      }
+    }
   };
 
   // Social fast login simulation (WeChat / Google)
@@ -395,7 +417,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             {mode === 'login-pwd' && '欢迎登录Henfon商城'}
             {mode === 'login-sms' && '手机短信免密登录'}
             {mode === 'register' && '开启您的品质好物之旅'}
-            {mode === 'forgot-pwd' && '重置与找回登录密码'}
+            {(mode === 'forgot-pwd' || mode === 'reset-pwd') && '重置与找回登录密码'}
           </h2>
 
           <p className="text-xs text-zinc-400 mt-1 flex items-center gap-1.5">
@@ -406,7 +428,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           </p>
 
           {/* Mode Switch Tabs */}
-          {mode !== 'forgot-pwd' && (
+          {mode !== 'forgot-pwd' && mode !== 'reset-pwd' && (
             <div className="flex items-center bg-zinc-800/90 p-1 rounded-xl mt-4 text-xs font-semibold">
               <button
                 onClick={() => {
@@ -725,8 +747,59 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 </div>
 
                 <p className="text-xs text-zinc-500">
-                  系统将向您的绑定邮箱发送一次性安全重置链接，点击下方按钮继续。
+                  系统将向您的绑定邮箱发送一次性安全重置链接，邮件链接有效期为 15 分钟。
                 </p>
+              </>
+            )}
+
+            {/* Mode 5: 使用邮件令牌重置密码 */}
+            {mode === 'reset-pwd' && (
+              <>
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-zinc-700 block">邮件重置令牌</label>
+                  <div className="relative flex items-center">
+                    <KeyRound className="w-4 h-4 text-zinc-400 absolute left-3.5 pointer-events-none" />
+                    <input
+                      type="text"
+                      required
+                      value={resetTokenInput}
+                      onChange={(e) => setResetTokenInput(e.target.value)}
+                      placeholder="粘贴邮件链接中的 resetToken"
+                      className="w-full py-2.5 pl-10 pr-3.5 bg-zinc-50 border border-zinc-200 rounded-xl text-xs text-zinc-900 placeholder:text-zinc-400 focus:bg-white focus:border-zinc-900 focus:ring-2 focus:ring-zinc-900/10 focus:outline-none transition"
+                    />
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-zinc-700 block">新密码</label>
+                  <div className="relative flex items-center">
+                    <Lock className="w-4 h-4 text-zinc-400 absolute left-3.5 pointer-events-none" />
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      required
+                      value={passwordInput}
+                      onChange={(e) => setPasswordInput(e.target.value)}
+                      placeholder="至少 6 位字符"
+                      className="w-full py-2.5 pl-10 pr-10 bg-zinc-50 border border-zinc-200 rounded-xl text-xs text-zinc-900 placeholder:text-zinc-400 focus:bg-white focus:border-zinc-900 focus:ring-2 focus:ring-zinc-900/10 focus:outline-none transition"
+                    />
+                    <button type="button" onClick={() => setShowPassword(!showPassword)} className="p-2 absolute right-2 text-zinc-400 hover:text-zinc-700">
+                      {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-zinc-700 block">确认新密码</label>
+                  <div className="relative flex items-center">
+                    <Lock className="w-4 h-4 text-zinc-400 absolute left-3.5 pointer-events-none" />
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      required
+                      value={confirmPasswordInput}
+                      onChange={(e) => setConfirmPasswordInput(e.target.value)}
+                      placeholder="请再次输入新密码"
+                      className="w-full py-2.5 pl-10 pr-3.5 bg-zinc-50 border border-zinc-200 rounded-xl text-xs text-zinc-900 placeholder:text-zinc-400 focus:bg-white focus:border-zinc-900 focus:ring-2 focus:ring-zinc-900/10 focus:outline-none transition"
+                    />
+                  </div>
+                </div>
               </>
             )}
 
@@ -775,7 +848,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     {mode === 'login-pwd' && '立即安全登录'}
                     {mode === 'login-sms' && '验证并登录'}
                     {mode === 'register' && '立即注册并领取新人特惠'}
-                    {mode === 'forgot-pwd' && '发送重置验证码'}
+                    {mode === 'forgot-pwd' && '发送重置邮件'}
+                    {mode === 'reset-pwd' && '确认重置密码'}
                   </span>
                   <ArrowRight className="w-3.5 h-3.5" />
                 </>
@@ -783,10 +857,16 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             </button>
 
             {/* Back to Login button if in forgot-pwd mode */}
-            {mode === 'forgot-pwd' && (
+            {(mode === 'forgot-pwd' || mode === 'reset-pwd') && (
               <button
                 type="button"
-                onClick={() => setMode('login-pwd')}
+                onClick={() => {
+                  setMode('login-pwd');
+                  setResetTokenInput('');
+                  if (typeof window !== 'undefined' && window.location.search.includes('resetToken=')) {
+                    window.history.replaceState({}, document.title, window.location.pathname);
+                  }
+                }}
                 className="w-full py-2 text-center text-xs font-semibold text-zinc-600 hover:text-zinc-900 transition flex items-center justify-center gap-1"
               >
                 <RotateCcw className="w-3 h-3" />
@@ -796,7 +876,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           </form>
 
           {/* Social Quick Login Section */}
-          {ENABLE_SOCIAL_LOGIN && mode !== 'forgot-pwd' && (
+          {ENABLE_SOCIAL_LOGIN && mode !== 'forgot-pwd' && mode !== 'reset-pwd' && (
             <div className="pt-3 border-t border-zinc-100">
               <div className="flex items-center justify-between mb-3">
                 <span className="text-[11px] font-bold text-zinc-400">第三方快捷授权登录</span>

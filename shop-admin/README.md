@@ -31,6 +31,8 @@ Henfon 商城后端模块化单体工程。
 
 所有连接信息都支持通过环境变量覆盖，生产环境不要使用默认密码。
 
+开发环境默认关闭 RocketMQ 消费监听器，因此未启动 NameServer 时后端仍可正常启动；启动 RocketMQ 后设置 `SHOP_ROCKETMQ_CONSUMER_ENABLED=true` 即可开启 28 个领域事件监听器。Outbox 发布失败会自动重试，站内通知轮询兜底不受影响。
+
 ### 配置环境
 
 项目提供三套 Spring Boot 环境配置：

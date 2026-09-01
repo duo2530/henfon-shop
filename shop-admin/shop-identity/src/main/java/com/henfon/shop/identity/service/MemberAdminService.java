@@ -2,10 +2,12 @@ package com.henfon.shop.identity.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.henfon.shop.common.exception.BusinessException;
 import com.henfon.shop.identity.entity.MemberUser;
 import com.henfon.shop.identity.dto.MemberAdminAdjustRequest;
+import com.henfon.shop.identity.dto.MemberAdminCreateRequest;
 import com.henfon.shop.identity.dto.MemberAdminUpdateRequest;
 import com.henfon.shop.identity.mapper.MemberUserMapper;
 import com.henfon.shop.identity.mapper.MemberTagMapper;
@@ -94,6 +96,57 @@ public class MemberAdminService {
         IPage<MemberUser> page = memberUserMapper.selectPage(new Page<>(Math.max(current, 1), Math.min(Math.max(size, 1), 200)), wrapper);
         page.getRecords().forEach(this::enrichMember);
         return page;
+    }
+
+    /**
+     * 创建后台录入的会员档案。
+     *
+     * @param request 新会员资料
+     * @return 创建后的会员
+     * @author Henfon
+     * @date 2026-09-01
+     */
+    @Transactional
+    public MemberUser create(MemberAdminCreateRequest request) {
+        String nickname = request.nickname().trim();
+        String phone = trimToNull(request.phone());
+        String email = trimToNull(request.email());
+        String requestedUsername = trimToNull(request.username());
+        // 线下录入会员不强制设置登录密码；用户名优先使用手机号，避免生成的档案无法检索。
+        String username = requestedUsername != null ? requestedUsername : (phone != null ? phone : "member_" + IdWorker.getIdStr());
+        long duplicateCount = memberUserMapper.selectCount(new LambdaQueryWrapper<MemberUser>()
+                .eq(MemberUser::getTenantId, 0L)
+                .and(query -> query.eq(MemberUser::getUsername, username)
+                        .or(phone != null, q -> q.eq(MemberUser::getPhone, phone))
+                        .or(email != null, q -> q.eq(MemberUser::getEmail, email))));
+        if (duplicateCount > 0) {
+            throw new BusinessException("MEMBER_EXISTS", "用户名、手机号或邮箱已被其他会员使用");
+        }
+        Integer status = request.status() == null ? 1 : request.status();
+        if (status != 0 && status != 1) {
+            throw new BusinessException("MEMBER_STATUS_INVALID", "会员状态只能是正常或冻结");
+        }
+        MemberUser member = new MemberUser();
+        member.setTenantId(0L);
+        member.setMemberNo("M" + IdWorker.getIdStr());
+        member.setUsername(username);
+        member.setNickname(nickname);
+        member.setPhone(phone);
+        member.setEmail(email);
+        member.setMemberLevel(StringUtils.hasText(request.memberLevel()) ? request.memberLevel().trim().toUpperCase() : "REGULAR");
+        member.setStatus(status);
+        member.setAvatarUrl(trimToNull(request.avatarUrl()));
+        member.setRemark(trimToNull(request.remark()));
+        member.setPoints(0L);
+        member.setBalance(BigDecimal.ZERO);
+        member.setRegisteredAt(LocalDateTime.now());
+        try {
+            memberUserMapper.insert(member);
+        } catch (DuplicateKeyException exception) {
+            throw new BusinessException("MEMBER_EXISTS", "用户名、手机号或邮箱已被其他会员使用");
+        }
+        // 返回与列表查询一致的消费统计和标签字段，前端无需额外刷新即可展示。
+        return enrichMember(member);
     }
 
     /**

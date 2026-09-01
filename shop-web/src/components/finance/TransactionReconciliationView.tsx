@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useCallback, useEffect, useState, useMemo } from 'react';
 import { useAdmin } from '../../context/AdminContext';
 import { listPaymentReconciliation, BackendPaymentReconciliationRecord } from '../../api/adminApi';
 import { 
@@ -9,6 +9,7 @@ import {
   Download, 
   CheckCircle2, 
   Clock, 
+  AlertCircle,
   CreditCard, 
 } from 'lucide-react';
 
@@ -53,11 +54,17 @@ export const TransactionReconciliationView: React.FC = () => {
   const [typeFilter, setTypeFilter] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<string>('all');
 
-  const loadTransactions = async () => {
+  const loadTransactions = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const page = await listPaymentReconciliation({ current: 1, size: 200 });
+      const page = await listPaymentReconciliation({
+        current: 1,
+        size: 200,
+        keyword: searchTerm.trim() || undefined,
+        type: typeFilter,
+        status: statusFilter,
+      });
       setTransactions((page.records || []).map(toFinanceTransaction));
     } catch (err) {
       setTransactions([]);
@@ -65,11 +72,12 @@ export const TransactionReconciliationView: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [searchTerm, showToast, statusFilter, typeFilter]);
 
   useEffect(() => {
-    void loadTransactions();
-  }, []);
+    const timer = window.setTimeout(() => void loadTransactions(), 250);
+    return () => window.clearTimeout(timer);
+  }, [loadTransactions]);
 
   const filtered = useMemo(() => {
     return transactions.filter((t) => {
@@ -85,7 +93,7 @@ export const TransactionReconciliationView: React.FC = () => {
   }, [transactions, searchTerm, typeFilter, statusFilter]);
 
   const totalIncome = transactions
-    .filter((t) => t.amount > 0)
+    .filter((t) => t.type === 'order_income' && t.amount > 0)
     .reduce((sum, t) => sum + t.amount, 0);
 
   const totalRefund = Math.abs(
@@ -96,6 +104,12 @@ export const TransactionReconciliationView: React.FC = () => {
 
   const totalFee = transactions.reduce((sum, t) => sum + t.fee, 0);
   const netSettlement = totalIncome - totalRefund - totalFee;
+  const incomeCount = transactions.filter((t) => t.type === 'order_income' && t.amount > 0).length;
+  const refundRate = totalIncome > 0 ? (totalRefund / totalIncome) * 100 : 0;
+  const feeRate = totalIncome > 0 ? (totalFee / totalIncome) * 100 : 0;
+  const reconciledCount = transactions.filter((t) => t.status === 'reconciled').length;
+  const reconciledRate = transactions.length > 0 ? (reconciledCount / transactions.length) * 100 : 0;
+  const formatRate = (value: number) => `${value.toFixed(2)}%`;
 
   const handleExportReconciliation = () => {
     const csvContent =
@@ -164,7 +178,7 @@ export const TransactionReconciliationView: React.FC = () => {
             </div>
           </div>
           <div className="text-2xl md:text-3xl font-bold text-emerald-700 mt-1">¥{totalIncome.toLocaleString('zh-CN', { minimumFractionDigits: 2 })}</div>
-          <p className="text-xs text-gray-400 mt-1">共计 {transactions.filter((t) => t.amount > 0).length} 笔成功收款</p>
+          <p className="text-xs text-gray-400 mt-1">共计 {incomeCount} 笔收款流水</p>
         </div>
 
         <div className="bg-white p-4.5 rounded-xl border border-[#E2E8F0] shadow-xs">
@@ -175,7 +189,7 @@ export const TransactionReconciliationView: React.FC = () => {
             </div>
           </div>
           <div className="text-2xl md:text-3xl font-bold text-red-600 mt-1">¥{totalRefund.toLocaleString('zh-CN', { minimumFractionDigits: 2 })}</div>
-          <p className="text-xs text-red-500 mt-1">退款率仅 2.1% (健康水位)</p>
+          <p className="text-xs text-red-500 mt-1">当前流水退款率 {formatRate(refundRate)}</p>
         </div>
 
         <div className="bg-white p-4.5 rounded-xl border border-[#E2E8F0] shadow-xs">
@@ -186,7 +200,7 @@ export const TransactionReconciliationView: React.FC = () => {
             </div>
           </div>
           <div className="text-2xl md:text-3xl font-bold text-amber-600 mt-1">¥{totalFee.toLocaleString('zh-CN', { minimumFractionDigits: 2 })}</div>
-          <p className="text-xs text-gray-400 mt-1">综合费率 0.58%</p>
+          <p className="text-xs text-gray-400 mt-1">当前流水综合费率 {formatRate(feeRate)}</p>
         </div>
 
         <div className="bg-white p-4.5 rounded-xl border border-[#E2E8F0] shadow-xs">
@@ -197,7 +211,7 @@ export const TransactionReconciliationView: React.FC = () => {
             </div>
           </div>
           <div className="text-2xl md:text-3xl font-bold text-blue-700 mt-1">¥{netSettlement.toLocaleString('zh-CN', { minimumFractionDigits: 2 })}</div>
-          <p className="text-xs text-blue-600 mt-1">100% 平账无差异</p>
+          <p className="text-xs text-blue-600 mt-1">{formatRate(reconciledRate)} 流水已平账（共 {transactions.length} 笔）</p>
         </div>
       </div>
 
@@ -226,6 +240,7 @@ export const TransactionReconciliationView: React.FC = () => {
               <option value="order_income">销售收款 (Income)</option>
               <option value="refund_payout">售后退款 (Refund)</option>
               <option value="commission_fee">手续费 (Fee)</option>
+              <option value="withdrawal">提现 (Withdrawal)</option>
             </select>
 
             <select
@@ -319,6 +334,11 @@ export const TransactionReconciliationView: React.FC = () => {
                     {t.status === 'pending_settle' && (
                       <span className="inline-flex items-center gap-1 text-xs font-semibold text-amber-800 bg-amber-100 px-2 py-0.5 rounded-full">
                         <Clock className="w-3 h-3" /> 在途中
+                      </span>
+                    )}
+                    {t.status === 'discrepancy' && (
+                      <span className="inline-flex items-center gap-1 text-xs font-semibold text-red-800 bg-red-100 px-2 py-0.5 rounded-full">
+                        <AlertCircle className="w-3 h-3" /> 待核实
                       </span>
                     )}
                   </td>
