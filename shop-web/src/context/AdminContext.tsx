@@ -1212,6 +1212,7 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       realName: newUser.realName,
       phone: newUser.phone === '-' ? undefined : newUser.phone,
       email: newUser.email === '-' ? undefined : newUser.email,
+      avatarUrl: newUser.avatar,
       deptId: Number(newUser.deptId) || undefined,
       status: newUser.status === 'active' ? 1 : 0
     }).then(async (id) => {
@@ -1240,6 +1241,15 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         avatarUrl: merged.avatar,
         deptId: Number(merged.deptId) || undefined,
         status: merged.status === 'active' ? 1 : 0
+      }).then(() => {
+        // 当前登录账号编辑成功后同步顶部资料，避免必须退出登录才能看到新头像。
+        if (currentUser?.userId === Number(id)) {
+          setCurrentUser((previous) => previous ? {
+            ...previous,
+            realName: merged.realName,
+            avatarUrl: merged.avatar
+          } : previous);
+        }
       }).catch(() => showToast('系统用户已更新本地状态，但服务端保存失败', 'warning'));
       if (updates.roles) {
         void replaceUserRoles(Number(id), updates.roles.map(Number).filter((roleId) => Number.isFinite(roleId)))

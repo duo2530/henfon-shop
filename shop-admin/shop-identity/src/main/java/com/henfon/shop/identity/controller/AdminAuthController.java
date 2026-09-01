@@ -3,6 +3,7 @@ package com.henfon.shop.identity.controller;
 import com.henfon.shop.common.api.ApiResponse;
 import com.henfon.shop.identity.dto.AdminLoginRequest;
 import com.henfon.shop.identity.dto.AdminLoginResponse;
+import com.henfon.shop.identity.dto.AdminCurrentUserResponse;
 import com.henfon.shop.identity.dto.AdminPasswordChangeRequest;
 import com.henfon.shop.identity.dto.AdminRefreshRequest;
 import com.henfon.shop.identity.dto.AdminLogoutRequest;
@@ -131,8 +132,8 @@ public class AdminAuthController {
      * @date 2026-08-29
      */
     @GetMapping("/me")
-    public ApiResponse<AuthenticatedUser> me(Authentication authentication) {
-        return ApiResponse.success((AuthenticatedUser) authentication.getPrincipal(), requestId());
+    public ApiResponse<AdminCurrentUserResponse> me(Authentication authentication) {
+        return ApiResponse.success(adminAuthService.currentUser(authentication), requestId());
     }
 
     /**

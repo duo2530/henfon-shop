@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.henfon.shop.common.exception.BusinessException;
 import com.henfon.shop.identity.dto.AdminLoginRequest;
 import com.henfon.shop.identity.dto.AdminLoginResponse;
+import com.henfon.shop.identity.dto.AdminCurrentUserResponse;
 import com.henfon.shop.identity.dto.AdminPasswordChangeRequest;
 import com.henfon.shop.identity.dto.AdminRefreshRequest;
 import com.henfon.shop.identity.entity.SysUser;
@@ -115,7 +116,7 @@ public class AdminAuthService {
         loginFailureTracker.reset(tenantId, request.username());
         return new AdminLoginResponse(token, jwtTokenService.getExpirationSeconds(),
                 adminTokenStore.createRefreshToken(user.getId(), user.getTenantId()), user.getId(),
-                user.getTenantId(), user.getUsername(), user.getRealName(), permissions);
+                user.getTenantId(), user.getUsername(), user.getRealName(), user.getAvatarUrl(), permissions);
     }
 
     /**
@@ -144,7 +145,30 @@ public class AdminAuthService {
         String accessToken = jwtTokenService.generate(user, permissions);
         return new AdminLoginResponse(accessToken, jwtTokenService.getExpirationSeconds(),
                 adminTokenStore.createRefreshToken(user.getId(), user.getTenantId()), user.getId(),
-                user.getTenantId(), user.getUsername(), user.getRealName(), permissions);
+                user.getTenantId(), user.getUsername(), user.getRealName(), user.getAvatarUrl(), permissions);
+    }
+
+    /**
+     * 查询当前登录管理员的最新资料，避免头像和姓名停留在旧令牌快照。
+     *
+     * @param authentication 当前认证信息
+     * @return 当前管理员资料
+     * @author Henfon
+     * @date 2026-09-01
+     * @description 从数据库读取实时头像，管理员编辑后刷新页面即可同步右上角资料。
+     */
+    @Transactional(readOnly = true)
+    public AdminCurrentUserResponse currentUser(Authentication authentication) {
+        if (authentication == null || !(authentication.getPrincipal() instanceof AuthenticatedUser principal)) {
+            throw new BusinessException("AUTH_REQUIRED", "请先登录管理员账号");
+        }
+        SysUser user = sysUserMapper.selectById(principal.userId());
+        if (user == null || !Integer.valueOf(1).equals(user.getStatus())) {
+            throw new BusinessException("AUTH_USER_NOT_FOUND", "管理员账号不存在或已停用");
+        }
+        // 权限以认证主体为准，资料字段以数据库最新值为准。
+        return new AdminCurrentUserResponse(user.getId(), user.getTenantId(), user.getUsername(),
+                user.getRealName(), user.getAvatarUrl(), principal.permissions());
     }
 
     /**

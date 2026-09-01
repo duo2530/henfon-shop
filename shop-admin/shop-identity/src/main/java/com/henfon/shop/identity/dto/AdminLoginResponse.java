@@ -12,11 +12,12 @@ import java.util.List;
  * @param userId 用户ID
  * @param username 登录用户名
  * @param realName 真实姓名
+ * @param avatarUrl 头像地址
  * @param permissions 权限编码列表
  * @author Henfon
  * @date 2026-09-01
  */
 public record AdminLoginResponse(String accessToken, long expiresInSeconds, String refreshToken,
                                  Long userId, Long tenantId, String username, String realName,
-                                 List<String> permissions) {
+                                 String avatarUrl, List<String> permissions) {
 }

@@ -3,6 +3,7 @@ export interface AdminUser {
   tenantId: number;
   username: string;
   realName?: string;
+  avatarUrl?: string;
   permissions: string[];
 }
 
@@ -1491,7 +1492,7 @@ export function deleteSystemUser(id: number): Promise<void> {
 }
 
 export async function loginAdmin(username: string, password: string): Promise<{ token: string; user: AdminUser }> {
-  const data = await request<{ accessToken: string; refreshToken: string; userId: number; tenantId?: number; username: string; realName: string; permissions: string[] }>(
+  const data = await request<{ accessToken: string; refreshToken: string; userId: number; tenantId?: number; username: string; realName: string; avatarUrl?: string; permissions: string[] }>(
     '/api/admin/auth/login',
     { method: 'POST', body: JSON.stringify({ username, password }) },
     undefined
@@ -1500,7 +1501,7 @@ export async function loginAdmin(username: string, password: string): Promise<{ 
   localStorage.setItem(REFRESH_TOKEN_KEY, data.refreshToken);
   return {
     token: data.accessToken,
-    user: { userId: data.userId, tenantId: data.tenantId ?? 0, username: data.username, realName: data.realName, permissions: data.permissions }
+    user: { userId: data.userId, tenantId: data.tenantId ?? 0, username: data.username, realName: data.realName, avatarUrl: data.avatarUrl, permissions: data.permissions }
   };
 }
 

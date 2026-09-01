@@ -44,7 +44,7 @@ public class StorageAdminController {
      * @date 2026-08-30
      */
     @PostMapping("/upload")
-    @PreAuthorize("hasAnyAuthority('catalog:product:query', 'payment:invoice:status')")
+    @PreAuthorize("hasAnyAuthority('catalog:product:query', 'payment:invoice:status', 'system:user:update')")
     public ApiResponse<MinioStorageService.UploadResult> upload(@RequestParam("file") MultipartFile file) {
         return ApiResponse.success(storageService.upload(file), MDC.get("requestId"));
     }

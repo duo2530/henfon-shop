@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useAdmin } from '../../context/AdminContext';
 import { containsMenuTab } from '../../navigation/menuAdapter';
 import { 
@@ -24,11 +24,19 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
   const { searchQuery, setSearchQuery, notifications, setCurrentTab, showToast, authorizedMenuItems, currentUser } = useAdmin();
   const [profileOpen, setProfileOpen] = useState(false);
   const [helpModalOpen, setHelpModalOpen] = useState(false);
+  const [avatarLoadFailed, setAvatarLoadFailed] = useState(false);
 
   const unreadNotificationsCount = notifications.filter((n) => !n.read).length;
   const hasSettingsMenu = containsMenuTab(authorizedMenuItems, 'settings');
   const displayName = currentUser?.realName || currentUser?.username || '管理员';
   const permissionLabel = currentUser?.permissions?.length ? `已授权 ${currentUser.permissions.length} 项` : '暂无权限';
+  const avatarUrl = currentUser?.avatarUrl?.trim();
+  const avatarInitial = displayName.slice(0, 1).toUpperCase();
+
+  useEffect(() => {
+    // 管理员切换头像后清理旧的失败状态，立即尝试加载新地址。
+    setAvatarLoadFailed(false);
+  }, [avatarUrl]);
 
   return (
     <>
@@ -101,11 +109,18 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
               className="flex items-center gap-2 p-1 rounded-full hover:ring-2 hover:ring-blue-500/30 transition-all cursor-pointer"
             >
               <div className="w-8 h-8 rounded-full overflow-hidden border border-gray-300 bg-gray-200 shadow-2xs">
-                <img
-                  src="https://lh3.googleusercontent.com/aida-public/AB6AXuBynnlmrzAfOh__-_UZ7uaROm1hPSgN2P37GlPbWjJr3Cs-6_eSsn9c6kCwyjWr9igu3UCEXMsxTBFBaj_PdPFfMW1dTlukzmJbdrhoHlxJs580gNlyELpzMBj-KlxECAfDXM0VktD2Xao-uzKAf3RJs6r6Ppst34_zxAXCPICYvlhpCHAMfJ2kpm5kdTOLGMa_rz1XJ5-dmbzd77eAzUtyNWwb9CB9xuBfbO9OeWK36ArWkVHXbZql"
-                  alt="Administrator Profile"
-                  className="w-full h-full object-cover"
-                />
+                {avatarUrl && !avatarLoadFailed ? (
+                  <img
+                    src={avatarUrl}
+                    alt={`${displayName}头像`}
+                    className="w-full h-full object-cover"
+                    onError={() => setAvatarLoadFailed(true)}
+                  />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center bg-blue-100 text-blue-700 text-xs font-bold" aria-label="管理员默认头像">
+                    {avatarInitial || <User className="w-4 h-4" />}
+                  </div>
+                )}
               </div>
             </button>
 
