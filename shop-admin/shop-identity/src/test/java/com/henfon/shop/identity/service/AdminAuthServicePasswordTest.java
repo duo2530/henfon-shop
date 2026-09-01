@@ -2,11 +2,14 @@ package com.henfon.shop.identity.service;
 
 import com.henfon.shop.common.exception.BusinessException;
 import com.henfon.shop.identity.dto.AdminPasswordChangeRequest;
+import com.henfon.shop.identity.dto.AdminRefreshRequest;
+import com.henfon.shop.identity.security.AdminRefreshIdentity;
 import com.henfon.shop.identity.entity.SysUser;
 import com.henfon.shop.identity.mapper.SysUserMapper;
 import com.henfon.shop.identity.mapper.SysUserRoleMapper;
 import com.henfon.shop.identity.security.AuthenticatedUser;
 import com.henfon.shop.identity.security.JwtTokenService;
+import com.henfon.shop.identity.security.AdminTokenStore;
 import com.henfon.shop.identity.security.LoginFailureTracker;
 import com.henfon.shop.identity.security.LoginRateLimiter;
 import org.junit.jupiter.api.BeforeEach;
@@ -48,6 +51,8 @@ class AdminAuthServicePasswordTest {
     private LoginRateLimiter loginRateLimiter;
     @Mock
     private LoginFailureTracker loginFailureTracker;
+    @Mock
+    private AdminTokenStore adminTokenStore;
 
     private AdminAuthService service;
 
@@ -60,7 +65,7 @@ class AdminAuthServicePasswordTest {
     @BeforeEach
     void setUp() {
         service = new AdminAuthService(sysUserMapper, sysUserRoleMapper, passwordEncoder,
-                jwtTokenService, auditLogService, loginRateLimiter, loginFailureTracker);
+                jwtTokenService, auditLogService, loginRateLimiter, loginFailureTracker, adminTokenStore);
     }
 
     /**
@@ -121,6 +126,47 @@ class AdminAuthServicePasswordTest {
     }
 
     /**
+     * 验证有效刷新令牌会轮换访问令牌和刷新令牌。
+     *
+     * @author Henfon
+     * @date 2026-09-01
+     */
+    @Test
+    void shouldRotateAdminRefreshToken() {
+        SysUser user = activeUser();
+        user.setTenantId(3L);
+        when(adminTokenStore.consumeIdentity("old-refresh")).thenReturn(new AdminRefreshIdentity(7L, 3L));
+        when(sysUserMapper.selectById(7L)).thenReturn(user);
+        when(sysUserRoleMapper.selectPermissionCodesByUserId(7L)).thenReturn(List.of("system:user:query"));
+        when(jwtTokenService.generate(user, List.of("system:user:query"))).thenReturn("new-access");
+        when(jwtTokenService.getExpirationSeconds()).thenReturn(3600L);
+        when(adminTokenStore.createRefreshToken(7L, 3L)).thenReturn("new-refresh");
+
+        var response = service.refresh(new AdminRefreshRequest("old-refresh"));
+
+        assertEquals("new-access", response.accessToken());
+        assertEquals("new-refresh", response.refreshToken());
+        assertEquals(3L, response.tenantId());
+        verify(adminTokenStore).consumeIdentity("old-refresh");
+    }
+
+    /**
+     * 验证无效刷新令牌不会查询用户并返回稳定错误码。
+     *
+     * @author Henfon
+     * @date 2026-09-01
+     */
+    @Test
+    void shouldRejectInvalidAdminRefreshToken() {
+        when(adminTokenStore.consumeIdentity("invalid")).thenReturn(null);
+
+        BusinessException exception = assertThrows(BusinessException.class,
+                () -> service.refresh(new AdminRefreshRequest("invalid")));
+
+        assertEquals("AUTH_REFRESH_INVALID", exception.getCode());
+    }
+
+    /**
      * 构造启用状态的管理员测试用户。
      *
      * @return 管理员测试用户
@@ -130,6 +176,7 @@ class AdminAuthServicePasswordTest {
     private SysUser activeUser() {
         SysUser user = new SysUser();
         user.setId(7L);
+        user.setTenantId(0L);
         user.setStatus(1);
         user.setPasswordHash("old-hash");
         return user;

@@ -5,11 +5,14 @@ import com.henfon.shop.common.exception.BusinessException;
 import com.henfon.shop.identity.dto.AdminLoginRequest;
 import com.henfon.shop.identity.dto.AdminLoginResponse;
 import com.henfon.shop.identity.dto.AdminPasswordChangeRequest;
+import com.henfon.shop.identity.dto.AdminRefreshRequest;
 import com.henfon.shop.identity.entity.SysUser;
 import com.henfon.shop.identity.mapper.SysUserMapper;
 import com.henfon.shop.identity.mapper.SysUserRoleMapper;
 import com.henfon.shop.identity.security.AuthenticatedUser;
 import com.henfon.shop.identity.security.JwtTokenService;
+import com.henfon.shop.identity.security.AdminRefreshIdentity;
+import com.henfon.shop.identity.security.AdminTokenStore;
 import com.henfon.shop.identity.security.LoginRateLimiter;
 import com.henfon.shop.identity.security.LoginFailureTracker;
 import org.springframework.security.core.Authentication;
@@ -36,6 +39,7 @@ public class AdminAuthService {
     private final AuditLogService auditLogService;
     private final LoginRateLimiter loginRateLimiter;
     private final LoginFailureTracker loginFailureTracker;
+    private final AdminTokenStore adminTokenStore;
 
     /**
      * 创建管理端登录服务。
@@ -47,13 +51,14 @@ public class AdminAuthService {
      * @param auditLogService 登录审计服务
      * @param loginRateLimiter IP 登录限流器
      * @param loginFailureTracker 账号失败锁定跟踪器
+     * @param adminTokenStore 管理员刷新令牌存储
      * @author Henfon
      * @date 2026-08-29
      */
     public AdminAuthService(SysUserMapper sysUserMapper, SysUserRoleMapper sysUserRoleMapper,
                             PasswordEncoder passwordEncoder, JwtTokenService jwtTokenService,
                             AuditLogService auditLogService, LoginRateLimiter loginRateLimiter,
-                            LoginFailureTracker loginFailureTracker) {
+                            LoginFailureTracker loginFailureTracker, AdminTokenStore adminTokenStore) {
         this.sysUserMapper = sysUserMapper;
         this.sysUserRoleMapper = sysUserRoleMapper;
         this.passwordEncoder = passwordEncoder;
@@ -61,6 +66,7 @@ public class AdminAuthService {
         this.auditLogService = auditLogService;
         this.loginRateLimiter = loginRateLimiter;
         this.loginFailureTracker = loginFailureTracker;
+        this.adminTokenStore = adminTokenStore;
     }
 
     /**
@@ -107,8 +113,38 @@ public class AdminAuthService {
         auditLogService.recordLogin(user.getId(), request.username(), 1, loginIp, null);
         loginRateLimiter.reset(loginIp);
         loginFailureTracker.reset(tenantId, request.username());
-        return new AdminLoginResponse(token, jwtTokenService.getExpirationSeconds(), user.getId(),
-                user.getUsername(), user.getRealName(), permissions);
+        return new AdminLoginResponse(token, jwtTokenService.getExpirationSeconds(),
+                adminTokenStore.createRefreshToken(user.getId(), user.getTenantId()), user.getId(),
+                user.getTenantId(), user.getUsername(), user.getRealName(), permissions);
+    }
+
+    /**
+     * 使用刷新令牌轮换管理员访问令牌。
+     *
+     * @param request 刷新请求
+     * @return 新的登录令牌
+     * @author Henfon
+     * @date 2026-09-01
+     */
+    @Transactional
+    public AdminLoginResponse refresh(AdminRefreshRequest request) {
+        AdminRefreshIdentity identity = adminTokenStore.consumeIdentity(request.refreshToken());
+        if (identity == null) {
+            throw new BusinessException("AUTH_REFRESH_INVALID", "刷新令牌无效或已过期");
+        }
+        SysUser user = sysUserMapper.selectById(identity.userId());
+        if (user == null || !java.util.Objects.equals(user.getTenantId(), identity.tenantId())) {
+            throw new BusinessException("AUTH_REFRESH_INVALID", "刷新令牌无效或已过期");
+        }
+        if (!Integer.valueOf(1).equals(user.getStatus())) {
+            throw new BusinessException("AUTH_DISABLED", "账号已被停用");
+        }
+        List<String> permissions = sysUserRoleMapper.selectPermissionCodesByUserId(user.getId());
+        // 旋转前令牌，确保被重放的旧刷新令牌无法再次换取访问令牌。
+        String accessToken = jwtTokenService.generate(user, permissions);
+        return new AdminLoginResponse(accessToken, jwtTokenService.getExpirationSeconds(),
+                adminTokenStore.createRefreshToken(user.getId(), user.getTenantId()), user.getId(),
+                user.getTenantId(), user.getUsername(), user.getRealName(), permissions);
     }
 
     /**

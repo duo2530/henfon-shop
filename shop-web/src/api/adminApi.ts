@@ -498,12 +498,51 @@ interface ApiEnvelope<T> {
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8080').replace(/\/$/, '');
 const TOKEN_KEY = 'henfon_shop_admin_token';
+const REFRESH_TOKEN_KEY = 'henfon_shop_admin_refresh_token';
+let refreshPromise: Promise<string | null> | null = null;
 
 export const getAdminToken = (): string | null => localStorage.getItem(TOKEN_KEY);
+export const getAdminRefreshToken = (): string | null => localStorage.getItem(REFRESH_TOKEN_KEY);
 
-export const clearAdminToken = (): void => localStorage.removeItem(TOKEN_KEY);
+export const clearAdminToken = (): void => {
+  localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(REFRESH_TOKEN_KEY);
+};
 
-async function request<T>(path: string, options: RequestInit = {}, token?: string): Promise<T> {
+/** 使用刷新令牌换取新的管理员访问令牌，并在成功后轮换本地令牌。 */
+export async function refreshAdminToken(): Promise<string | null> {
+  if (refreshPromise) return refreshPromise;
+  const refreshToken = getAdminRefreshToken();
+  if (!refreshToken) return null;
+  refreshPromise = (async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/admin/auth/refresh`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refreshToken }),
+      });
+      const body = await response.json().catch(() => null) as ApiEnvelope<{
+        accessToken: string;
+        refreshToken: string;
+      }> | null;
+      if (!response.ok || !body || body.code !== '0' || !body.data?.accessToken || !body.data.refreshToken) {
+        clearAdminToken();
+        return null;
+      }
+      localStorage.setItem(TOKEN_KEY, body.data.accessToken);
+      localStorage.setItem(REFRESH_TOKEN_KEY, body.data.refreshToken);
+      return body.data.accessToken;
+    } catch {
+      clearAdminToken();
+      return null;
+    } finally {
+      refreshPromise = null;
+    }
+  })();
+  return refreshPromise;
+}
+
+async function request<T>(path: string, options: RequestInit = {}, token?: string, allowRefresh = true): Promise<T> {
   const method = (options.method || 'GET').toUpperCase();
   const retryable = method === 'GET' || method === 'HEAD';
   const maxAttempts = retryable ? 3 : 1;
@@ -517,6 +556,13 @@ async function request<T>(path: string, options: RequestInit = {}, token?: strin
         headers.set('Authorization', `Bearer ${accessToken}`);
       }
       const response = await fetch(`${API_BASE_URL}${path}`, { ...options, headers });
+      if (response.status === 401 && allowRefresh && !path.startsWith('/api/admin/auth/')) {
+        const refreshedToken = await refreshAdminToken();
+        if (refreshedToken) {
+          // 仅重放一次原请求，避免刷新令牌失效时递归请求形成死循环。
+          return request<T>(path, options, refreshedToken, false);
+        }
+      }
       if (response.status >= 500 && retryable && attempt < maxAttempts - 1) {
         await delay(300 * 2 ** attempt);
         continue;
@@ -1218,15 +1264,16 @@ export function deleteSystemUser(id: number): Promise<void> {
 }
 
 export async function loginAdmin(username: string, password: string): Promise<{ token: string; user: AdminUser }> {
-  const data = await request<{ accessToken: string; userId: number; username: string; realName: string; permissions: string[] }>(
+  const data = await request<{ accessToken: string; refreshToken: string; userId: number; tenantId?: number; username: string; realName: string; permissions: string[] }>(
     '/api/admin/auth/login',
     { method: 'POST', body: JSON.stringify({ username, password }) },
     undefined
   );
   localStorage.setItem(TOKEN_KEY, data.accessToken);
+  localStorage.setItem(REFRESH_TOKEN_KEY, data.refreshToken);
   return {
     token: data.accessToken,
-    user: { userId: data.userId, tenantId: 0, username: data.username, realName: data.realName, permissions: data.permissions }
+    user: { userId: data.userId, tenantId: data.tenantId ?? 0, username: data.username, realName: data.realName, permissions: data.permissions }
   };
 }
 
@@ -1240,7 +1287,10 @@ export function changeAdminPassword(oldPassword: string, newPassword: string): P
 
 /** 注销当前管理员会话并吊销访问令牌。 */
 export function logoutAdmin(): Promise<void> {
-  return request<void>('/api/admin/auth/logout', { method: 'POST' });
+  return request<void>('/api/admin/auth/logout', {
+    method: 'POST',
+    body: JSON.stringify({ refreshToken: getAdminRefreshToken() }),
+  });
 }
 
 export function getCurrentAdmin(): Promise<AdminUser> {

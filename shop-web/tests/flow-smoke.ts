@@ -8,6 +8,8 @@ const orders = readFileSync(new URL('../src/components/orders/OrderManagementVie
 
 // 管理端当前无浏览器运行时依赖，先用源码契约冒烟保障核心流程入口未被误删。
 assert.match(api, /login|auth/i);
+assert.match(api, /auth\/refresh/);
+assert.match(api, /refreshAdminToken/);
 assert.match(api, /catalog\/products/);
 assert.match(api, /trade\/orders/);
 assert.match(login, /登录|username|password/);

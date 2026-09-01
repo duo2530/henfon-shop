@@ -1,6 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Product, ProductReview } from '../types/ecommerce';
-import { MOCK_REVIEWS } from '../data/products';
 import { fetchPortalProductReviews, hasPortalMemberSession, submitPortalProductReview } from '../api/portalApi';
 import {
   X,
@@ -48,7 +47,7 @@ interface ProductQuickViewProps {
   onToggleWishlist: (productId: string) => void;
 }
 
-export const ProductQuickView: React.FC<ProductQuickViewProps> = ({
+const ProductQuickViewContent: React.FC<Omit<ProductQuickViewProps, 'product'> & { product: Product }> = ({
   product,
   isWishlisted,
   onClose,
@@ -56,16 +55,18 @@ export const ProductQuickView: React.FC<ProductQuickViewProps> = ({
   onDirectBuy,
   onToggleWishlist,
 }) => {
-  if (!product) return null;
-
   const [activeMediaIndex, setActiveMediaIndex] = useState(0);
   const [activeTab, setActiveTab] = useState<'details' | 'specs' | 'reviews'>('details');
   const [quantity, setQuantity] = useState(1);
   const [reviews, setReviews] = useState<ProductReview[]>([]);
   const [reviewLoading, setReviewLoading] = useState(false);
+  const [reviewLoadingMore, setReviewLoadingMore] = useState(false);
+  const [reviewLoadError, setReviewLoadError] = useState<string | null>(null);
   const [reviewError, setReviewError] = useState<string | null>(null);
+  const [reviewNotice, setReviewNotice] = useState<string | null>(null);
   const [reviewPageNo, setReviewPageNo] = useState(1);
   const [reviewHasMore, setReviewHasMore] = useState(false);
+  const [reviewReloadKey, setReviewReloadKey] = useState(0);
   const [reviewRating, setReviewRating] = useState(5);
   const [reviewContent, setReviewContent] = useState('');
   const [reviewVariant, setReviewVariant] = useState('');
@@ -88,12 +89,17 @@ export const ProductQuickView: React.FC<ProductQuickViewProps> = ({
     }
   }, [product.id, product.variants]);
 
-  // 评价页签打开后从内容中心分页加载真实评价，接口异常时保留演示数据兜底。
+  // 评价页签打开后从内容中心分页加载真实评价，接口异常时展示明确错误并支持重试。
   useEffect(() => {
     if (activeTab !== 'reviews') return;
     let cancelled = false;
     setReviewLoading(true);
+    setReviewLoadError(null);
     setReviewError(null);
+    setReviewNotice(null);
+    setReviews([]);
+    setReviewPageNo(1);
+    setReviewHasMore(false);
     fetchPortalProductReviews(product.id, 1, 10)
       .then((page) => {
         if (cancelled) return;
@@ -101,17 +107,21 @@ export const ProductQuickView: React.FC<ProductQuickViewProps> = ({
         setReviewHasMore(page.current < page.pages);
         setReviews((page.records || []).map(mapPortalReview));
       })
-      .catch(() => {
+      .catch((error) => {
         if (cancelled) return;
-        setReviewError('评价加载失败，当前显示示例内容');
-        setReviews(MOCK_REVIEWS.slice(0, 10));
+        setReviewLoadError(error instanceof Error ? error.message : '评价加载失败，请稍后重试');
       })
       .finally(() => { if (!cancelled) setReviewLoading(false); });
-    return () => { cancelled = true; };
-  }, [activeTab, product.id]);
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTab, product.id, reviewReloadKey]);
 
   const loadMoreReviews = async () => {
+    if (reviewLoadingMore || !reviewHasMore) return;
     const nextPage = reviewPageNo + 1;
+    setReviewLoadingMore(true);
+    setReviewError(null);
     try {
       const page = await fetchPortalProductReviews(product.id, nextPage, 10);
       setReviews((current) => [...current, ...(page.records || []).map(mapPortalReview)]);
@@ -119,20 +129,25 @@ export const ProductQuickView: React.FC<ProductQuickViewProps> = ({
       setReviewHasMore(page.current < page.pages);
     } catch (error) {
       setReviewError(error instanceof Error ? error.message : '更多评价加载失败');
+    } finally {
+      setReviewLoadingMore(false);
     }
   };
 
   const submitReview = async () => {
     if (!hasPortalMemberSession()) {
       setReviewError('请先登录会员账号后再提交评价');
+      setReviewNotice(null);
       return;
     }
     if (!reviewContent.trim()) {
       setReviewError('请填写评价内容');
+      setReviewNotice(null);
       return;
     }
     setReviewSubmitting(true);
     setReviewError(null);
+    setReviewNotice(null);
     try {
       await submitPortalProductReview({
         productId: Number(product.id.replace(/^prod-/, '')),
@@ -142,7 +157,7 @@ export const ProductQuickView: React.FC<ProductQuickViewProps> = ({
       });
       setReviewContent('');
       setReviewVariant('');
-      setReviewError('评价已提交，审核通过后展示');
+      setReviewNotice('评价已提交，审核通过后展示');
     } catch (error) {
       setReviewError(error instanceof Error ? error.message : '评价提交失败，请稍后重试');
     } finally {
@@ -159,6 +174,8 @@ export const ProductQuickView: React.FC<ProductQuickViewProps> = ({
   const [isHovered, setIsHovered] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
+  const [mediaLoadError, setMediaLoadError] = useState(false);
+  const [videoLoadError, setVideoLoadError] = useState(false);
 
   // Build unified carousel media list (First slide is Video Demo if product has videoUrl)
   const mediaList = useMemo(() => {
@@ -233,6 +250,8 @@ export const ProductQuickView: React.FC<ProductQuickViewProps> = ({
 
   // Pause video when switching away from video slide or when component unmounts
   useEffect(() => {
+    setMediaLoadError(false);
+    setVideoLoadError(false);
     if (!isCurrentVideo && videoRef.current) {
       videoRef.current.pause();
       setIsPlaying(false);
@@ -242,7 +261,7 @@ export const ProductQuickView: React.FC<ProductQuickViewProps> = ({
   // Video hover mouse enter: auto-play muted (only when in viewport)
   const handleMouseEnterStage = () => {
     setIsHovered(true);
-    if (isCurrentVideo && isInViewport && videoRef.current) {
+    if (isCurrentVideo && !videoLoadError && isInViewport && videoRef.current) {
       videoRef.current.muted = isMuted;
       videoRef.current
         .play()
@@ -267,7 +286,7 @@ export const ProductQuickView: React.FC<ProductQuickViewProps> = ({
   // Toggle play/pause on click
   const handleTogglePlay = (e?: React.MouseEvent) => {
     e?.stopPropagation();
-    if (!videoRef.current || !isInViewport) return;
+    if (!videoRef.current || videoLoadError || !isInViewport) return;
 
     if (isPlaying) {
       videoRef.current.pause();
@@ -315,10 +334,12 @@ export const ProductQuickView: React.FC<ProductQuickViewProps> = ({
 
   // Carousel navigation
   const handlePrevMedia = () => {
+    if (mediaList.length === 0) return;
     setActiveMediaIndex((prev) => (prev > 0 ? prev - 1 : mediaList.length - 1));
   };
 
   const handleNextMedia = () => {
+    if (mediaList.length === 0) return;
     setActiveMediaIndex((prev) => (prev < mediaList.length - 1 ? prev + 1 : 0));
   };
 
@@ -341,9 +362,13 @@ export const ProductQuickView: React.FC<ProductQuickViewProps> = ({
   });
 
   // Calculate final unit price including variant price modifiers
-  const selectedSku = product.skus?.find((sku) =>
-    Object.entries(sku.attributes).every(([name, value]) => selectedVariants[name] === value)
-  );
+  const selectedSku = product.skus?.find((sku) => {
+    const attributes = Object.entries(sku.attributes);
+    // 无属性 SKU 仅在商品只有一个 SKU 时匹配，避免错误命中第一个 SKU。
+    return attributes.length === 0
+      ? product.skus?.length === 1
+      : attributes.every(([name, value]) => selectedVariants[name] === value);
+  });
   let currentPrice = selectedSku?.price ?? product.price;
   if (!selectedSku && !product.skus?.length && product.variants) {
     product.variants.forEach((variant) => {
@@ -354,13 +379,30 @@ export const ProductQuickView: React.FC<ProductQuickViewProps> = ({
       }
     });
   }
-  const currentStock = selectedSku?.stock ?? (product.skus?.length ? 0 : product.stock);
+  const currentStock = Math.max(0, selectedSku?.stock ?? (product.skus?.length ? 0 : product.stock));
+  const maxPurchaseQuantity = Math.min(10, currentStock);
+  const currentOriginalPrice = selectedSku?.marketPrice ?? product.originalPrice;
+  const stockLabel = product.skus?.length && !selectedSku
+    ? '该规格组合暂不可售'
+    : currentStock > 0
+      ? `现货充足 (${currentStock}件)`
+      : '暂时缺货';
+
+  useEffect(() => {
+    // SKU 切换后把数量收敛到库存和单笔限购范围内，避免提交超卖数量。
+    setQuantity((current) => Math.max(1, Math.min(current, maxPurchaseQuantity || 1)));
+  }, [maxPurchaseQuantity]);
 
   const handleVariantSelect = (variantName: string, optionLabel: string) => {
     setSelectedVariants((prev) => ({
       ...prev,
       [variantName]: optionLabel,
     }));
+  };
+
+  const handleReviewRetry = () => {
+    // 仅重新发起评价首屏查询，不保留上一次接口失败状态。
+    setReviewReloadKey((current) => current + 1);
   };
 
   const handleAdd = () => {
@@ -398,7 +440,12 @@ export const ProductQuickView: React.FC<ProductQuickViewProps> = ({
                 onMouseLeave={handleMouseLeaveStage}
                 onClick={isCurrentVideo ? () => handleTogglePlay() : undefined}
               >
-                {isCurrentVideo ? (
+                {!currentMedia ? (
+                  <div className="w-full h-full flex flex-col items-center justify-center gap-2 bg-zinc-100 text-zinc-500 text-sm">
+                    <span className="text-2xl" aria-hidden="true">▧</span>
+                    <span>暂无可用商品媒体</span>
+                  </div>
+                ) : isCurrentVideo ? (
                   /* Video Player Slide */
                   <div className="w-full h-full relative flex items-center justify-center bg-zinc-950">
                     <video
@@ -415,9 +462,18 @@ export const ProductQuickView: React.FC<ProductQuickViewProps> = ({
                       onError={(e) => {
                         console.warn('Video failed to load or play', e);
                         setIsPlaying(false);
+                        setVideoLoadError(true);
                       }}
                       className="w-full h-full object-cover"
                     />
+
+                    {videoLoadError && (
+                      <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-zinc-950/85 text-center text-sm text-zinc-200">
+                        <Film className="w-6 h-6 text-amber-400" />
+                        <span>视频暂时无法播放</span>
+                        <span className="text-xs text-zinc-400">请查看下方商品图片</span>
+                      </div>
+                    )}
 
                     {/* Top Badges: Video demo indicator & Product Badge */}
                     <div className="absolute top-3 left-3 right-3 flex items-center justify-between pointer-events-none z-10">
@@ -442,7 +498,7 @@ export const ProductQuickView: React.FC<ProductQuickViewProps> = ({
                     </div>
 
                     {/* Center Big Play Icon when paused or not hovering */}
-                    {!isPlaying && (
+                    {!isPlaying && !videoLoadError && (
                       <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/30 backdrop-blur-[2px] transition-all group-hover:bg-black/20">
                         <button
                           type="button"
@@ -532,11 +588,20 @@ export const ProductQuickView: React.FC<ProductQuickViewProps> = ({
                 ) : (
                   /* Standard Image Slide */
                   <div className="w-full h-full relative">
-                    <img
-                      src={currentMedia.url}
-                      alt={product.title}
-                      className="w-full h-full object-cover object-center"
-                    />
+                    {mediaLoadError ? (
+                      <div className="w-full h-full flex flex-col items-center justify-center gap-2 bg-zinc-100 text-zinc-500 text-sm text-center px-4">
+                        <span className="text-2xl" aria-hidden="true">▧</span>
+                        <span>商品图片暂时无法加载</span>
+                        <span className="text-xs text-zinc-400">请切换其他媒体或稍后重试</span>
+                      </div>
+                    ) : (
+                      <img
+                        src={currentMedia.url}
+                        alt={product.title}
+                        onError={() => setMediaLoadError(true)}
+                        className="w-full h-full object-cover object-center"
+                      />
+                    )}
                     {product.badge && (
                       <span className="absolute top-3 left-3 px-3 py-1 rounded-lg bg-zinc-900 text-white text-xs font-bold tracking-wider shadow-md">
                         {product.badge}
@@ -616,7 +681,7 @@ export const ProductQuickView: React.FC<ProductQuickViewProps> = ({
                   </div>
                   <div className="text-[11px] text-zinc-400 flex items-center justify-between px-0.5">
                     <span>
-                      {isCurrentVideo ? '▶ 当前为 0:15 视频演示模式' : `第 ${activeMediaIndex + 1} / ${mediaList.length} 张媒体图`}
+                      {isCurrentVideo ? `▶ 当前为 ${currentMedia.duration || '视频'} 演示模式` : `第 ${activeMediaIndex + 1} / ${mediaList.length} 张媒体图`}
                     </span>
                     <span className="text-[10px] text-zinc-400">支持键盘或左右箭头切换</span>
                   </div>
@@ -683,15 +748,19 @@ export const ProductQuickView: React.FC<ProductQuickViewProps> = ({
                       {currentPrice}
                     </span>
                     <span className="text-xs text-zinc-400 line-through">
-                      ¥{product.originalPrice}
+                      ¥{currentOriginalPrice}
                     </span>
                   </div>
                 </div>
 
                 <div className="text-right">
-                  <span className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200/60">
-                    <Check className="w-3.5 h-3.5" />
-                    {currentStock > 0 ? `现货充足 (${currentStock}件)` : '暂时缺货'}
+                  <span className={`inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-md border ${
+                    currentStock > 0
+                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200/60'
+                      : 'bg-rose-50 text-rose-700 border-rose-200/60'
+                  }`}>
+                    <Check className="w-3.5 h-3.5" aria-hidden="true" />
+                    {stockLabel}
                   </span>
                 </div>
               </div>
@@ -706,14 +775,26 @@ export const ProductQuickView: React.FC<ProductQuickViewProps> = ({
                   <div className="flex flex-wrap gap-2">
                     {variant.options.map((opt) => {
                       const isSelected = selectedVariants[variant.name] === opt.label;
+                      const isOptionAvailable = !product.skus?.length || product.skus.some((sku) => {
+                        if (sku.stock <= 0) return false;
+                        return Object.entries(sku.attributes).every(([name, value]) => (
+                          name === variant.name
+                            ? value === opt.label
+                            : !selectedVariants[name] || selectedVariants[name] === value
+                        ));
+                      });
                       return (
                         <button
                           key={opt.id}
+                          type="button"
+                          disabled={!isOptionAvailable && !isSelected}
                           onClick={() => handleVariantSelect(variant.name, opt.label)}
                           className={`px-3.5 py-2 rounded-xl text-xs font-medium border transition-all ${
                             isSelected
                               ? 'bg-zinc-900 text-white border-zinc-900 shadow-xs'
-                              : 'bg-white text-zinc-700 border-zinc-200 hover:border-zinc-300'
+                              : isOptionAvailable
+                                ? 'bg-white text-zinc-700 border-zinc-200 hover:border-zinc-300'
+                                : 'bg-zinc-100 text-zinc-400 border-zinc-100 cursor-not-allowed line-through'
                           }`}
                         >
                           {opt.label}
@@ -740,14 +821,14 @@ export const ProductQuickView: React.FC<ProductQuickViewProps> = ({
                     <input
                       type="number"
                       min={1}
-                      max={currentStock}
+                      max={Math.max(1, maxPurchaseQuantity)}
                       value={quantity}
-                      onChange={(e) => setQuantity(Math.max(1, Math.min(currentStock, Number(e.target.value) || 1)))}
+                      onChange={(e) => setQuantity(Math.max(1, Math.min(maxPurchaseQuantity || 1, Number(e.target.value) || 1)))}
                       className="w-12 text-center text-xs font-semibold text-zinc-900 focus:outline-none bg-transparent"
                     />
                     <button
-                      onClick={() => setQuantity((q) => Math.min(currentStock, q + 1))}
-                      disabled={quantity >= currentStock}
+                      onClick={() => setQuantity((q) => Math.min(maxPurchaseQuantity, q + 1))}
+                      disabled={quantity >= maxPurchaseQuantity}
                       className="p-1.5 rounded-lg hover:bg-zinc-100 text-zinc-600 disabled:opacity-30 transition"
                     >
                       <Plus className="w-3.5 h-3.5" />
@@ -866,8 +947,21 @@ export const ProductQuickView: React.FC<ProductQuickViewProps> = ({
             {activeTab === 'reviews' && (
               <div className="space-y-4">
                 {reviewLoading && <div className="text-sm text-zinc-500 py-6 text-center">正在加载评价…</div>}
-                {!reviewLoading && reviews.length === 0 && <div className="text-sm text-zinc-500 py-6 text-center">暂时还没有公开评价</div>}
-                {reviewError && <div className="text-xs text-amber-600 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">{reviewError}</div>}
+                {!reviewLoading && reviewLoadError && reviews.length === 0 && (
+                  <div className="rounded-2xl border border-rose-100 bg-rose-50 px-4 py-5 text-center">
+                    <div className="text-sm font-semibold text-rose-700">评价暂时无法加载</div>
+                    <div className="mt-1 text-xs text-rose-600">{reviewLoadError}</div>
+                    <button
+                      type="button"
+                      onClick={handleReviewRetry}
+                      className="mt-3 rounded-lg border border-rose-200 bg-white px-3 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-100"
+                    >
+                      重新加载
+                    </button>
+                  </div>
+                )}
+                {!reviewLoading && !reviewLoadError && reviews.length === 0 && <div className="text-sm text-zinc-500 py-6 text-center">暂时还没有公开评价</div>}
+                {!reviewLoading && reviewError && <div className="text-xs text-amber-600 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">{reviewError}</div>}
                 {!reviewLoading && reviews.map((rev) => (
                   <div key={rev.id} className="p-4 rounded-2xl bg-zinc-50 border border-zinc-100 space-y-2">
                     <div className="flex items-center justify-between">
@@ -885,7 +979,17 @@ export const ProductQuickView: React.FC<ProductQuickViewProps> = ({
                     <div className="flex items-center justify-between text-[11px] text-zinc-400 pt-1"><span>评价时间：{rev.date || '—'}</span><span>赞同 ({rev.helpfulCount})</span></div>
                   </div>
                 ))}
-                {!reviewLoading && reviewHasMore && <button type="button" onClick={() => void loadMoreReviews()} className="w-full py-2 text-xs font-bold text-zinc-600 border border-zinc-200 rounded-lg hover:bg-zinc-50">加载更多评价</button>}
+                {!reviewLoading && reviewHasMore && (
+                  <button
+                    type="button"
+                    disabled={reviewLoadingMore}
+                    onClick={() => void loadMoreReviews()}
+                    className="w-full py-2 text-xs font-bold text-zinc-600 border border-zinc-200 rounded-lg hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {reviewLoadingMore ? '正在加载…' : '加载更多评价'}
+                  </button>
+                )}
+                {reviewNotice && <div className="text-xs text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-lg px-3 py-2">{reviewNotice}</div>}
                 <div className="border border-zinc-200 rounded-2xl p-4 space-y-3">
                   <div className="text-sm font-bold text-zinc-900">发表评价</div>
                   <div className="flex items-center gap-2"><span className="text-xs text-zinc-500">评分</span>{[1, 2, 3, 4, 5].map((score) => <button type="button" key={score} onClick={() => setReviewRating(score)} className="p-0.5"><Star className={`w-4 h-4 ${score <= reviewRating ? 'fill-amber-400 text-amber-400' : 'text-zinc-300'}`} /></button>)}</div>
@@ -900,4 +1004,9 @@ export const ProductQuickView: React.FC<ProductQuickViewProps> = ({
       </div>
     </div>
   );
+};
+
+export const ProductQuickView: React.FC<ProductQuickViewProps> = (props) => {
+  // 空产品时不挂载详情内容，避免弹窗关闭/打开过程中 Hooks 数量发生变化。
+  return props.product ? <ProductQuickViewContent {...props} product={props.product} /> : null;
 };

@@ -4,8 +4,11 @@ import com.henfon.shop.common.api.ApiResponse;
 import com.henfon.shop.identity.dto.AdminLoginRequest;
 import com.henfon.shop.identity.dto.AdminLoginResponse;
 import com.henfon.shop.identity.dto.AdminPasswordChangeRequest;
+import com.henfon.shop.identity.dto.AdminRefreshRequest;
+import com.henfon.shop.identity.dto.AdminLogoutRequest;
 import com.henfon.shop.identity.security.AuthenticatedUser;
 import com.henfon.shop.identity.security.MemberTokenStore;
+import com.henfon.shop.identity.security.AdminTokenStore;
 import com.henfon.shop.identity.entity.SysMenu;
 import com.henfon.shop.identity.mapper.SysUserRoleMapper;
 import com.henfon.shop.identity.service.AdminAuthService;
@@ -34,6 +37,7 @@ public class AdminAuthController {
     private final AdminAuthService adminAuthService;
     private final SysUserRoleMapper sysUserRoleMapper;
     private final MemberTokenStore memberTokenStore;
+    private final AdminTokenStore adminTokenStore;
 
     /**
      * 创建认证控制器。
@@ -41,14 +45,16 @@ public class AdminAuthController {
      * @param adminAuthService 管理端认证服务
      * @param sysUserRoleMapper 用户角色数据访问对象
      * @param memberTokenStore 访问令牌黑名单存储
+     * @param adminTokenStore 管理员刷新令牌存储
      * @author Henfon
      * @date 2026-08-29
      */
     public AdminAuthController(AdminAuthService adminAuthService, SysUserRoleMapper sysUserRoleMapper,
-                               MemberTokenStore memberTokenStore) {
+                               MemberTokenStore memberTokenStore, AdminTokenStore adminTokenStore) {
         this.adminAuthService = adminAuthService;
         this.sysUserRoleMapper = sysUserRoleMapper;
         this.memberTokenStore = memberTokenStore;
+        this.adminTokenStore = adminTokenStore;
     }
 
     /**
@@ -64,6 +70,20 @@ public class AdminAuthController {
     public ApiResponse<AdminLoginResponse> login(@Valid @RequestBody AdminLoginRequest request,
                                                   HttpServletRequest servletRequest) {
         return ApiResponse.success(adminAuthService.login(request, servletRequest.getRemoteAddr()), requestId());
+    }
+
+    /**
+     * 使用刷新令牌轮换管理员访问令牌。
+     *
+     * @param request 刷新请求
+     * @return 新的访问令牌和刷新令牌
+     * @author Henfon
+     * @date 2026-09-01
+     */
+    @PostMapping("/refresh")
+    public ApiResponse<AdminLoginResponse> refresh(@Valid @RequestBody AdminRefreshRequest request) {
+        // 刷新接口不依赖已过期的访问令牌，仅校验 Redis 中的一次性刷新令牌。
+        return ApiResponse.success(adminAuthService.refresh(request), requestId());
     }
 
     /**
@@ -85,17 +105,20 @@ public class AdminAuthController {
     /**
      * 注销当前管理员并吊销访问令牌。
      *
+     * @param request 退出请求，可携带刷新令牌
      * @param authentication 当前认证信息
      * @return 空响应
      * @author Henfon
-     * @date 2026-08-31
+     * @date 2026-09-01
      */
     @PostMapping("/logout")
-    public ApiResponse<Void> logout(Authentication authentication) {
+    public ApiResponse<Void> logout(@RequestBody(required = false) AdminLogoutRequest request,
+                                    Authentication authentication) {
         if (authentication != null && authentication.getPrincipal() instanceof AuthenticatedUser user) {
             // 黑名单 TTL 与 JWT 自然过期时间一致，重复退出保持幂等。
             memberTokenStore.revokeAccessToken(user.tokenId());
         }
+        adminTokenStore.deleteRefreshToken(request == null ? null : request.refreshToken());
         return ApiResponse.success(requestId());
     }
 

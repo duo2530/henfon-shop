@@ -10,8 +10,14 @@ import com.henfon.shop.marketing.entity.MarketingCouponUsage;
 import com.henfon.shop.marketing.dto.MarketingCouponRedeemRequest;
 import com.henfon.shop.common.exception.BusinessException;
 import com.henfon.shop.trade.entity.TradeOrder;
+import com.henfon.shop.trade.entity.TradeOrderItem;
 import com.henfon.shop.trade.service.TradeOrderService;
+import com.henfon.shop.catalog.entity.CatalogCategory;
+import com.henfon.shop.catalog.entity.CatalogProduct;
+import com.henfon.shop.catalog.mapper.CatalogCategoryMapper;
+import com.henfon.shop.catalog.mapper.CatalogProductMapper;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
 import java.math.BigDecimal;
@@ -29,6 +35,8 @@ public class MarketingPortalService {
     private final MarketingMemberCouponMapper memberCouponMapper;
     private final MarketingCouponUsageMapper usageMapper;
     private final TradeOrderService tradeOrderService;
+    private final CatalogProductMapper catalogProductMapper;
+    private final CatalogCategoryMapper catalogCategoryMapper;
 
     /**
      * 创建门户营销服务。
@@ -37,15 +45,20 @@ public class MarketingPortalService {
      * @param memberCouponMapper 会员优惠券数据访问对象
      * @param usageMapper 优惠券核销流水数据访问对象
      * @param tradeOrderService 交易订单应用服务
+     * @param catalogProductMapper 商品数据访问对象
+     * @param catalogCategoryMapper 类目数据访问对象
      * @author Henfon
      * @date 2026-08-29
      */
     public MarketingPortalService(MarketingCouponMapper couponMapper, MarketingMemberCouponMapper memberCouponMapper,
-                                  MarketingCouponUsageMapper usageMapper, TradeOrderService tradeOrderService) {
+                                  MarketingCouponUsageMapper usageMapper, TradeOrderService tradeOrderService,
+                                  CatalogProductMapper catalogProductMapper, CatalogCategoryMapper catalogCategoryMapper) {
         this.couponMapper = couponMapper;
         this.memberCouponMapper = memberCouponMapper;
         this.usageMapper = usageMapper;
         this.tradeOrderService = tradeOrderService;
+        this.catalogProductMapper = catalogProductMapper;
+        this.catalogCategoryMapper = catalogCategoryMapper;
     }
 
     /**
@@ -171,6 +184,7 @@ public class MarketingPortalService {
         if (!Integer.valueOf(10).equals(order.getOrderStatus()) || !Integer.valueOf(0).equals(order.getPaymentStatus())) {
             throw new BusinessException("MARKETING_COUPON_ORDER_STATUS_INVALID", "订单当前状态不允许使用优惠券");
         }
+        validateCouponCategory(coupon, request.orderId());
         BigDecimal subtotal = order.getSubtotalAmount() == null ? BigDecimal.ZERO : order.getSubtotalAmount();
         if (subtotal.compareTo(coupon.getMinSpend()) < 0) {
             throw new BusinessException("MARKETING_COUPON_MIN_SPEND", "订单金额未达到优惠券使用门槛");
@@ -197,6 +211,37 @@ public class MarketingPortalService {
         usage.setAction(1);
         usageMapper.insert(usage);
         return record;
+    }
+
+    /**
+     * 校验优惠券适用类目，空类目编码代表全场优惠券；类目券要求订单内所有商品均属于该类目。
+     *
+     * @param coupon 优惠券
+     * @param orderId 订单ID
+     * @author Henfon
+     * @date 2026-09-01
+     */
+    private void validateCouponCategory(MarketingCoupon coupon, Long orderId) {
+        String couponCategoryCode = coupon.getCategoryCode();
+        if (!StringUtils.hasText(couponCategoryCode)) {
+            return;
+        }
+        List<TradeOrderItem> items = tradeOrderService.listItems(orderId);
+        if (items == null || items.isEmpty()) {
+            throw new BusinessException("MARKETING_COUPON_CATEGORY_MISMATCH", "订单商品不适用该优惠券");
+        }
+        for (TradeOrderItem item : items) {
+            if (item == null || item.getProductId() == null) {
+                throw new BusinessException("MARKETING_COUPON_CATEGORY_MISMATCH", "订单商品不适用该优惠券");
+            }
+            CatalogProduct product = catalogProductMapper.selectById(item.getProductId());
+            CatalogCategory category = product == null || product.getCategoryId() == null
+                    ? null : catalogCategoryMapper.selectById(product.getCategoryId());
+            if (category == null || !StringUtils.hasText(category.getCategoryCode())
+                    || !couponCategoryCode.trim().equalsIgnoreCase(category.getCategoryCode().trim())) {
+                throw new BusinessException("MARKETING_COUPON_CATEGORY_MISMATCH", "订单商品不适用该优惠券");
+            }
+        }
     }
 
     /**

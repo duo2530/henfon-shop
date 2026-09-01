@@ -7,14 +7,16 @@ import java.util.List;
  *
  * @param accessToken 访问令牌
  * @param expiresInSeconds 令牌有效期（秒）
+ * @param refreshToken 刷新令牌
+ * @param tenantId 租户 ID
  * @param userId 用户ID
  * @param username 登录用户名
  * @param realName 真实姓名
  * @param permissions 权限编码列表
  * @author Henfon
- * @date 2026-08-29
+ * @date 2026-09-01
  */
-public record AdminLoginResponse(String accessToken, long expiresInSeconds,
-                                 Long userId, String username, String realName,
+public record AdminLoginResponse(String accessToken, long expiresInSeconds, String refreshToken,
+                                 Long userId, Long tenantId, String username, String realName,
                                  List<String> permissions) {
 }

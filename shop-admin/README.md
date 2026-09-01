@@ -73,7 +73,8 @@ mvn -pl shop-identity,shop-trade,shop-boot -am test
 
 身份认证接口：
 
-- `POST /api/admin/auth/login`：管理员登录，JSON 请求体 `{ "username": "admin", "password": "123456" }`
+- `POST /api/admin/auth/login`：管理员登录，JSON 请求体 `{ "username": "admin", "password": "123456" }`，返回 `accessToken`、30 天 `refreshToken` 和令牌有效期。
+- `POST /api/admin/auth/refresh`：使用登录返回的 `refreshToken` 换取新的访问令牌，刷新令牌轮换后旧令牌立即失效。
 - `GET /api/admin/auth/me`：携带 `Authorization: Bearer <token>` 获取当前用户和权限
 
 门户会员认证接口：

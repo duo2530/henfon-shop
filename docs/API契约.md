@@ -45,7 +45,7 @@ HTTP 状态：成功 2xx；参数/业务错误 400；认证失败 401；无权�
 
 ## 5. 错误码
 
-通用错误码：`VALIDATION_ERROR`（参数校验）、`AUTH_INVALID`/`MEMBER_AUTH_INVALID`（凭证无效）、`AUTH_DISABLED`/`MEMBER_AUTH_DISABLED`（账号禁用）、`AUTH_RATE_LIMITED`（登录限流）、`AUTH_LOCKED`（管理员连续失败锁定）、`AUTH_PASSWORD_INVALID`/`AUTH_PASSWORD_UNCHANGED`（密码修改失败）、`MEMBER_AUTH_REQUIRED`、`MEMBER_ID_MISMATCH`、`*_NOT_FOUND`（资源不存在）、`*_CONCURRENT[_UPDATE]`（乐观锁冲突）、`*_STATUS_INVALID`（非法状态流转）、`SYSTEM_ERROR`。各领域错误码沿用代码中 `BusinessException` 的稳定字符串前缀（如 `TRADE_`、`INVENTORY_`、`PAYMENT_`、`MARKETING_`、`CATALOG_`、`CONTENT_`）；客户端应按 `code` 分支，不能匹配中文 `message`。
+通用错误码：`VALIDATION_ERROR`（参数校验）、`AUTH_INVALID`/`AUTH_REFRESH_INVALID`/`MEMBER_AUTH_INVALID`（凭证无效）、`AUTH_DISABLED`/`MEMBER_AUTH_DISABLED`（账号禁用）、`AUTH_RATE_LIMITED`（登录限流）、`AUTH_LOCKED`（管理员连续失败锁定）、`AUTH_PASSWORD_INVALID`/`AUTH_PASSWORD_UNCHANGED`（密码修改失败）、`MEMBER_AUTH_REQUIRED`、`MEMBER_ID_MISMATCH`、`MARKETING_COUPON_CATEGORY_MISMATCH`（优惠券适用类目不匹配）、`*_NOT_FOUND`（资源不存在）、`*_CONCURRENT[_UPDATE]`（乐观锁冲突）、`*_STATUS_INVALID`（非法状态流转）、`SYSTEM_ERROR`。各领域错误码沿用代码中 `BusinessException` 的稳定字符串前缀（如 `TRADE_`、`INVENTORY_`、`PAYMENT_`、`MARKETING_`、`CATALOG_`、`CONTENT_`）；客户端应按 `code` 分支，不能匹配中文 `message`。
 
 ## 6. 现有模块主要接口
 
@@ -59,7 +59,7 @@ HTTP 状态：成功 2xx；参数/业务错误 400；认证失败 401；无权�
 
 ### shop-identity（认证、会员、RBAC、审计）
 
-- 管理认证：`POST /api/admin/auth/login`、`POST /api/admin/auth/password`、`POST /api/admin/auth/logout`、`GET /api/admin/auth/me`、`GET /api/admin/auth/menus`。修改密码请求体为 `{ "oldPassword": "...", "newPassword": "..." }`，新密码长度 6～64 位；退出会将当前 JWT 加入黑名单。
+- 管理认证：`POST /api/admin/auth/login`、`POST /api/admin/auth/refresh`、`POST /api/admin/auth/password`、`POST /api/admin/auth/logout`、`GET /api/admin/auth/me`、`GET /api/admin/auth/menus`。登录返回 8 小时访问令牌和 30 天刷新令牌；刷新请求体为 `{ "refreshToken": "..." }`，刷新令牌使用 Redis 原子消费并一次性轮换，旧令牌立即失效。修改密码请求体为 `{ "oldPassword": "...", "newPassword": "..." }`，新密码长度 6～64 位；退出接口允许在访问令牌过期时调用，会将当前 JWT（如仍有效）加入黑名单，并删除请求体中的刷新令牌。
 - 会员认证：`POST /api/portal/auth/login|register|refresh|logout`。
 - 会员门户：`GET /api/portal/member/profile|addresses|favorites|compare/history`；地址 `POST /addresses`、`PUT/DELETE /addresses/{id}`、`PUT /addresses/{id}/default`；收藏 `POST /favorites/{productId}/toggle`；对比历史 `POST /compare/history`。
 - 会员管理：`GET /api/admin/member/users`（分页）、`PUT /users/{id}`、`PUT /users/{id}/status`、`PUT /users/{id}/assets`、标签 `GET/PUT /tags`、`PUT /tags/{id}`、`PUT /users/{id}/tags`。
@@ -87,7 +87,7 @@ HTTP 状态：成功 2xx；参数/业务错误 400；认证失败 401；无权�
 
 ### shop-marketing（优惠券、秒杀）
 
-- 门户：`GET /api/portal/marketing/coupons|member-coupons`、`POST /coupons/{couponId}/claim`、`POST /coupons/redeem|rollback`。
+- 门户：`GET /api/portal/marketing/coupons|member-coupons`、`POST /coupons/{couponId}/claim`、`POST /coupons/redeem|rollback`。核销时服务端校验优惠券适用类目；订单取消可主动回滚，订单全额退款成功事件会自动幂等回滚已核销优惠券。
 - 管理优惠券：`GET/POST /api/admin/marketing/coupons`（分页/保存）、`PUT /{id}/status`、`DELETE /{id}`。
 - 管理秒杀：`GET /api/admin/marketing/flash-sales`、`GET /{id}/items`、`POST /`、`PUT /{id}/status`、`DELETE /{id}`。
 
