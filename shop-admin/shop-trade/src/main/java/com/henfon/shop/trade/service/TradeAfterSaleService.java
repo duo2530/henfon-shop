@@ -205,9 +205,13 @@ public class TradeAfterSaleService {
         if (!Integer.valueOf(STATUS_PROCESSING).equals(afterSale.getStatus())) {
             throw new BusinessException("TRADE_AFTER_SALE_STATUS_INVALID", "仅处理中退货退款售后单允许确认入库");
         }
-        // 入库确认后复用订单退款状态机，退款单由支付领域事件消费者幂等创建。
-        tradeOrderService.refund(afterSale.getOrderId(), new TradeOrderRefundRequest(
-                afterSale.getRefundAmount(), StringUtils.hasText(remark) ? remark.trim() : "退货入库确认"));
+        // 入库确认后复用订单退款状态机；重复点击时订单已处于退款中/已退款则安全跳过。
+        TradeOrder order = tradeOrderService.findById(afterSale.getOrderId());
+        if (!Integer.valueOf(TradeOrderStateMachine.STATUS_REFUNDING).equals(order.getOrderStatus())
+                && !Integer.valueOf(TradeOrderStateMachine.STATUS_REFUNDED).equals(order.getOrderStatus())) {
+            tradeOrderService.refund(afterSale.getOrderId(), new TradeOrderRefundRequest(
+                    afterSale.getRefundAmount(), StringUtils.hasText(remark) ? remark.trim() : "退货入库确认"));
+        }
         afterSale.setRemark(StringUtils.hasText(remark) ? remark.trim() : "退货入库确认");
         updateAfterSale(afterSale);
         if (tradeEventOutboxService != null) {
