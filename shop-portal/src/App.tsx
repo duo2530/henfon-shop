@@ -695,6 +695,8 @@ export default function App() {
       };
       setOrders((previous) => previous.map((order) => order.id === updatedOrder.id ? updatedOrder : order));
       setPaymentPolling(null);
+      // 支付进入任一终态后关闭支付页，避免页面继续显示旧二维码和过期状态。
+      setShowPaymentPage(false);
       if (state === 'succeeded') {
         setCompletedOrder(updatedOrder);
         showToast(message, 'success');
