@@ -5,6 +5,8 @@ import com.henfon.shop.identity.security.MemberPrincipalResolver;
 import com.henfon.shop.payment.dto.PaymentCreateRequest;
 import com.henfon.shop.payment.dto.PaymentOrderResponse;
 import com.henfon.shop.payment.service.PaymentService;
+import com.henfon.shop.payment.wechat.WechatNativeCheckoutResponse;
+import com.henfon.shop.payment.wechat.WechatNativePaymentService;
 import jakarta.validation.Valid;
 import org.slf4j.MDC;
 import org.springframework.security.core.Authentication;
@@ -28,16 +30,19 @@ import org.springframework.web.bind.annotation.RestController;
 public class PaymentPortalController {
 
     private final PaymentService paymentService;
+    private final WechatNativePaymentService wechatNativePaymentService;
 
     /**
      * 创建门户支付控制器。
      *
      * @param paymentService 支付应用服务
+     * @param wechatNativePaymentService 微信 Native 支付服务
      * @author Henfon
      * @date 2026-08-30
      */
-    public PaymentPortalController(PaymentService paymentService) {
+    public PaymentPortalController(PaymentService paymentService, WechatNativePaymentService wechatNativePaymentService) {
         this.paymentService = paymentService;
+        this.wechatNativePaymentService = wechatNativePaymentService;
     }
 
     /**
@@ -57,6 +62,12 @@ public class PaymentPortalController {
                                                     @Valid @RequestBody PaymentCreateRequest request,
                                                     Authentication authentication) {
         Long currentMemberId = MemberPrincipalResolver.requireMemberId(authentication, memberId);
+        // 门户微信支付必须完成 Native 下单，否则只创建本地待支付单会导致页面永久等待回调。
+        if ("WECHAT".equalsIgnoreCase(request.channel()) || "WECHAT_NATIVE".equalsIgnoreCase(request.channel())) {
+            WechatNativeCheckoutResponse checkout = wechatNativePaymentService.create(currentMemberId, orderId);
+            PaymentOrderResponse payment = PaymentOrderResponse.withCodeUrl(checkout.paymentOrder(), checkout.codeUrl());
+            return ApiResponse.success(payment, MDC.get("requestId"));
+        }
         return ApiResponse.success(paymentService.create(currentMemberId, orderId, request), MDC.get("requestId"));
     }
 

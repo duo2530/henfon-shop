@@ -1450,6 +1450,7 @@ export default function App() {
         const persistedOrder: Order = {
           ...newOrder,
           paymentNo: persistence.paymentNo,
+          paymentCodeUrl: persistence.codeUrl,
           paymentStatus,
           paymentState,
           status: paymentState === 'succeeded' ? 'paid' : newOrder.status,
@@ -1552,6 +1553,7 @@ export default function App() {
         serverOrderNo: serverOrder.orderNo,
         paymentNo: payment.paymentNo,
         paymentStatus: payment.status,
+        codeUrl: payment.codeUrl,
         paymentCreated: true,
       };
     } catch (error) {
@@ -1641,11 +1643,13 @@ export default function App() {
       return;
     }
     try {
-      const payment = await createPortalPayment(memberId, orderId, order.paymentMethod || 'wechat');
+      // 重试支付统一使用后端约定的微信渠道编码，确保再次触发 Native 下单。
+      const payment = await createPortalPayment(memberId, orderId, 'WECHAT');
       const pendingOrder = {
         ...order,
         paymentNo: payment.paymentNo,
         paymentStatus: payment.status,
+        paymentCodeUrl: payment.codeUrl,
         paymentState: mapPaymentState(payment.status),
         statusLabel: '待支付',
       };

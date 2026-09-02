@@ -663,6 +663,8 @@ export interface PortalPaymentOrderRecord {
   expireAt?: string;
   createdAt: string;
   updatedAt: string;
+  /** 微信 Native 支付二维码链接，仅创建支付单时返回。 */
+  codeUrl?: string;
 }
 
 export async function fetchPortalCart(memberId: number): Promise<PortalCartRecord[]> {
