@@ -204,7 +204,27 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     }
     // 兼容直辖市只有“城市 区县”两级的高德返回格式，避免用北京默认值污染地址。
     const municipality = ['北京市', '上海市', '天津市', '重庆市'].includes(regionParts[0]);
-    const province = regionParts[0] || '';
+    const cityProvinceMap: Record<string, string> = {
+      广州市: '广东省',
+      深圳市: '广东省',
+      佛山市: '广东省',
+      东莞市: '广东省',
+      杭州市: '浙江省',
+      宁波市: '浙江省',
+      南京市: '江苏省',
+      苏州市: '江苏省',
+      成都市: '四川省',
+      武汉市: '湖北省',
+      西安市: '陕西省',
+    };
+    const repeatedProvince = regionParts.length >= 3 && regionParts[0] === regionParts[1]
+      && /市$/.test(regionParts[0]);
+    const inferredProvince = !municipality && regionParts.length >= 2
+      ? cityProvinceMap[regionParts[0]]
+      : undefined;
+    const province = repeatedProvince || inferredProvince
+      ? inferredProvince || cityProvinceMap[regionParts[0]] || regionParts[0]
+      : regionParts[0] || '';
     const city = regionParts.length >= 3 ? regionParts[1] : municipality ? province : regionParts[0] || '';
     const district = regionParts.length >= 3 ? regionParts[2] : regionParts[1] || '';
     if (!province || !city || !district) return;
