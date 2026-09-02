@@ -18,6 +18,8 @@ import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.Map;
+
 /**
  * 支付平台退款异步通知接口。
  *
@@ -91,7 +93,7 @@ public class PaymentRefundNotifyController {
      * @date 2026-08-31
      */
     @PostMapping("/notify/v3")
-    public ApiResponse<PaymentRefundResponse> notifyV3(
+    public Map<String, String> notifyV3(
             @RequestHeader("Wechatpay-Timestamp") String timestamp,
             @RequestHeader("Wechatpay-Nonce") String nonce,
             @RequestHeader("Wechatpay-Signature") String signature,
@@ -99,7 +101,9 @@ public class PaymentRefundNotifyController {
         String plaintext = callbackService.verifyAndDecryptNotification(timestamp, nonce, signature, body,
                 objectMapper);
         PaymentRefundNotifyRequest request = toRefundNotifyRequest(plaintext, body);
-        return ApiResponse.success(refundService.notifyRefund(request), MDC.get("requestId"));
+        refundService.notifyRefund(request);
+        // 微信 V3 成功确认必须使用平台约定的响应结构，不能返回商城统一响应包装。
+        return Map.of("code", "SUCCESS", "message", "");
     }
 
     /**
