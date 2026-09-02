@@ -759,6 +759,7 @@ export interface PortalFreightQuote {
   templateName: string;
   carrierName: string;
   freightAmount: number;
+  freeShippingThreshold: number;
   totalWeightGram: number;
   freeShipping: boolean;
   remoteArea: boolean;

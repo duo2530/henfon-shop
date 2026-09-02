@@ -139,7 +139,8 @@ public class TradeFreightService {
             freight = freight.add(money(template.getRemoteSurcharge()));
         }
         return new TradeFreightQuoteResponse(template.getId(), template.getTemplateName(), template.getCarrierName(),
-                money(freight), (int) totalWeightGram, freeShipping, remoteArea);
+                money(freight), money(template.getFreeShippingThreshold()), (int) totalWeightGram,
+                freeShipping, remoteArea);
     }
 
     /**

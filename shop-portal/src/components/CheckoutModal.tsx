@@ -1,7 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { CartItem, Address, Coupon, Order } from '../types/ecommerce';
 import { INITIAL_ADDRESSES } from '../data/products';
 import { quotePortalFreight } from '../api/portalApi';
+import { AmapAddressPicker } from './AmapAddressPicker';
 import {
   X,
   MapPin,
@@ -94,6 +95,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [shippingFee, setShippingFee] = useState(0);
   const [freightQuoteLoading, setFreightQuoteLoading] = useState(false);
+  const [freightQuoteError, setFreightQuoteError] = useState(false);
 
   useEffect(() => {
     if (initialAddresses) {
@@ -115,7 +117,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       : 0
     : 0;
 
-  const fallbackShippingFee = rawSubtotal > 0 ? (rawSubtotal >= 99 ? 0 : 15) : 0;
   const freightItemsKey = safeItems
     .map((item) => `${item.productId}:${item.skuId || ''}:${item.quantity}`)
     .join('|');
@@ -124,10 +125,12 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     if (!isOpen || !selectedAddress || rawSubtotal <= 0) {
       setShippingFee(0);
       setFreightQuoteLoading(false);
+      setFreightQuoteError(false);
       return;
     }
     let active = true;
     setFreightQuoteLoading(true);
+    setFreightQuoteError(false);
     quotePortalFreight({
       items: safeItems.map((item) => ({
         productId: Number(item.productId.replace(/^prod-/, '')),
@@ -142,8 +145,11 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     }).then((quote) => {
       if (active) setShippingFee(Number(quote.freightAmount || 0));
     }).catch(() => {
-      // 后端暂不可用时保留开发环境兜底规则，创建订单仍会由后端校验真实模板金额。
-      if (active) setShippingFee(fallbackShippingFee);
+      // 运费由服务端唯一计算，接口失败时不再展示写死的 15 元假数据。
+      if (active) {
+        setShippingFee(0);
+        setFreightQuoteError(true);
+      }
     }).finally(() => {
       if (active) setFreightQuoteLoading(false);
     });
@@ -154,6 +160,12 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     selectedAddress?.district, rawSubtotal, couponDiscount, freightItemsKey]);
 
   const totalPayable = Math.max(0, rawSubtotal - couponDiscount + shippingFee);
+
+  // 地图地址回调必须在条件返回前声明，确保结算弹窗开关切换时 Hooks 顺序稳定。
+  const handleMapAddressChange = useCallback((next: { region: string; detail: string }) => {
+    setNewRegion(next.region);
+    setNewDetail(next.detail);
+  }, []);
 
   if (!isOpen) return null;
 
@@ -407,7 +419,17 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
                 <div>
                   <label className="text-[11px] font-semibold text-zinc-500 block mb-1">
-                    所在地区
+                    地图搜索 / 选点
+                  </label>
+                  <AmapAddressPicker
+                    value={{ region: newRegion, detail: newDetail }}
+                    onChange={handleMapAddressChange}
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-semibold text-zinc-500 block mb-1">
+                    所在地区（可手工修正）
                   </label>
                   <input
                     type="text"
@@ -729,7 +751,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               </span>
             )}
             <span>
-              顺丰运费：<strong>{shippingFee === 0 ? '免费' : `¥${shippingFee}`}</strong>
+              顺丰运费：<strong>{freightQuoteLoading ? '计算中…' : freightQuoteError ? '暂不可用' : shippingFee === 0 ? '免费' : `¥${shippingFee.toFixed(2)}`}</strong>
             </span>
           </div>
 
@@ -743,7 +765,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
             <button
               onClick={handlePayOrder}
-              disabled={isSubmitting || freightQuoteLoading || !selectedAddress}
+              disabled={isSubmitting || freightQuoteLoading || freightQuoteError || !selectedAddress}
               className="py-3 px-8 rounded-2xl bg-zinc-900 text-white font-bold text-sm hover:bg-zinc-800 disabled:opacity-50 transition shadow-lg flex items-center justify-center gap-2"
             >
               {freightQuoteLoading ? (

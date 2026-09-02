@@ -246,6 +246,8 @@ export default function App() {
       return DEMO_MODE ? ['prod-1'] : [];
     }
   });
+  // 收藏夹需要独立于商品分页保存商品详情，避免收藏商品不在当前页时出现空列表。
+  const [wishlistProducts, setWishlistProducts] = useState<Product[]>([]);
 
   const [orders, setOrders] = useState<Order[]>(() => {
     try {
@@ -525,6 +527,23 @@ export default function App() {
         const productMap = new Map<number, Product>(
           products.map((product): [number, Product] => [Number(product.id.replace('prod-', '')), product])
         );
+        // 购物车接口只返回商品 ID，而商品列表是分页数据；补充加载不在当前页的商品详情，避免服务端购物车条目被过滤掉。
+        const missingCartProductIds = Array.from(new Set(
+          remoteCart
+            .map((item) => item.productId)
+            .filter((productId) => !productMap.has(productId))
+        ));
+        if (missingCartProductIds.length > 0) {
+          const missingCartProducts = await Promise.all(
+            missingCartProductIds.map((productId) => fetchPortalProductDetail(`prod-${productId}`).catch(() => null))
+          );
+          missingCartProducts.forEach((product) => {
+            if (product) {
+              productMap.set(Number(product.id.replace('prod-', '')), product);
+            }
+          });
+        }
+        if (!active) return;
         const mappedCart = remoteCart
           .map((item) => {
             const product = productMap.get(item.productId);
@@ -543,7 +562,8 @@ export default function App() {
           .filter((item): item is CartItem => Boolean(item));
         // 服务端条目优先展示，合并失败条目追加在末尾，避免登录后丢失本地商品。
         setCartItems([...mappedCart, ...failedLocalItems]);
-        if (remoteFavorites.length > 0) setWishlist(remoteFavorites.map((item) => `prod-${item.productId}`));
+        // 服务端收藏是登录会员的权威数据，即使为空也要覆盖本地旧收藏。
+        setWishlist(remoteFavorites.map((item) => `prod-${item.productId}`));
         if (remoteAddresses.length > 0) {
           setMemberAddresses(remoteAddresses.map((address) => ({
             id: String(address.id),
@@ -1163,9 +1183,14 @@ export default function App() {
   const handleToggleWishlist = (productId: string) => {
     if (wishlist.includes(productId)) {
       setWishlist((prev) => prev.filter((id) => id !== productId));
+      setWishlistProducts((prev) => prev.filter((product) => product.id !== productId));
       showToast('已从收藏夹移除', 'info');
     } else {
       setWishlist((prev) => [...prev, productId]);
+      const product = products.find((item) => item.id === productId);
+      if (product) {
+        setWishlistProducts((prev) => [product, ...prev.filter((item) => item.id !== productId)]);
+      }
       showToast('已加入心愿收藏夹！');
     }
     const memberId = resolveMemberId(currentUser);
@@ -1821,7 +1846,39 @@ export default function App() {
       });
   }, [products, selectedCategory, searchQuery, skuKeyword, onlyInStock, onlyDiscount, priceRange, sortBy]);
 
-  const wishlistedProductsList = products.filter((p) => wishlist.includes(p.id));
+  // 当前商品页只返回一页商品，收藏夹单独补齐不在当前页的收藏商品详情。
+  useEffect(() => {
+    const productMap = new Map<string, Product>(products.map((product) => [product.id, product]));
+    const missingIds = wishlist
+      .filter((productId) => !wishlistProducts.some((product) => product.id === productId) && !productMap.has(productId));
+    if (missingIds.length > 0) {
+      Promise.all(missingIds.map((productId) => fetchPortalProductDetail(productId).catch(() => null)))
+        .then((details) => {
+          const resolved = details.filter((product): product is Product => Boolean(product));
+          if (resolved.length > 0) {
+            setWishlistProducts((previous) => {
+              const merged = new Map<string, Product>(previous.map((product) => [product.id, product]));
+              resolved.forEach((product) => merged.set(product.id, product));
+              return Array.from(merged.values());
+            });
+          }
+        });
+    }
+    if (products.length > 0) {
+      setWishlistProducts((previous) => {
+        const merged = new Map<string, Product>(previous.map((product) => [product.id, product]));
+        wishlist.forEach((productId) => {
+          const product = productMap.get(productId);
+          if (product) merged.set(productId, product);
+        });
+        return Array.from(merged.values()).filter((product) => wishlist.includes(product.id));
+      });
+    }
+  }, [products, wishlist]);
+
+  const wishlistedProductsList = wishlist
+    .map((productId) => wishlistProducts.find((product) => product.id === productId) || products.find((product) => product.id === productId))
+    .filter((product): product is Product => Boolean(product));
   const comparedProductsList = products.filter((p) => compareProductIds.includes(p.id));
 
   const lastComparedProductsList = useMemo(() => {

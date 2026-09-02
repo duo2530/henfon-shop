@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { CartItem, Coupon } from '../types/ecommerce';
+import { quotePortalFreight } from '../api/portalApi';
 import {
   X,
   ShoppingBag,
@@ -51,28 +52,76 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
   onOpenCheckout,
   onOpenCouponCenter,
 }) => {
-  if (!isOpen) return null;
-
   const [couponInput, setCouponInput] = useState('');
   const [couponError, setCouponError] = useState('');
   const [showCouponSelector, setShowCouponSelector] = useState(false);
+  const [shippingFee, setShippingFee] = useState(0);
+  const [freightQuoteLoading, setFreightQuoteLoading] = useState(false);
+  const [freightQuoteError, setFreightQuoteError] = useState(false);
+  const [freeShippingThreshold, setFreeShippingThreshold] = useState(99);
+  const [quoteFreeShipping, setQuoteFreeShipping] = useState<boolean | null>(null);
 
   const safeCartItems = cartItems || [];
   const selectedItems = safeCartItems.filter((item) => item.selected);
   const isAllSelected = safeCartItems.length > 0 && selectedItems.length === safeCartItems.length;
+  const cartQuantity = safeCartItems.reduce((sum, item) => sum + (item.quantity || 0), 0);
+  const selectedQuantity = selectedItems.reduce((sum, item) => sum + (item.quantity || 0), 0);
 
   const rawSubtotal = selectedItems.reduce(
     (acc, item) => acc + (item.unitPrice || 0) * (item.quantity || 1),
     0
   );
 
-  const freeShippingThreshold = 99;
-  const needForFreeShipping = Math.max(0, freeShippingThreshold - rawSubtotal);
-  const isFreeShipping = rawSubtotal >= freeShippingThreshold;
-  const shippingFee = rawSubtotal > 0 ? (isFreeShipping ? 0 : 15) : 0;
-
   const couponDiscount = appliedCoupon ? (rawSubtotal >= appliedCoupon.minSpend ? appliedCoupon.discountAmount : 0) : 0;
+  const isFreeShipping = quoteFreeShipping ?? rawSubtotal >= freeShippingThreshold;
+  const freightItemsKey = selectedItems
+    .map((item) => `${item.productId}:${item.skuId || ''}:${item.quantity}`)
+    .join('|');
+
+  useEffect(() => {
+    if (!isOpen || selectedItems.length === 0 || rawSubtotal <= 0) {
+      setShippingFee(0);
+      setFreightQuoteLoading(false);
+      setFreightQuoteError(false);
+      setQuoteFreeShipping(null);
+      return;
+    }
+    let active = true;
+    setFreightQuoteLoading(true);
+    setFreightQuoteError(false);
+    quotePortalFreight({
+      items: selectedItems.map((item) => ({
+        productId: Number(item.productId.replace(/^prod-/, '')),
+        skuId: item.skuId,
+        quantity: item.quantity,
+      })),
+      subtotalAmount: rawSubtotal,
+      discountAmount: couponDiscount,
+    }).then((quote) => {
+      if (active) {
+        setShippingFee(Number(quote.freightAmount || 0));
+        setFreeShippingThreshold(Number(quote.freeShippingThreshold || 99));
+        setQuoteFreeShipping(Boolean(quote.freeShipping));
+      }
+    }).catch(() => {
+      // 运费由服务端唯一计算，接口失败时不再展示写死的 15 元假数据。
+      if (active) {
+        setShippingFee(0);
+        setFreightQuoteError(true);
+        setQuoteFreeShipping(null);
+      }
+    }).finally(() => {
+      if (active) setFreightQuoteLoading(false);
+    });
+    return () => {
+      active = false;
+    };
+  }, [couponDiscount, freightItemsKey, isOpen, rawSubtotal]);
+
+  const needForFreeShipping = Math.max(0, 99 - rawSubtotal);
   const totalPayable = Math.max(0, rawSubtotal - couponDiscount + shippingFee);
+
+  if (!isOpen) return null;
 
   const handleApplyCoupon = (e: React.FormEvent) => {
     e.preventDefault();
@@ -128,7 +177,9 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
           <div className="flex items-center justify-between font-medium mb-1.5">
             <span className="flex items-center gap-1.5 text-zinc-700">
               <Truck className="w-4 h-4 text-emerald-600" />
-              {isFreeShipping ? (
+              {freightQuoteError ? (
+                <span className="text-amber-700 font-semibold">运费将在结算页按收货地址重新试算</span>
+              ) : isFreeShipping ? (
                 <strong className="text-emerald-700 font-semibold">🎉 已满足顺丰包邮条件！</strong>
               ) : (
                 <span>
@@ -177,7 +228,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                   />
                   <span>全选所有商品</span>
                 </label>
-                <span className="text-zinc-400">共 {cartItems.length} 件</span>
+                <span className="text-zinc-400">共 {cartQuantity} 件</span>
               </div>
 
               {/* Items */}
@@ -424,7 +475,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
               <div className="flex justify-between">
                 <span>顺丰运费</span>
                 <span className="font-semibold text-zinc-900">
-                  {shippingFee === 0 ? <strong className="text-emerald-600">包邮</strong> : `¥${shippingFee}`}
+                  {freightQuoteLoading ? '计算中…' : freightQuoteError ? '结算页试算' : shippingFee === 0 ? <strong className="text-emerald-600">包邮</strong> : `¥${shippingFee.toFixed(2)}`}
                 </span>
               </div>
               <div className="flex justify-between pt-2 border-t border-zinc-100 text-sm font-bold text-zinc-900">
@@ -439,7 +490,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
               disabled={selectedItems.length === 0}
               className="w-full py-3.5 px-4 rounded-2xl bg-zinc-900 text-white font-bold text-sm hover:bg-zinc-800 disabled:opacity-40 disabled:cursor-not-allowed transition flex items-center justify-center gap-2 shadow-md"
             >
-              <span>立即结算 ({selectedItems.length}件)</span>
+              <span>立即结算 ({selectedQuantity}件)</span>
               <ArrowRight className="w-4 h-4" />
             </button>
           </div>
