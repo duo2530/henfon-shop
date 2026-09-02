@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Check, Copy, X } from 'lucide-react';
+import QRCode from 'qrcode';
 import { Order } from '../types/ecommerce';
 
 interface PaymentModalProps {
@@ -16,6 +17,23 @@ interface PaymentModalProps {
  */
 export const PaymentModal: React.FC<PaymentModalProps> = ({ order, onClose }) => {
   const codeUrl = order.paymentCodeUrl;
+  const [qrDataUrl, setQrDataUrl] = useState('');
+
+  useEffect(() => {
+    let active = true;
+    if (!codeUrl) {
+      setQrDataUrl('');
+      return () => { active = false; };
+    }
+    QRCode.toDataURL(codeUrl, { width: 240, margin: 2, errorCorrectionLevel: 'M' })
+      .then((dataUrl) => {
+        if (active) setQrDataUrl(dataUrl);
+      })
+      .catch(() => {
+        if (active) setQrDataUrl('');
+      });
+    return () => { active = false; };
+  }, [codeUrl]);
 
   const copyCodeUrl = async () => {
     if (!codeUrl) return;
@@ -41,6 +59,11 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ order, onClose }) =>
         </div>
         <div className="mt-4 rounded-2xl border border-emerald-100 bg-emerald-50 p-4">
           <p className="text-xs font-semibold text-emerald-800">微信 Native 支付链接</p>
+          {qrDataUrl && (
+            <div className="mx-auto my-3 flex w-fit rounded-xl bg-white p-3 shadow-sm">
+              <img src={qrDataUrl} alt="微信支付二维码" className="h-52 w-52" />
+            </div>
+          )}
           <p className="mt-2 break-all rounded-lg bg-white p-2 font-mono text-[10px] text-zinc-600">{codeUrl || '支付链接生成中，请稍候…'}</p>
           <button type="button" onClick={() => void copyCodeUrl()} disabled={!codeUrl} className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50">
             <Copy className="h-3.5 w-3.5" /> 复制支付链接
