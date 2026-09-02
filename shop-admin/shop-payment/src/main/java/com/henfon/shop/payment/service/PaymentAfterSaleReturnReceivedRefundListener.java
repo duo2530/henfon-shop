@@ -5,6 +5,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.henfon.shop.integration.messaging.DomainEvent;
 import com.henfon.shop.integration.messaging.RocketMqTopics;
 import com.henfon.shop.payment.dto.PaymentRefundCreateRequest;
+import com.henfon.shop.payment.wechat.WechatRefundPaymentService;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.apache.rocketmq.spring.annotation.RocketMQMessageListener;
 import org.apache.rocketmq.spring.core.RocketMQListener;
 import org.springframework.stereotype.Service;
@@ -24,6 +26,7 @@ public class PaymentAfterSaleReturnReceivedRefundListener implements RocketMQLis
 
     private final ObjectMapper objectMapper;
     private final PaymentRefundService refundService;
+    private final WechatRefundPaymentService wechatRefundPaymentService;
 
     /**
      * 创建退货入库退款消费者。
@@ -34,8 +37,24 @@ public class PaymentAfterSaleReturnReceivedRefundListener implements RocketMQLis
      * @date 2026-09-01
      */
     public PaymentAfterSaleReturnReceivedRefundListener(ObjectMapper objectMapper, PaymentRefundService refundService) {
+        this(objectMapper, refundService, null);
+    }
+
+    /**
+     * 创建接入微信原路退款的退货退款消费者。
+     *
+     * @param objectMapper JSON 解析器
+     * @param refundService 退款服务
+     * @param wechatRefundPaymentService 微信原路退款服务
+     * @author Henfon
+     * @date 2026-09-02
+     */
+    @Autowired
+    public PaymentAfterSaleReturnReceivedRefundListener(ObjectMapper objectMapper, PaymentRefundService refundService,
+                                                        WechatRefundPaymentService wechatRefundPaymentService) {
         this.objectMapper = objectMapper;
         this.refundService = refundService;
+        this.wechatRefundPaymentService = wechatRefundPaymentService;
     }
 
     /**
@@ -54,8 +73,14 @@ public class PaymentAfterSaleReturnReceivedRefundListener implements RocketMQLis
         String afterSaleNo = requiredText(payload, "afterSaleNo");
         Long orderId = requiredLong(payload, "orderId");
         BigDecimal refundAmount = requiredAmount(payload, "refundAmount");
-        refundService.create(new PaymentRefundCreateRequest(orderId, refundAmount,
-                "退货入库确认", "AFTER_SALE_RETURN:" + afterSaleNo));
+        PaymentRefundCreateRequest request = new PaymentRefundCreateRequest(orderId, refundAmount,
+                "退货入库确认", "AFTER_SALE_RETURN:" + afterSaleNo);
+        // 生产环境提交微信原路退款；测试或未接入渠道时仍保留本地退款单能力。
+        if (wechatRefundPaymentService != null) {
+            wechatRefundPaymentService.createAndSubmit(request);
+        } else {
+            refundService.create(request);
+        }
     }
 
     /**

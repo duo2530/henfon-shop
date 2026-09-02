@@ -5,6 +5,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.henfon.shop.integration.messaging.DomainEvent;
 import com.henfon.shop.integration.messaging.RocketMqTopics;
 import com.henfon.shop.payment.dto.PaymentRefundCreateRequest;
+import com.henfon.shop.payment.wechat.WechatRefundPaymentService;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.apache.rocketmq.spring.annotation.RocketMQMessageListener;
 import org.apache.rocketmq.spring.core.RocketMQListener;
 import org.slf4j.Logger;
@@ -31,6 +33,7 @@ public class PaymentAfterSaleApprovedRefundListener implements RocketMQListener<
 
     private final ObjectMapper objectMapper;
     private final PaymentRefundService refundService;
+    private final WechatRefundPaymentService wechatRefundPaymentService;
 
     /**
      * 创建售后退款单消费者。
@@ -41,8 +44,24 @@ public class PaymentAfterSaleApprovedRefundListener implements RocketMQListener<
      * @date 2026-08-31
      */
     public PaymentAfterSaleApprovedRefundListener(ObjectMapper objectMapper, PaymentRefundService refundService) {
+        this(objectMapper, refundService, null);
+    }
+
+    /**
+     * 创建接入微信原路退款的售后退款消费者。
+     *
+     * @param objectMapper JSON 解析器
+     * @param refundService 退款单应用服务
+     * @param wechatRefundPaymentService 微信原路退款服务
+     * @author Henfon
+     * @date 2026-09-02
+     */
+    @Autowired
+    public PaymentAfterSaleApprovedRefundListener(ObjectMapper objectMapper, PaymentRefundService refundService,
+                                                  WechatRefundPaymentService wechatRefundPaymentService) {
         this.objectMapper = objectMapper;
         this.refundService = refundService;
+        this.wechatRefundPaymentService = wechatRefundPaymentService;
     }
 
     /**
@@ -66,8 +85,14 @@ public class PaymentAfterSaleApprovedRefundListener implements RocketMQListener<
             String afterSaleNo = requiredText(payload, "afterSaleNo");
             Long orderId = requiredLong(payload, "orderId");
             BigDecimal refundAmount = requiredAmount(payload, "refundAmount");
-            refundService.create(new PaymentRefundCreateRequest(orderId, refundAmount,
-                    "售后审核通过", "AFTER_SALE:" + afterSaleNo));
+            PaymentRefundCreateRequest request = new PaymentRefundCreateRequest(orderId, refundAmount,
+                    "售后审核通过", "AFTER_SALE:" + afterSaleNo);
+            // 生产环境提交微信原路退款；测试或未接入渠道时仍保留本地退款单能力。
+            if (wechatRefundPaymentService != null) {
+                wechatRefundPaymentService.createAndSubmit(request);
+            } else {
+                refundService.create(request);
+            }
         } catch (RuntimeException exception) {
             // 异常继续抛出，交由 RocketMQ 重试和死信队列处理，避免审核事件静默丢失。
             log.warn("售后审核退款单创建失败，eventId={}", event.eventId(), exception);
