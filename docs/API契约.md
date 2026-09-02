@@ -102,7 +102,7 @@ HTTP 状态：成功 2xx；参数/业务错误 400；认证失败 401；无权�
 ### shop-payment（支付、退款、发票）
 
 - 门户支付：`POST /api/portal/payment/orders/{orderId}`、`GET /orders/{paymentNo}`、`PUT /orders/{paymentNo}/close`。
-- 微信回调：`POST /api/wx/pay/notify`、`POST /api/wx/pay/refund/notify`（联调 DTO）；生产 V3 原始回调使用 `POST /api/wx/pay/notify/v3`、`POST /api/wx/pay/refund/notify/v3`，服务端先校验 `Wechatpay-Timestamp/Nonce/Signature` 再解密并执行幂等状态更新。
+- 微信回调：开发/生产环境均应将微信支付回调地址配置为 `POST /api/wx/pay/notify/v3`、退款回调配置为 `POST /api/wx/pay/refund/notify/v3`；旧的 `/notify`、`/refund/notify` 仅保留联调 DTO 入口。V3 原始回调由服务端先校验 `Wechatpay-Timestamp/Nonce/Signature`，再解密并执行幂等状态更新。
 - 管理退款：`POST /api/admin/payment/refunds`、`GET /refunds/{refundNo}`；发票 `GET /api/admin/payment/invoices`（分页）、`PUT /invoices/{invoiceNo}/status`；资金对账 `GET /api/admin/payment/reconciliation`（支持关键字、流水类型、状态和分页筛选）。
 - 门户发票：`POST/GET /api/portal/payment/invoices/orders/{orderId}`。
 
