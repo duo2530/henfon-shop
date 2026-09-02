@@ -159,6 +159,11 @@ type PaymentPollingTask = {
   expiresAt: number;
 };
 
+function resolvePaymentExpiry(expireAt?: string): number {
+  const parsed = expireAt ? Date.parse(expireAt) : NaN;
+  return Number.isFinite(parsed) ? parsed : Date.now() + 30 * 60 * 1000;
+}
+
 function mapPaymentState(status?: number): Order['paymentState'] {
   if (status === 2) return 'succeeded';
   if (status === 3) return 'expired';
@@ -1456,6 +1461,7 @@ export default function App() {
           paymentNo: persistence.paymentNo,
           paymentCodeUrl: persistence.codeUrl,
           paymentStatus,
+          paymentExpireAt: persistence.paymentExpireAt,
           paymentState,
           status: paymentState === 'succeeded' ? 'paid' : newOrder.status,
           statusLabel: paymentState === 'succeeded' ? '已支付，等待发货' : '待支付',
@@ -1468,7 +1474,7 @@ export default function App() {
           memberId,
           paymentNo: persistence.paymentNo,
           order: persistedOrder,
-          expiresAt: Date.now() + 2 * 60 * 1000,
+          expiresAt: resolvePaymentExpiry(persistence.paymentExpireAt),
         });
         if (persistence.codeUrl) setShowPaymentPage(true);
         showToast('支付单已生成，正在确认支付状态…', 'info');
@@ -1564,6 +1570,7 @@ export default function App() {
         serverOrderNo: serverOrder.orderNo,
         paymentNo: payment.paymentNo,
         paymentStatus: payment.status,
+        paymentExpireAt: payment.expireAt,
         codeUrl: payment.codeUrl,
         paymentCreated: true,
       };
@@ -1660,12 +1667,13 @@ export default function App() {
         ...order,
         paymentNo: payment.paymentNo,
         paymentStatus: payment.status,
+        paymentExpireAt: payment.expireAt,
         paymentCodeUrl: payment.codeUrl,
         paymentState: mapPaymentState(payment.status),
         statusLabel: '待支付',
       };
       setOrders((previous) => previous.map((item) => item.id === order.id ? pendingOrder : item));
-      setPaymentPolling({ memberId, paymentNo: payment.paymentNo, order: pendingOrder, expiresAt: Date.now() + 2 * 60 * 1000 });
+      setPaymentPolling({ memberId, paymentNo: payment.paymentNo, order: pendingOrder, expiresAt: resolvePaymentExpiry(payment.expireAt) });
       if (payment.codeUrl) setShowPaymentPage(true);
       showToast('支付单已重新生成，请完成支付', 'info');
     } catch (error) {

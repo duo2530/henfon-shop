@@ -123,6 +123,7 @@ export interface Order {
   orderNumber: string;
   paymentNo?: string;
   paymentStatus?: number;
+  paymentExpireAt?: string;
   paymentCodeUrl?: string;
   paymentState?: 'pending' | 'processing' | 'succeeded' | 'failed' | 'expired';
   /** 秒杀活动订单关联的活动 ID。 */

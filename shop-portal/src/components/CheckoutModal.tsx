@@ -49,6 +49,7 @@ export interface CheckoutPersistenceResult {
   serverOrderNo?: string;
   paymentNo?: string;
   paymentStatus?: number;
+  paymentExpireAt?: string;
   codeUrl?: string;
   paymentCreated?: boolean;
   message?: string;
