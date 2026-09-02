@@ -123,15 +123,31 @@ export const AmapAddressPicker: React.FC<AmapAddressPickerProps> = ({ value, onC
 
   const selectSuggestion = (tip: any) => {
     const location = toLngLat(tip.location);
-    const detail = tip.address || tip.name || keyword;
-    onChange({ region: formatRegion(tip), detail });
-    setKeyword(tip.name || detail);
     setSuggestions([]);
     if (location && mapRef.current) {
       mapRef.current.setZoomAndCenter(15, location);
       mapRef.current.clearMap?.();
       new window.AMap.Marker({ position: location }).setMap(mapRef.current);
     }
+    // 搜索提示的行政区字段可能不完整，使用坐标逆地理解析获取权威省市区。
+    if (location && geocoderRef.current) {
+      geocoderRef.current.getAddress(location, (status: string, result: any) => {
+        if (status === 'complete' && result.info === 'OK' && result.regeocode) {
+          const address = result.regeocode;
+          const detail = address.formattedAddress || tip.address || tip.name || keyword;
+          onChange({ region: formatRegion(address), detail });
+          setKeyword(detail);
+          return;
+        }
+        const detail = tip.address || tip.name || keyword;
+        onChange({ region: formatRegion(tip), detail });
+        setKeyword(detail);
+      });
+      return;
+    }
+    const detail = tip.address || tip.name || keyword;
+    onChange({ region: formatRegion(tip), detail });
+    setKeyword(detail);
   };
 
   return (

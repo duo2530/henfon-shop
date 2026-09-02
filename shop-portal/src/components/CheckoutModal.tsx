@@ -84,7 +84,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   // New Address form
   const [newReceiver, setNewReceiver] = useState('');
   const [newPhone, setNewPhone] = useState('');
-  const [newRegion, setNewRegion] = useState('北京市 朝阳区');
+  const [newRegion, setNewRegion] = useState('');
   const [newDetail, setNewDetail] = useState('');
   const [newTag, setNewTag] = useState<'家' | '公司' | '学校'>('家');
 
@@ -173,7 +173,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   const resetAddressForm = () => {
     setNewReceiver('');
     setNewPhone('');
-    setNewRegion('北京市 朝阳区');
+    setNewRegion('');
     setNewDetail('');
     setNewTag('家');
     setEditingAddressId(null);
@@ -195,13 +195,26 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     if (!newReceiver || !newPhone || !newDetail) return;
 
     const editingAddress = editingAddressId ? addresses.find((address) => address.id === editingAddressId) : undefined;
+    const regionParts = newRegion.trim().split(/[\s/]+/).filter(Boolean);
+    // 处理“广州市白云区 北京市 朝阳区”这类旧值：优先从首段提取真实城市和区县，
+    // 避免把后面的默认北京字段错当成当前收货地区。
+    const compactMatch = regionParts[0]?.match(/^(.*市)(.*(?:区|县|旗))$/);
+    if (compactMatch) {
+      regionParts.splice(0, regionParts.length, compactMatch[1], compactMatch[2]);
+    }
+    // 兼容直辖市只有“城市 区县”两级的高德返回格式，避免用北京默认值污染地址。
+    const municipality = ['北京市', '上海市', '天津市', '重庆市'].includes(regionParts[0]);
+    const province = regionParts[0] || '';
+    const city = regionParts.length >= 3 ? regionParts[1] : municipality ? province : regionParts[0] || '';
+    const district = regionParts.length >= 3 ? regionParts[2] : regionParts[1] || '';
+    if (!province || !city || !district) return;
     const nextAddress: Address = {
       id: editingAddress?.id || `addr-${Date.now()}`,
       receiverName: newReceiver,
       phone: newPhone,
-      province: newRegion.split(' ')[0] || '北京市',
-      city: newRegion.split(' ')[1] || '北京市',
-      district: newRegion.split(' ')[2] || '朝阳区',
+      province,
+      city,
+      district,
       detail: newDetail,
       tag: newTag,
       isDefault: false,
