@@ -8,25 +8,25 @@ package com.henfon.shop.integration.messaging;
  */
 public final class RocketMqTopics {
 
-    public static final String ORDER_CREATED = "shop.order.created";
-    public static final String ORDER_CANCELLED = "shop.order.cancelled";
-    public static final String ORDER_CLOSED_TIMEOUT = "shop.order.closed.timeout";
-    public static final String ORDER_COMPLETED = "shop.order.completed";
-    public static final String PAYMENT_SUCCEEDED = "shop.payment.succeeded";
-    public static final String INVENTORY_RESERVED = "shop.inventory.reserved";
-    public static final String INVENTORY_RELEASED = "shop.inventory.released";
-    public static final String ORDER_SHIPPED = "shop.order.shipped";
-    public static final String ORDER_AUDIT_APPROVED = "shop.order.audit.approved";
-    public static final String ORDER_AUDIT_REJECTED = "shop.order.audit.rejected";
-    public static final String REFUND_APPROVED = "shop.refund.approved";
-    public static final String REFUND_SUCCEEDED = "shop.refund.succeeded";
-    public static final String AFTER_SALE_CREATED = "shop.after-sale.created";
-    public static final String AFTER_SALE_APPROVED = "shop.after-sale.approved";
-    public static final String AFTER_SALE_RETURN_RECEIVED = "shop.after-sale.return-received";
-    public static final String AFTER_SALE_REJECTED = "shop.after-sale.rejected";
-    public static final String AFTER_SALE_CANCELLED = "shop.after-sale.cancelled";
-    public static final String AFTER_SALE_COMPLETED = "shop.after-sale.completed";
-    public static final String PRODUCT_CHANGED = "shop.product.changed";
+    public static final String ORDER_CREATED = "shop_order_created";
+    public static final String ORDER_CANCELLED = "shop_order_cancelled";
+    public static final String ORDER_CLOSED_TIMEOUT = "shop_order_closed_timeout";
+    public static final String ORDER_COMPLETED = "shop_order_completed";
+    public static final String PAYMENT_SUCCEEDED = "shop_payment_succeeded";
+    public static final String INVENTORY_RESERVED = "shop_inventory_reserved";
+    public static final String INVENTORY_RELEASED = "shop_inventory_released";
+    public static final String ORDER_SHIPPED = "shop_order_shipped";
+    public static final String ORDER_AUDIT_APPROVED = "shop_order_audit_approved";
+    public static final String ORDER_AUDIT_REJECTED = "shop_order_audit_rejected";
+    public static final String REFUND_APPROVED = "shop_refund_approved";
+    public static final String REFUND_SUCCEEDED = "shop_refund_succeeded";
+    public static final String AFTER_SALE_CREATED = "shop_after_sale_created";
+    public static final String AFTER_SALE_APPROVED = "shop_after_sale_approved";
+    public static final String AFTER_SALE_RETURN_RECEIVED = "shop_after_sale_return_received";
+    public static final String AFTER_SALE_REJECTED = "shop_after_sale_rejected";
+    public static final String AFTER_SALE_CANCELLED = "shop_after_sale_cancelled";
+    public static final String AFTER_SALE_COMPLETED = "shop_after_sale_completed";
+    public static final String PRODUCT_CHANGED = "shop_product_changed";
 
     private RocketMqTopics() {
         // 工具常量类不允许实例化。
