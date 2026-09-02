@@ -4,6 +4,7 @@ import com.henfon.shop.common.api.ApiResponse;
 import com.henfon.shop.payment.dto.PaymentRefundCreateRequest;
 import com.henfon.shop.payment.dto.PaymentRefundResponse;
 import com.henfon.shop.payment.service.PaymentRefundService;
+import com.henfon.shop.payment.wechat.WechatRefundPaymentService;
 import jakarta.validation.Valid;
 import org.slf4j.MDC;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -25,16 +26,20 @@ import org.springframework.web.bind.annotation.RestController;
 public class PaymentRefundAdminController {
 
     private final PaymentRefundService refundService;
+    private final WechatRefundPaymentService wechatRefundPaymentService;
 
     /**
      * 创建后台退款控制器。
      *
      * @param refundService 退款应用服务
+     * @param wechatRefundPaymentService 微信原路退款服务
      * @author Henfon
      * @date 2026-08-30
      */
-    public PaymentRefundAdminController(PaymentRefundService refundService) {
+    public PaymentRefundAdminController(PaymentRefundService refundService,
+                                        WechatRefundPaymentService wechatRefundPaymentService) {
         this.refundService = refundService;
+        this.wechatRefundPaymentService = wechatRefundPaymentService;
     }
 
     /**
@@ -48,7 +53,8 @@ public class PaymentRefundAdminController {
     @PostMapping
     @PreAuthorize("hasAuthority('trade:order:refund')")
     public ApiResponse<PaymentRefundResponse> create(@Valid @RequestBody PaymentRefundCreateRequest request) {
-        return ApiResponse.success(refundService.create(request), MDC.get("requestId"));
+        // 微信支付是当前唯一启用渠道，后台退款需提交真实原路退款而不只是创建本地记录。
+        return ApiResponse.success(wechatRefundPaymentService.createAndSubmit(request), MDC.get("requestId"));
     }
 
     /**
