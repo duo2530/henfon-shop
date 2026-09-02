@@ -6,6 +6,7 @@ import { ProductQuickView } from './components/ProductQuickView';
 import { CartDrawer } from './components/CartDrawer';
 import { CheckoutModal, CheckoutPersistenceResult } from './components/CheckoutModal';
 import { OrderSuccessModal } from './components/OrderSuccessModal';
+import { PaymentModal } from './components/PaymentModal';
 import { OrdersModal } from './components/OrdersModal';
 import { WishlistModal } from './components/WishlistModal';
 import { CompareModal } from './components/CompareModal';
@@ -333,6 +334,7 @@ export default function App() {
   const [afterSalesLoading, setAfterSalesLoading] = useState(false);
   const [afterSalesError, setAfterSalesError] = useState<string | null>(null);
   const [paymentPolling, setPaymentPolling] = useState<PaymentPollingTask | null>(null);
+  const [showPaymentPage, setShowPaymentPage] = useState(false);
   const [flashSales, setFlashSales] = useState<PortalFlashSaleRecord[]>([]);
 
   const [appliedCoupon, setAppliedCoupon] = useState<Coupon | null>(null);
@@ -1466,6 +1468,7 @@ export default function App() {
           order: persistedOrder,
           expiresAt: Date.now() + 2 * 60 * 1000,
         });
+        if (persistence.codeUrl) setShowPaymentPage(true);
         showToast('支付单已生成，正在确认支付状态…', 'info');
         return;
       }
@@ -1661,6 +1664,7 @@ export default function App() {
       };
       setOrders((previous) => previous.map((item) => item.id === order.id ? pendingOrder : item));
       setPaymentPolling({ memberId, paymentNo: payment.paymentNo, order: pendingOrder, expiresAt: Date.now() + 2 * 60 * 1000 });
+      if (payment.codeUrl) setShowPaymentPage(true);
       showToast('支付单已重新生成，请完成支付', 'info');
     } catch (error) {
       showToast(error instanceof Error ? error.message : '重新支付失败，请稍后重试', 'error');
@@ -2403,6 +2407,10 @@ export default function App() {
         }}
         onContinueShopping={() => setCompletedOrder(null)}
       />
+
+      {showPaymentPage && paymentPolling?.order && (
+        <PaymentModal order={paymentPolling.order} onClose={() => setShowPaymentPage(false)} />
+      )}
 
       <OrdersModal
         isOpen={isOrdersOpen}
