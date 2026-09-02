@@ -1500,27 +1500,33 @@ export default function App() {
     let serverOrderId: number | undefined;
     let serverOrderNo: string | undefined;
     try {
+      // 商品分页接口可能不返回 SKU，提交订单前补拉详情，确保库存预占拿到有效 skuId。
+      const orderItems = await Promise.all(order.items.map(async (item) => {
+        let product = products.find((candidate) => candidate.id === item.productId);
+        if (!product?.skus?.length) {
+          product = await fetchPortalProductDetail(item.productId).catch(() => product);
+        }
+        const variants = Object.fromEntries(
+          item.variantsSummary.split(' / ').map((entry) => entry.split(':')).filter((entry) => entry.length === 2)
+        );
+        const sku = product ? resolveSelectedSku(product, variants) || product.skus?.[0] : undefined;
+        return {
+          productId: Number(item.productId.replace('prod-', '')) || undefined,
+          skuId: item.skuId || sku?.id,
+          skuCode: sku?.skuCode,
+          productName: item.title,
+          imageUrl: item.image,
+          unitPrice: sku?.price ?? item.price,
+          quantity: item.quantity,
+          skuName: item.variantsSummary,
+        };
+      }));
       const serverOrder = await createPortalOrder({
         memberId,
         flashSaleId: order.flashSaleId,
         // 使用本地订单 ID 作为幂等键，网络重试时仍能定位同一笔订单。
         idempotencyKey: order.id,
-        items: order.items.map((item) => {
-          const product = products.find((candidate) => candidate.id === item.productId);
-          const sku = product ? resolveSelectedSku(product, Object.fromEntries(
-            item.variantsSummary.split(' / ').map((entry) => entry.split(':')).filter((entry) => entry.length === 2)
-          )) : undefined;
-          return {
-            productId: Number(item.productId.replace('prod-', '')) || undefined,
-            skuId: item.skuId || sku?.id,
-            skuCode: sku?.skuCode,
-            productName: item.title,
-            imageUrl: item.image,
-            unitPrice: item.price,
-            quantity: item.quantity,
-            skuName: item.variantsSummary,
-          };
-        }),
+        items: orderItems,
         receiverName: order.shippingAddress.receiverName,
         receiverPhone: order.shippingAddress.phone,
         receiverProvince: province,
