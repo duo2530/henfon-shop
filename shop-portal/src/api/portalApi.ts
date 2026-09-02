@@ -203,10 +203,14 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
         await delay(300 * 2 ** attempt);
         continue;
       }
+      // 非 2xx 响应同样解析统一响应体，向结算页保留后端可读的业务错误原因。
+      const result = await response.json().catch(() => null) as ApiResponse<T> | null;
       if (!response.ok) {
-        throw new Error(`门户接口请求失败：${response.status}`);
+        throw new Error(result?.message || `门户接口请求失败：${response.status}`);
       }
-      const result = (await response.json()) as ApiResponse<T>;
+      if (!result) {
+        throw new Error('门户接口返回数据为空');
+      }
       if (result.code !== '0') {
         throw new Error(result.message || '门户接口返回失败');
       }

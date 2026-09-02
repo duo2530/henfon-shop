@@ -1563,7 +1563,7 @@ export default function App() {
         paymentCreated: false,
         message: serverOrderId
           ? '订单已创建，但支付单创建失败，请稍后重试支付'
-          : '订单服务暂不可用，订单已保留在本地，请稍后重试',
+          : error instanceof Error ? error.message : '订单服务暂不可用，订单已保留在本地，请稍后重试',
       };
     }
   };
