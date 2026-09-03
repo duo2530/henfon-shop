@@ -15,7 +15,6 @@ import {
   Department,
   DataRule
 } from '../types';
-import { initialProducts, initialOrders } from '../data/mockData';
 import { 
   initialRoles, 
   initialSystemUsers, 
@@ -282,8 +281,8 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   const [authLoading, setAuthLoading] = useState(true);
   const [currentUser, setCurrentUser] = useState<AdminUser | null>(null);
   const [currentTab, setCurrentTabState] = useState<NavigationTab>('dashboard');
-  const [products, setProducts] = useState<Product[]>(initialProducts);
-  const [orders, setOrders] = useState<Order[]>(initialOrders);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [orders, setOrders] = useState<Order[]>([]);
   // 会员列表以服务端返回为唯一事实来源，避免管理端展示本地演示会员。
   const [users, setUsers] = useState<User[]>([]);
   const [catalogCategories, setCatalogCategories] = useState<Array<{ id: number; code: ProductCategory; name: string }>>([]);
@@ -462,6 +461,9 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     if (productsResult.status === 'fulfilled') {
       const categoryMap = backendCategoriesToMap(categoriesResult.status === 'fulfilled' ? categoriesResult.value : []);
       setProducts(backendProductsToFrontend(productsResult.value.records, categoryMap));
+    } else {
+      // 商品接口不可用时清空列表，避免继续展示本地演示商品。
+      setProducts([]);
     }
   };
 
@@ -471,7 +473,9 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       const ordersResult = await listTradeOrders({ size: 200 });
       setOrders(backendOrdersToFrontend(ordersResult.records || []));
     } catch (error) {
-      console.warn('订单接口暂不可用，继续使用当前订单数据', error);
+      // 订单接口不可用时清空列表，避免继续展示本地演示订单。
+      setOrders([]);
+      console.warn('订单接口暂不可用，已清空当前订单数据', error);
     }
   };
 
