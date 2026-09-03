@@ -4,11 +4,12 @@ import com.henfon.shop.content.config.EmailNotificationProperties;
 import com.henfon.shop.identity.entity.MemberUser;
 import com.henfon.shop.identity.mapper.MemberUserMapper;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
 
-import static org.mockito.ArgumentMatchers.any;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -66,7 +67,13 @@ class EmailNotificationServiceTest {
         service.sendIfConfigured(1L, "PAYMENT_SUCCEEDED", "支付成功", "订单已支付", "evt-1");
         service.sendIfConfigured(1L, "PAYMENT_SUCCEEDED", "支付成功", "订单已支付", "evt-1");
 
-        verify(sender, times(1)).send(any(SimpleMailMessage.class));
+        ArgumentCaptor<SimpleMailMessage> captor = ArgumentCaptor.forClass(SimpleMailMessage.class);
+        verify(sender, times(1)).send(captor.capture());
+        SimpleMailMessage message = captor.getValue();
+        assertTrue(message.getSubject().contains("支付成功"));
+        assertTrue(message.getSubject().contains("Henfon商城提醒"));
+        assertTrue(message.getText().contains("温馨提示：订单已进入备货流程"));
+        assertTrue(message.getText().contains("本邮件由系统自动发送"));
     }
 
     /**

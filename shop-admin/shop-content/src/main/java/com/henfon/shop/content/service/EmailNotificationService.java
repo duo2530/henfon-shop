@@ -79,8 +79,9 @@ public class EmailNotificationService implements MemberEmailSender {
         }
         String prefix = StringUtils.hasText(properties.getSubjectPrefix())
                 ? properties.getSubjectPrefix().trim() + " - " : "";
-        message.setSubject(prefix + (StringUtils.hasText(subject) ? subject.trim() : "会员认证通知"));
-        message.setText(StringUtils.hasText(content) ? content.trim() : "您有一封会员认证邮件，请登录商城查看详情。");
+        String safeSubject = StringUtils.hasText(subject) ? subject.trim() : "会员认证通知";
+        message.setSubject(prefix + safeSubject + "｜Henfon商城安全提醒");
+        message.setText(formatMailContent(subject, content, null));
         try {
             mailSender.send(message);
         } catch (RuntimeException exception) {
@@ -134,8 +135,9 @@ public class EmailNotificationService implements MemberEmailSender {
         }
         String prefix = StringUtils.hasText(properties.getSubjectPrefix())
                 ? properties.getSubjectPrefix().trim() + " - " : "";
-        message.setSubject(prefix + (StringUtils.hasText(title) ? title.trim() : "订单进度更新"));
-        message.setText(StringUtils.hasText(content) ? content.trim() : "您的订单有新的进度更新，请登录商城查看详情。");
+        String safeTitle = StringUtils.hasText(title) ? title.trim() : "订单进度更新";
+        message.setSubject(prefix + safeTitle + "｜Henfon商城提醒");
+        message.setText(formatMailContent(safeTitle, content, eventType));
         try {
             mailSender.send(message);
         } catch (RuntimeException exception) {
@@ -162,6 +164,64 @@ public class EmailNotificationService implements MemberEmailSender {
                 || "ORDER_SHIPPED".equals(normalized)
                 || "REFUND_SUCCEEDED".equals(normalized)
                 || normalized.startsWith("AFTER_SALE_");
+    }
+
+    /**
+     * 组装统一的邮件正文，补充品牌抬头、事件提示和服务 footer，提升纯文本邮件的可读性。
+     *
+     * @param title 邮件标题
+     * @param content 业务正文
+     * @param eventType 业务事件类型，认证邮件可为空
+     * @return 格式化后的邮件正文
+     * @author Henfon
+     * @date 2026-09-03
+     */
+    private String formatMailContent(String title, String content, String eventType) {
+        String safeTitle = StringUtils.hasText(title) ? title.trim() : "会员服务通知";
+        String safeContent = StringUtils.hasText(content)
+                ? content.trim() : "您有一封新的会员服务通知，请登录商城查看详情。";
+        StringBuilder body = new StringBuilder(256);
+        body.append("您好！\n\n")
+                .append("Henfon 商城为您带来一条服务提醒\n")
+                .append("━━━━━━━━━━━━━━━━━━━━\n")
+                .append("【").append(safeTitle).append("】\n")
+                .append("━━━━━━━━━━━━━━━━━━━━\n\n")
+                .append(safeContent);
+        if (StringUtils.hasText(eventType)) {
+            body.append("\n\n").append(eventPrompt(eventType));
+        }
+        if (StringUtils.hasText(eventType)) {
+            body.append("\n\n如需查看完整详情，请登录 Henfon 商城「我的订单」。");
+        } else {
+            body.append("\n\n为保障账户安全，请勿将邮件中的链接或验证码转发给他人。");
+        }
+        body.append("\n本邮件由系统自动发送，请勿直接回复。")
+                .append("\n\n—— Henfon 商城");
+        return body.toString();
+    }
+
+    /**
+     * 获取不同业务事件对应的下一步提示。
+     *
+     * @param eventType 业务事件类型
+     * @return 面向会员的操作提示
+     * @author Henfon
+     * @date 2026-09-03
+     */
+    private String eventPrompt(String eventType) {
+        String normalized = StringUtils.hasText(eventType) ? eventType.trim().toUpperCase() : "";
+        return switch (normalized) {
+            case "PAYMENT_SUCCEEDED" -> "温馨提示：订单已进入备货流程，请留意后续发货通知。";
+            case "ORDER_SHIPPED" -> "温馨提示：包裹运输状态会持续更新，请留意收货并及时查验。";
+            case "REFUND_SUCCEEDED" -> "温馨提示：退款到账时间以支付渠道处理进度为准，请留意账户余额变化。";
+            case "AFTER_SALE_CREATED" -> "温馨提示：商家审核后我们会第一时间通知您，请耐心等待。";
+            case "AFTER_SALE_APPROVED" -> "温馨提示：请按照售后指引完成后续操作，以便尽快处理。";
+            case "AFTER_SALE_RETURN_RECEIVED" -> "温馨提示：退货已入库，退款处理完成后会再次通知您。";
+            case "AFTER_SALE_REJECTED" -> "温馨提示：如有疑问，可登录商城查看审核备注或联系客服。";
+            case "AFTER_SALE_CANCELLED" -> "温馨提示：本次售后已结束，如需帮助欢迎联系客服。";
+            case "AFTER_SALE_COMPLETED" -> "温馨提示：售后流程已完成，感谢您的理解与支持。";
+            default -> "温馨提示：您可以登录商城查看订单的最新处理进度。";
+        };
     }
 
     /**
