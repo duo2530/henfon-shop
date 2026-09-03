@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useAdmin } from '../../context/AdminContext';
 import { Product, ProductCategory, ProductStatus } from '../../types';
 import { 
@@ -37,6 +37,21 @@ type ProductContentDraft = {
   specs: Array<{ specName: string; specValue: string }>;
   media: Array<{ skuId?: number; mediaType: 'IMAGE' | 'VIDEO'; objectKey: string; mediaUrl?: string; isCover: number; remark?: string; persisted?: boolean }>;
 };
+
+type PaginationItem = number | 'ellipsis-start' | 'ellipsis-end';
+
+function buildPaginationItems(currentPage: number, totalPages: number): PaginationItem[] {
+  if (totalPages <= 7) {
+    return Array.from({ length: totalPages }, (_, index) => index + 1);
+  }
+  if (currentPage <= 4) {
+    return [1, 2, 3, 4, 5, 'ellipsis-end', totalPages];
+  }
+  if (currentPage >= totalPages - 3) {
+    return [1, 'ellipsis-start', totalPages - 4, totalPages - 3, totalPages - 2, totalPages - 1, totalPages];
+  }
+  return [1, 'ellipsis-start', currentPage - 1, currentPage, currentPage + 1, 'ellipsis-end', totalPages];
+}
 
 const emptyProductContent: ProductContentDraft = { features: [], specs: [], media: [] };
 
@@ -102,7 +117,7 @@ export const ProductManagementView: React.FC = () => {
 
   // Pagination states
   const [currentPage, setCurrentPage] = useState(1);
-  const pageSize = 6;
+  const pageSize = 20;
 
   // Modal / Drawer states
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -186,10 +201,18 @@ export const ProductManagementView: React.FC = () => {
   // Paginated records
   const totalEntries = filteredProducts.length;
   const totalPages = Math.ceil(totalEntries / pageSize) || 1;
+  const paginationItems = buildPaginationItems(currentPage, totalPages);
   const paginatedProducts = filteredProducts.slice(
     (currentPage - 1) * pageSize,
     currentPage * pageSize
   );
+
+  useEffect(() => {
+    // 筛选条件减少结果时自动回到最后一个有效页，避免页面显示空表。
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [currentPage, totalPages]);
 
   // Selection helpers
   const isAllCurrentPageSelected = 
@@ -797,6 +820,7 @@ export const ProductManagementView: React.FC = () => {
                         <img
                           src={product.imageUrl}
                           alt={product.name}
+                          loading="lazy"
                           className="w-12 h-12 rounded-lg object-cover border border-gray-200 bg-gray-100 mx-auto shadow-2xs"
                         />
                       </td>
@@ -973,17 +997,19 @@ export const ProductManagementView: React.FC = () => {
               上一页
             </button>
 
-            {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
+            {paginationItems.map((item) => item === 'ellipsis-start' || item === 'ellipsis-end' ? (
+              <span key={item} className="w-7 h-7 flex items-center justify-center text-gray-400">...</span>
+            ) : (
               <button
-                key={page}
-                onClick={() => setCurrentPage(page)}
+                key={item}
+                onClick={() => setCurrentPage(item)}
                 className={`w-7 h-7 rounded text-xs font-medium transition-all ${
-                  currentPage === page
+                  currentPage === item
                     ? 'bg-[#2563EB] text-white font-bold'
                     : 'border border-[#E2E8F0] hover:bg-white text-gray-700'
                 }`}
               >
-                {page}
+                {item}
               </button>
             ))}
 
