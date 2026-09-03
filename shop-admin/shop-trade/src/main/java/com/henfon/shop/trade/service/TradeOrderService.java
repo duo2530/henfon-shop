@@ -29,6 +29,7 @@ import com.henfon.shop.integration.messaging.RocketMqTopics;
 import com.henfon.shop.integration.logistics.LogisticsProvider;
 import com.henfon.shop.integration.logistics.LogisticsTrackNode;
 import com.henfon.shop.integration.logistics.LogisticsTrackResult;
+import com.henfon.shop.integration.storage.MinioStorageService;
 import com.henfon.shop.identity.service.MemberAdminService;
 import com.henfon.shop.trade.dto.TradeOrderLogisticsSyncResult;
 import com.henfon.shop.trade.dto.TradeOrderBatchShipRequest;
@@ -72,12 +73,14 @@ public class TradeOrderService {
     private final MemberAdminService memberAdminService;
     private final LogisticsProvider logisticsProvider;
     private final TradeFreightService tradeFreightService;
+    private final MinioStorageService minioStorageService;
     private final ObjectProvider<FlashSaleReservationService> flashSaleReservationServiceProvider;
 
     /**
      * 创建交易订单服务。
      *
      * @param tradeOrderMapper 订单数据访问对象
+     * @param minioStorageService MinIO 文件服务
      * @author Henfon
      * @date 2026-08-29
      */
@@ -90,6 +93,7 @@ public class TradeOrderService {
                              MemberAdminService memberAdminService,
                              LogisticsProvider logisticsProvider,
                              TradeFreightService tradeFreightService,
+                             MinioStorageService minioStorageService,
                              ObjectProvider<FlashSaleReservationService> flashSaleReservationServiceProvider) {
         this.tradeOrderMapper = tradeOrderMapper;
         this.tradeOrderItemMapper = tradeOrderItemMapper;
@@ -101,6 +105,7 @@ public class TradeOrderService {
         this.memberAdminService = memberAdminService;
         this.logisticsProvider = logisticsProvider;
         this.tradeFreightService = tradeFreightService;
+        this.minioStorageService = minioStorageService;
         this.flashSaleReservationServiceProvider = flashSaleReservationServiceProvider;
     }
 
@@ -134,10 +139,12 @@ public class TradeOrderService {
 
         // 一次查询当前页全部商品明细，避免管理端逐单查询产生 N+1 问题。
         List<Long> orderIds = orders.stream().map(TradeOrder::getId).toList();
-        Map<Long, List<TradeOrderItem>> itemsByOrderId = tradeOrderItemMapper.selectList(
-                        new LambdaQueryWrapper<TradeOrderItem>()
-                                .in(TradeOrderItem::getOrderId, orderIds)
-                                .orderByAsc(TradeOrderItem::getId))
+        List<TradeOrderItem> orderItems = tradeOrderItemMapper.selectList(
+                new LambdaQueryWrapper<TradeOrderItem>()
+                        .in(TradeOrderItem::getOrderId, orderIds)
+                        .orderByAsc(TradeOrderItem::getId));
+        refreshItemImageUrls(orderItems);
+        Map<Long, List<TradeOrderItem>> itemsByOrderId = orderItems
                 .stream()
                 .collect(Collectors.groupingBy(TradeOrderItem::getOrderId));
         orders.forEach(order -> order.setItems(itemsByOrderId.getOrDefault(order.getId(), List.of())));
@@ -154,9 +161,26 @@ public class TradeOrderService {
      */
     public List<TradeOrderItem> listItems(Long orderId) {
         // 明细按创建顺序返回，保证后台展示与下单顺序一致。
-        return tradeOrderItemMapper.selectList(new LambdaQueryWrapper<TradeOrderItem>()
+        List<TradeOrderItem> items = tradeOrderItemMapper.selectList(new LambdaQueryWrapper<TradeOrderItem>()
                 .eq(TradeOrderItem::getOrderId, orderId)
                 .orderByAsc(TradeOrderItem::getId));
+        refreshItemImageUrls(items);
+        return items;
+    }
+
+    /**
+     * 为订单商品快照生成当前有效的图片访问地址。
+     *
+     * @param items 订单商品明细
+     * @author Henfon
+     * @date 2026-09-03
+     */
+    private void refreshItemImageUrls(List<TradeOrderItem> items) {
+        if (items == null || items.isEmpty()) {
+            return;
+        }
+        // 兼容历史订单中已过期的 MinIO 预签名地址，以及新订单保存的稳定对象键。
+        items.forEach(item -> item.setImageUrl(minioStorageService.resolveAccessUrl(item.getImageUrl())));
     }
 
     /**
@@ -872,7 +896,10 @@ public class TradeOrderService {
             item.setProductName(product.getProductName());
             item.setSkuName(sku == null ? itemRequest.skuName() : sku.getSkuName());
             item.setSkuCode(sku == null ? itemRequest.skuCode() : sku.getSkuCode());
-            item.setImageUrl(StringUtils.hasText(product.getMainImageUrl()) ? product.getMainImageUrl() : itemRequest.imageUrl());
+            String imageReference = StringUtils.hasText(product.getMainImageUrl())
+                    ? product.getMainImageUrl() : itemRequest.imageUrl();
+            // 订单快照只持久化稳定对象键，避免预签名地址过期后图片永久失效。
+            item.setImageUrl(minioStorageService.normalizeReference(imageReference));
             item.setUnitPrice(itemRequest.unitPrice());
             item.setQuantity(itemRequest.quantity());
             item.setItemAmount(itemRequest.unitPrice().multiply(BigDecimal.valueOf(itemRequest.quantity())));

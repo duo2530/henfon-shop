@@ -10,6 +10,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.net.URI;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.util.Locale;
@@ -103,6 +104,86 @@ public class MinioStorageService {
         } catch (Exception exception) {
             throw new BusinessException("STORAGE_PRESIGN_FAILED", "生成文件访问地址失败");
         }
+    }
+
+    /**
+     * 将 MinIO 临时访问地址转换为适合持久化的对象键，外部地址保持不变。
+     *
+     * @param reference 图片对象键或访问地址
+     * @return 稳定存储引用
+     * @author Henfon
+     * @date 2026-09-03
+     */
+    public String normalizeReference(String reference) {
+        if (!StringUtils.hasText(reference)) {
+            return reference;
+        }
+        String objectKey = extractObjectKey(reference.trim());
+        return StringUtils.hasText(objectKey) ? objectKey : reference.trim();
+    }
+
+    /**
+     * 根据稳定对象键或历史预签名地址生成当前有效的访问地址。
+     *
+     * @param reference 图片对象键或历史访问地址
+     * @return 当前有效的访问地址
+     * @author Henfon
+     * @date 2026-09-03
+     */
+    public String resolveAccessUrl(String reference) {
+        if (!StringUtils.hasText(reference)) {
+            return reference;
+        }
+        String normalized = reference.trim();
+        String objectKey = extractObjectKey(normalized);
+        if (!StringUtils.hasText(objectKey) && isHttpAddress(normalized)) {
+            // 普通外部图片不经过 MinIO 重签，避免改变第三方资源地址。
+            return normalized;
+        }
+        try {
+            return presign(StringUtils.hasText(objectKey) ? objectKey : normalized);
+        } catch (BusinessException exception) {
+            // 对象存储临时不可用时保留原引用，避免影响订单主体数据查询。
+            return normalized;
+        }
+    }
+
+    /**
+     * 从 MinIO 路径式访问地址中提取对象键。
+     *
+     * @param reference 对象键或访问地址
+     * @return 对象键，非 MinIO 地址返回空值
+     * @author Henfon
+     * @date 2026-09-03
+     */
+    private String extractObjectKey(String reference) {
+        if (!isHttpAddress(reference)) {
+            return reference;
+        }
+        try {
+            URI uri = URI.create(reference);
+            String bucketPrefix = "/" + properties.bucket() + "/";
+            String path = uri.getPath();
+            if (StringUtils.hasText(path) && path.startsWith(bucketPrefix)) {
+                return path.substring(bucketPrefix.length());
+            }
+        } catch (IllegalArgumentException ignored) {
+            // 无法解析的地址按外部地址处理，由调用方原样返回。
+        }
+        return null;
+    }
+
+    /**
+     * 判断是否为 HTTP(S) 地址。
+     *
+     * @param value 待判断字符串
+     * @return 是否为 HTTP(S) 地址
+     * @author Henfon
+     * @date 2026-09-03
+     */
+    private boolean isHttpAddress(String value) {
+        String normalized = value.toLowerCase(Locale.ROOT);
+        return normalized.startsWith("http://") || normalized.startsWith("https://");
     }
 
     /**
