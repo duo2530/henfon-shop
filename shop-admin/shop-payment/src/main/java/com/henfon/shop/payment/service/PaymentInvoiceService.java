@@ -68,7 +68,10 @@ public class PaymentInvoiceService {
         if (memberId == null || !memberId.equals(order.getMemberId())) {
             throw new BusinessException("PAYMENT_INVOICE_FORBIDDEN", "无权为该订单申请发票");
         }
-        if (!Integer.valueOf(1).equals(order.getPaymentStatus())) {
+        // 历史订单可能未回填 payment_status，但订单已进入待发货、已发货或已完成状态时同样视为已支付。
+        boolean paidOrder = Integer.valueOf(1).equals(order.getPaymentStatus())
+                || (order.getOrderStatus() != null && order.getOrderStatus() >= 20 && order.getOrderStatus() <= 40);
+        if (!paidOrder) {
             throw new BusinessException("PAYMENT_INVOICE_ORDER_UNPAID", "仅已支付订单可以申请发票");
         }
         if (request.invoiceType() == TYPE_SPECIAL && !StringUtils.hasText(request.taxNo())) {

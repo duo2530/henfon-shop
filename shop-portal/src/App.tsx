@@ -610,7 +610,23 @@ export default function App() {
             logisticsUnavailable: remoteLogistics === null && logistics.length === 0,
           };
         }));
+        // 历史订单商品可能不在当前商品分页中，补充加载商品详情以恢复订单快照图片。
+        const missingOrderProductIds = Array.from(new Set(
+          details
+            .flatMap((result) => result.detail?.items || [])
+            .map((item) => item.productId)
+            .filter((productId) => !productMap.has(productId))
+        ));
+        if (missingOrderProductIds.length > 0) {
+          const missingOrderProducts = await Promise.all(
+            missingOrderProductIds.map((productId) => fetchPortalProductDetail(`prod-${productId}`).catch(() => null))
+          );
+          missingOrderProducts.forEach((product) => {
+            if (product) productMap.set(Number(product.id.replace('prod-', '')), product);
+          });
+        }
         if (!active) return;
+        const orderProducts = Array.from(productMap.values());
         setOrders(remoteOrders.map((order, index) => {
           const detailResult = details[index];
           const detail = detailResult.detail;
@@ -625,7 +641,7 @@ export default function App() {
             createdAt: formatPortalDate(order.createdAt),
             status: status.status,
             statusLabel: status.label,
-            items: detailItems.map((item) => mapPortalOrderItem(item, products)),
+            items: detailItems.map((item) => mapPortalOrderItem(item, orderProducts)),
             subtotal: Number(order.subtotalAmount || 0),
             discount: Number(order.discountAmount || 0),
             shippingFee: Number(order.freightAmount || 0),
@@ -1461,9 +1477,41 @@ export default function App() {
     setIsCheckoutOpen(true);
   };
 
+  /**
+   * 清理订单中已购买的服务端购物车明细。
+   *
+   * @param memberId 当前会员ID
+   * @param purchasedItems 本次结算的购物车商品
+   * @author Henfon
+   * @date 2026-09-03
+   */
+  const clearPurchasedRemoteCartItems = async (memberId: number, purchasedItems: CartItem[]) => {
+    if (purchasedItems.length === 0) return;
+    const purchasedKeys = new Set(
+      purchasedItems.map((item) => `${item.productId}:${item.skuId ?? ''}`)
+    );
+    try {
+      // 加购请求是异步写入服务端的，结算时重新读取权威数据，兼容本地条目尚未换成 server-* ID 的情况。
+      const remoteItems = await fetchPortalCart(memberId);
+      const remoteIds = remoteItems
+        .filter((item) => purchasedKeys.has(`${item.productId}:${item.skuId ?? ''}`))
+        .map((item) => item.id);
+      await Promise.all(remoteIds.map((id) => deletePortalCartItem(id)));
+    } catch (error) {
+      // 清理失败不阻断订单支付流程，下一次刷新时加载逻辑仍会保留服务端真实商品。
+      console.warn('已购买购物车商品清理失败', error);
+    }
+  };
+
   const handlePlaceOrderSuccess = (newOrder: Order, persistence?: CheckoutPersistenceResult) => {
+    const purchasedProductIds = new Set(newOrder.items.map((item) => item.productId));
+    const purchasedCartItems = checkoutItems.filter(
+      (item) => item.selected && purchasedProductIds.has(item.productId)
+    );
+    const memberId = resolveMemberId(currentUser);
+    if (memberId) void clearPurchasedRemoteCartItems(memberId, purchasedCartItems);
+
     if (persistence?.paymentNo) {
-      const memberId = resolveMemberId(currentUser);
       if (memberId) {
         const paymentStatus = persistence.paymentStatus;
         const paymentState = mapPaymentState(paymentStatus);
@@ -1478,16 +1526,7 @@ export default function App() {
           statusLabel: paymentState === 'succeeded' ? '已支付，等待发货' : '待支付',
         };
         setOrders((prev) => [persistedOrder, ...prev.filter((order) => order.id !== persistedOrder.id)]);
-        const purchasedProductIds = new Set(persistedOrder.items.map((item) => item.productId));
-        const purchasedServerItemIds = cartItems
-          .filter((item) => item.selected && purchasedProductIds.has(item.productId))
-          .map((item) => item.id.match(/^server-(\d+)$/)?.[1])
-          .filter((id): id is string => Boolean(id));
         setCartItems((prev) => prev.filter((item) => !purchasedProductIds.has(item.productId) || !item.selected));
-        if (purchasedServerItemIds.length > 0) {
-          Promise.all(purchasedServerItemIds.map((id) => deletePortalCartItem(Number(id))))
-            .catch((error) => console.warn('已购买购物车商品清理失败', error));
-        }
         setIsCheckoutOpen(false);
         setPaymentPolling({
           memberId,
@@ -1503,16 +1542,7 @@ export default function App() {
     setOrders((prev) => [newOrder, ...prev]);
 
     // Remove purchased items from cart if they were from cart
-    const purchasedProductIds = new Set(newOrder.items.map((i) => i.productId));
-    const purchasedServerItemIds = cartItems
-      .filter((item) => item.selected && purchasedProductIds.has(item.productId))
-      .map((item) => item.id.match(/^server-(\d+)$/)?.[1])
-      .filter((id): id is string => Boolean(id));
     setCartItems((prev) => prev.filter((it) => !purchasedProductIds.has(it.productId) || !it.selected));
-    if (purchasedServerItemIds.length > 0) {
-      Promise.all(purchasedServerItemIds.map((id) => deletePortalCartItem(Number(id))))
-        .catch((error) => console.warn('已购买购物车商品清理失败', error));
-    }
 
     setIsCheckoutOpen(false);
     if (newOrder.status === 'paid') {
@@ -1714,7 +1744,13 @@ export default function App() {
       showToast('当前订单尚未同步到服务端，暂不能申请发票', 'error');
       return;
     }
-    const existing = await fetchPortalOrderInvoice(orderId).catch(() => null);
+    let existing: PortalInvoiceRecord | null;
+    try {
+      existing = await fetchPortalOrderInvoice(orderId);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : '发票状态查询失败，请稍后重试', 'error');
+      return;
+    }
     setInvoiceModal({ order, existing });
   };
 

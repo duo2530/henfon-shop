@@ -36,7 +36,7 @@ export const OrdersModal: React.FC<OrdersModalProps> = ({
   const [expandedOrderId, setExpandedOrderId] = useState<string | null>(
     orders[0]?.id || null
   );
-  const [actioningOrderId, setActioningOrderId] = useState<string | null>(null);
+  const [actioningOrderAction, setActioningOrderAction] = useState<{ orderId: string; action: string } | null>(null);
   const [actioningAfterSaleId, setActioningAfterSaleId] = useState<number | null>(null);
   const [afterSaleOrder, setAfterSaleOrder] = useState<Order | null>(null);
   const [afterSaleType, setAfterSaleType] = useState<1 | 2 | 3>(1);
@@ -56,13 +56,13 @@ export const OrdersModal: React.FC<OrdersModalProps> = ({
 
   if (!isOpen) return null;
 
-  const runOrderAction = async (order: Order, action?: (order: Order) => Promise<void> | void) => {
+  const runOrderAction = async (order: Order, action: ((order: Order) => Promise<void> | void) | undefined, actionName: string) => {
     if (!action) return;
-    setActioningOrderId(order.id);
+    setActioningOrderAction({ orderId: order.id, action: actionName });
     try {
       await action(order);
     } finally {
-      setActioningOrderId(null);
+      setActioningOrderAction(null);
     }
   };
 
@@ -276,11 +276,20 @@ export const OrdersModal: React.FC<OrdersModalProps> = ({
                         {ord.items.length > 0 ? ord.items.map((item, i) => (
                           <div key={i} className="flex items-center justify-between gap-3 text-xs">
                             <div className="flex items-center gap-2.5 min-w-0">
-                              <img
-                                src={item.image}
-                                alt={item.title}
-                                className="w-10 h-10 rounded-lg object-cover bg-zinc-100 border border-zinc-200 shrink-0"
-                              />
+                              <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded-lg border border-zinc-200 bg-zinc-100">
+                                {item.image && <img
+                                  src={item.image}
+                                  alt={item.title}
+                                  className="h-full w-full object-cover"
+                                  onError={(event) => {
+                                    event.currentTarget.style.display = 'none';
+                                    event.currentTarget.nextElementSibling?.classList.remove('hidden');
+                                  }}
+                                />}
+                                <div className={`absolute inset-0 items-center justify-center text-zinc-300 ${item.image ? 'hidden' : 'flex'}`}>
+                                  <Package className="h-4 w-4" />
+                                </div>
+                              </div>
                               <div className="min-w-0">
                                 <span className="font-semibold text-zinc-900 block truncate">
                                   {item.title}
@@ -303,51 +312,51 @@ export const OrdersModal: React.FC<OrdersModalProps> = ({
                         {(ord.paymentState === 'failed' || ord.paymentState === 'expired') && onRetryPayment && (
                           <button
                             type="button"
-                            disabled={actioningOrderId === ord.id}
-                            onClick={() => void runOrderAction(ord, onRetryPayment)}
+                            disabled={actioningOrderAction?.orderId === ord.id}
+                            onClick={() => void runOrderAction(ord, onRetryPayment, 'retry-payment')}
                             className="px-3 py-1.5 rounded-lg bg-orange-600 text-white text-xs font-semibold hover:bg-orange-700 disabled:opacity-50"
                           >
-                            {actioningOrderId === ord.id ? '处理中…' : '重新支付'}
+                            {actioningOrderAction?.orderId === ord.id && actioningOrderAction.action === 'retry-payment' ? '处理中…' : '重新支付'}
                           </button>
                         )}
                         {canApplyAfterSale && onApplyAfterSale && (
                           <button
                             type="button"
-                            disabled={actioningOrderId === ord.id}
+                            disabled={actioningOrderAction?.orderId === ord.id}
                             onClick={() => openAfterSaleForm(ord)}
                             className="px-3 py-1.5 rounded-lg border border-amber-200 text-amber-700 text-xs font-semibold hover:bg-amber-50 disabled:opacity-50"
                           >
-                            {actioningOrderId === ord.id ? '提交中…' : '申请售后'}
+                            {actioningOrderAction?.orderId === ord.id && actioningOrderAction.action === 'after-sale' ? '提交中…' : '申请售后'}
                           </button>
                         )}
                         {canApplyAfterSale && onApplyInvoice && (
                           <button
                             type="button"
-                            disabled={actioningOrderId === ord.id}
-                            onClick={() => void runOrderAction(ord, onApplyInvoice)}
+                            disabled={actioningOrderAction?.orderId === ord.id}
+                            onClick={() => void runOrderAction(ord, onApplyInvoice, 'invoice')}
                             className="px-3 py-1.5 rounded-lg border border-sky-200 text-sky-700 text-xs font-semibold hover:bg-sky-50 disabled:opacity-50"
                           >
-                            {actioningOrderId === ord.id ? '处理中…' : <><Receipt className="w-3.5 h-3.5 inline mr-1" />申请发票</>}
+                            {actioningOrderAction?.orderId === ord.id && actioningOrderAction.action === 'invoice' ? '处理中…' : <><Receipt className="w-3.5 h-3.5 inline mr-1" />申请发票</>}
                           </button>
                         )}
                         {(ord.status === 'placed' || ord.status === 'paid' || ord.status === 'processing') && (
                           <button
                             type="button"
-                            disabled={actioningOrderId === ord.id}
-                            onClick={() => void runOrderAction(ord, onCancelOrder)}
+                            disabled={actioningOrderAction?.orderId === ord.id}
+                            onClick={() => void runOrderAction(ord, onCancelOrder, 'cancel')}
                             className="px-3 py-1.5 rounded-lg border border-rose-200 text-rose-600 text-xs font-semibold hover:bg-rose-50 disabled:opacity-50"
                           >
-                            {actioningOrderId === ord.id ? '处理中…' : '取消订单'}
+                            {actioningOrderAction?.orderId === ord.id && actioningOrderAction.action === 'cancel' ? '处理中…' : '取消订单'}
                           </button>
                         )}
                         {ord.status === 'shipped' && (
                           <button
                             type="button"
-                            disabled={actioningOrderId === ord.id}
-                            onClick={() => void runOrderAction(ord, onConfirmOrder)}
+                            disabled={actioningOrderAction?.orderId === ord.id}
+                            onClick={() => void runOrderAction(ord, onConfirmOrder, 'confirm')}
                             className="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-semibold hover:bg-emerald-700 disabled:opacity-50"
                           >
-                            {actioningOrderId === ord.id ? '处理中…' : '确认收货'}
+                            {actioningOrderAction?.orderId === ord.id && actioningOrderAction.action === 'confirm' ? '处理中…' : '确认收货'}
                           </button>
                         )}
                       </div>
