@@ -1185,7 +1185,7 @@ export const ProductManagementView: React.FC = () => {
       {/* Add / Edit Product Modal */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-xs overflow-y-auto">
-          <div className="bg-white rounded-xl max-w-3xl w-full p-6 border border-gray-200 shadow-2xl animate-in zoom-in-95 duration-150 my-8">
+          <div className="bg-white rounded-xl max-w-3xl w-full p-6 border border-gray-200 shadow-2xl animate-in zoom-in-95 duration-150 my-0">
             <div className="flex items-center justify-between pb-3 border-b border-gray-200">
               <h3 className="text-base font-bold text-gray-900">
                 {editingProduct ? '编辑商品档案与定价' : '创建新商品 (New Product SKU)'}

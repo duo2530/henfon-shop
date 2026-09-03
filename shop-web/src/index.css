@@ -1,5 +1,14 @@
 @import "tailwindcss";
 
+/* 所有全屏弹框统一限制在视口内，内容过长时由弹框自身滚动，避免居中定位把顶部推出屏幕。 */
+@layer components {
+  .fixed.inset-0.flex.items-center.justify-center.p-4 > :first-child {
+    max-height: calc(100vh - 2rem);
+    max-height: calc(100dvh - 2rem);
+    overflow-y: auto;
+  }
+}
+
 /* 键盘焦点和减少动效由全局样式统一兜底，确保后台可用键盘操作。 */
 :where(button, a, input, select, textarea):focus-visible {
   outline: 3px solid #2563eb;
