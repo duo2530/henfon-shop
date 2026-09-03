@@ -15,7 +15,7 @@ import {
   Department,
   DataRule
 } from '../types';
-import { initialProducts, initialOrders, initialTodos, initialNotifications } from '../data/mockData';
+import { initialProducts, initialOrders } from '../data/mockData';
 import { 
   initialRoles, 
   initialSystemUsers, 
@@ -70,7 +70,9 @@ import {
   syncTradeOrderLogistics,
   cancelTradeOrder,
   updateTradeOrderRemark,
-  refundTradeOrder
+  refundTradeOrder,
+  listInventoryWarnings,
+  listTradeAfterSales
   ,auditTradeOrder
 } from '../api/adminApi';
 import { backendMenusToTree, containsMenuTab, firstMenuTab } from '../navigation/menuAdapter';
@@ -285,8 +287,9 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   // 会员列表以服务端返回为唯一事实来源，避免管理端展示本地演示会员。
   const [users, setUsers] = useState<User[]>([]);
   const [catalogCategories, setCatalogCategories] = useState<Array<{ id: number; code: ProductCategory; name: string }>>([]);
-  const [todos, setTodos] = useState<TodoItem[]>(initialTodos);
-  const [notifications, setNotifications] = useState<NotificationItem[]>(initialNotifications);
+  // 工作台待办和通知只展示服务端同步结果，避免把本地演示数据误当成线上业务数据。
+  const [todos, setTodos] = useState<TodoItem[]>([]);
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [dialog, setDialog] = useState<AdminDialogRequest | null>(null);
@@ -472,6 +475,69 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     }
   };
 
+  // 根据真实售后与库存接口生成工作台待办和管理员通知。
+  const hydrateDashboardTasks = async () => {
+    const [afterSalesResult, warningsResult] = await Promise.allSettled([
+      listTradeAfterSales({ status: 10, size: 200 }),
+      listInventoryWarnings()
+    ]);
+    const nextTodos: TodoItem[] = [];
+    const nextNotifications: NotificationItem[] = [];
+
+    if (afterSalesResult.status === 'fulfilled') {
+      const count = Number(afterSalesResult.value.total ?? afterSalesResult.value.records?.length ?? 0);
+      if (count > 0) {
+        nextTodos.push({
+          id: 'todo-after-sale-pending',
+          title: `${count}个售后申请待审核`,
+          subtitle: '来自服务端售后单数据，请及时处理审核',
+          type: 'refund',
+          count,
+          urgent: true,
+          linkTab: 'orders'
+        });
+        nextNotifications.push({
+          id: 'notification-after-sale-pending',
+          title: '售后申请待审核',
+          content: `当前有 ${count} 个售后申请等待管理员审核。`,
+          time: '刚刚同步',
+          read: false,
+          type: 'order'
+        });
+      }
+    }
+
+    if (warningsResult.status === 'fulfilled') {
+      const count = warningsResult.value.length;
+      if (count > 0) {
+        nextTodos.push({
+          id: 'todo-stock-warning',
+          title: `${count}个库存低于安全线`,
+          subtitle: '来自服务端库存台账，请及时补货',
+          type: 'stock_alert',
+          count,
+          urgent: true,
+          linkTab: 'products'
+        });
+        nextNotifications.push({
+          id: 'notification-stock-warning',
+          title: '库存安全库存预警',
+          content: `当前有 ${count} 个库存台账低于安全库存。`,
+          time: '刚刚同步',
+          read: false,
+          type: 'stock'
+        });
+      }
+    }
+
+    setTodos(nextTodos);
+    setNotifications((previous) => nextNotifications.map((notification) => ({
+      ...notification,
+      // 刷新数据时保留当前会话内的已读状态。
+      read: previous.find((item) => item.id === notification.id)?.read ?? notification.read
+    })));
+  };
+
   const loadAdminSession = async () => {
     const token = getAdminToken();
     if (!token) {
@@ -487,6 +553,7 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       await hydrateIdentityMetadata(menus);
       await hydrateCatalogMetadata();
       await hydrateTradeMetadata();
+      await hydrateDashboardTasks();
     } catch {
       clearAdminToken();
       setCurrentUser(null);
@@ -510,6 +577,17 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     return () => window.clearInterval(refreshTimer);
   }, [currentTab, currentUser?.userId]);
 
+  useEffect(() => {
+    if (!currentUser || currentTab !== 'dashboard') return undefined;
+
+    // 工作台停留期间定时同步待办和通知，确保售后、库存变化能及时反映。
+    void hydrateDashboardTasks();
+    const refreshTimer = window.setInterval(() => {
+      void hydrateDashboardTasks();
+    }, 30_000);
+    return () => window.clearInterval(refreshTimer);
+  }, [currentTab, currentUser?.userId]);
+
   const login = async (username: string, password: string) => {
     const result = await loginAdmin(username, password);
     const menus = await getAdminMenus();
@@ -520,6 +598,7 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     await hydrateIdentityMetadata(menus);
     await hydrateCatalogMetadata();
     await hydrateTradeMetadata();
+    await hydrateDashboardTasks();
   };
 
   const logout = async () => {
