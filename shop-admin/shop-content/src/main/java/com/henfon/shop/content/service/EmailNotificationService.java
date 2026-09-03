@@ -1,6 +1,8 @@
 package com.henfon.shop.content.service;
 
 import com.henfon.shop.content.config.EmailNotificationProperties;
+import com.henfon.shop.content.entity.ContentEmailDelivery;
+import com.henfon.shop.content.mapper.ContentEmailDeliveryMapper;
 import com.henfon.shop.identity.entity.MemberUser;
 import com.henfon.shop.identity.mapper.MemberUserMapper;
 import com.henfon.shop.identity.service.MemberEmailSender;
@@ -14,8 +16,7 @@ import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.UUID;
 
 /**
  * 会员业务事件邮件通知适配器。
@@ -33,23 +34,26 @@ public class EmailNotificationService implements MemberEmailSender {
 
     private final ObjectProvider<JavaMailSender> mailSenderProvider;
     private final MemberUserMapper memberUserMapper;
+    private final ContentEmailDeliveryMapper emailDeliveryMapper;
     private final EmailNotificationProperties properties;
-    private final Set<String> sentDedupeKeys = ConcurrentHashMap.newKeySet();
 
     /**
      * 创建邮件通知适配器。
      *
      * @param mailSenderProvider 可选 SMTP 邮件发送器
      * @param memberUserMapper 会员数据访问对象
+     * @param emailDeliveryMapper 邮件投递记录数据访问对象
      * @param properties 邮件通知配置
      * @author Henfon
      * @date 2026-09-01
      */
     public EmailNotificationService(ObjectProvider<JavaMailSender> mailSenderProvider,
                                     MemberUserMapper memberUserMapper,
+                                    ContentEmailDeliveryMapper emailDeliveryMapper,
                                     EmailNotificationProperties properties) {
         this.mailSenderProvider = mailSenderProvider;
         this.memberUserMapper = memberUserMapper;
+        this.emailDeliveryMapper = emailDeliveryMapper;
         this.properties = properties;
     }
 
@@ -125,9 +129,6 @@ public class EmailNotificationService implements MemberEmailSender {
         }
         String safeKey = StringUtils.hasText(dedupeKey)
                 ? memberId + ":" + dedupeKey.trim() : memberId + ":" + eventType + ":" + title;
-        if (!sentDedupeKeys.add(safeKey)) {
-            return;
-        }
         SimpleMailMessage message = new SimpleMailMessage();
         message.setTo(recipient.trim());
         if (StringUtils.hasText(properties.getFrom())) {
@@ -136,14 +137,81 @@ public class EmailNotificationService implements MemberEmailSender {
         String prefix = StringUtils.hasText(properties.getSubjectPrefix())
                 ? properties.getSubjectPrefix().trim() + " - " : "";
         String safeTitle = StringUtils.hasText(title) ? title.trim() : "订单进度更新";
-        message.setSubject(prefix + safeTitle + "｜Henfon商城提醒");
+        String subject = prefix + safeTitle + "｜Henfon商城提醒";
+        String sendingToken = UUID.randomUUID().toString().replace("-", "");
+        if (!claimDelivery(memberId, safeKey, recipient.trim(), eventType.trim().toUpperCase(), subject, sendingToken)) {
+            return;
+        }
+        message.setSubject(subject);
         message.setText(formatMailContent(safeTitle, content, eventType));
         try {
             mailSender.send(message);
         } catch (RuntimeException exception) {
             // 发送失败允许后续事件重试，且不影响站内通知和交易状态推进。
-            sentDedupeKeys.remove(safeKey);
+            markDeliveryFailed(memberId, safeKey, sendingToken, exception);
             log.warn("业务邮件发送失败，memberId={}, eventType={}", memberId, eventType, exception);
+            return;
+        }
+        try {
+            emailDeliveryMapper.markSent(memberId, safeKey, sendingToken);
+        } catch (RuntimeException exception) {
+            // 邮件已交给 SMTP 后仅记录投递状态异常，避免误将已发送邮件标记为可重试而造成重复发送。
+            log.warn("记录邮件发送成功状态异常，memberId={}, eventType={}", memberId, eventType, exception);
+        }
+    }
+
+    /**
+     * 在 MySQL 中创建并原子抢占邮件投递记录，保证重启和多实例场景下的幂等性。
+     *
+     * @param memberId 会员ID
+     * @param dedupeKey 事件幂等键
+     * @param recipient 收件人邮箱
+     * @param eventType 事件类型
+     * @param subject 邮件主题
+     * @param sendingToken 本次发送占用令牌
+     * @return 是否成功抢占发送资格
+     * @author Henfon
+     * @date 2026-09-03
+     */
+    private boolean claimDelivery(Long memberId, String dedupeKey, String recipient,
+                                  String eventType, String subject, String sendingToken) {
+        try {
+            ContentEmailDelivery delivery = new ContentEmailDelivery();
+            delivery.setMemberId(memberId);
+            delivery.setDedupeKey(dedupeKey);
+            delivery.setRecipient(recipient);
+            delivery.setEventType(eventType);
+            delivery.setSubject(subject);
+            emailDeliveryMapper.insertIgnore(delivery);
+            ContentEmailDelivery existing = emailDeliveryMapper.selectByDedupeKey(memberId, dedupeKey);
+            if (existing != null && Integer.valueOf(1).equals(existing.getStatus())) {
+                return false;
+            }
+            return emailDeliveryMapper.claimSending(memberId, dedupeKey, sendingToken) == 1;
+        } catch (RuntimeException exception) {
+            // 投递记录不可用时跳过邮件，避免邮件幂等故障阻断交易事件消费。
+            log.warn("初始化邮件投递记录失败，memberId={}, dedupeKey={}", memberId, dedupeKey, exception);
+            return false;
+        }
+    }
+
+    /**
+     * 将发送异常写入 MySQL 并释放发送占用，等待后续轮询重试。
+     *
+     * @param memberId 会员ID
+     * @param dedupeKey 事件幂等键
+     * @param sendingToken 本次发送占用令牌
+     * @param exception 发送异常
+     * @author Henfon
+     * @date 2026-09-03
+     */
+    private void markDeliveryFailed(Long memberId, String dedupeKey, String sendingToken, RuntimeException exception) {
+        try {
+            String message = exception.getMessage();
+            emailDeliveryMapper.markFailed(memberId, dedupeKey, sendingToken,
+                    message == null ? exception.getClass().getSimpleName() : message.substring(0, Math.min(message.length(), 1000)));
+        } catch (RuntimeException persistException) {
+            log.warn("记录邮件发送失败状态异常，memberId={}, dedupeKey={}", memberId, dedupeKey, persistException);
         }
     }
 

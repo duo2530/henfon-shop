@@ -1,6 +1,7 @@
 package com.henfon.shop.content.service;
 
 import com.henfon.shop.content.config.EmailNotificationProperties;
+import com.henfon.shop.content.mapper.ContentEmailDeliveryMapper;
 import com.henfon.shop.identity.entity.MemberUser;
 import com.henfon.shop.identity.mapper.MemberUserMapper;
 import org.junit.jupiter.api.Test;
@@ -10,6 +11,8 @@ import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -34,8 +37,9 @@ class EmailNotificationServiceTest {
     void shouldSkipWhenEmailDisabled() {
         ObjectProvider<JavaMailSender> provider = mock(ObjectProvider.class);
         MemberUserMapper memberMapper = mock(MemberUserMapper.class);
+        ContentEmailDeliveryMapper deliveryMapper = mock(ContentEmailDeliveryMapper.class);
         EmailNotificationProperties properties = new EmailNotificationProperties();
-        EmailNotificationService service = new EmailNotificationService(provider, memberMapper, properties);
+        EmailNotificationService service = new EmailNotificationService(provider, memberMapper, deliveryMapper, properties);
 
         service.sendIfConfigured(1L, "PAYMENT_SUCCEEDED", "支付成功", "订单已支付", "evt-1");
 
@@ -54,6 +58,7 @@ class EmailNotificationServiceTest {
         ObjectProvider<JavaMailSender> provider = mock(ObjectProvider.class);
         JavaMailSender sender = mock(JavaMailSender.class);
         MemberUserMapper memberMapper = mock(MemberUserMapper.class);
+        ContentEmailDeliveryMapper deliveryMapper = mock(ContentEmailDeliveryMapper.class);
         EmailNotificationProperties properties = new EmailNotificationProperties();
         properties.setEnabled(true);
         properties.setFrom("noreply@example.com");
@@ -62,7 +67,8 @@ class EmailNotificationServiceTest {
         member.setEmail("buyer@example.com");
         when(provider.getIfAvailable()).thenReturn(sender);
         when(memberMapper.selectById(1L)).thenReturn(member);
-        EmailNotificationService service = new EmailNotificationService(provider, memberMapper, properties);
+        when(deliveryMapper.claimSending(eq(1L), anyString(), anyString())).thenReturn(1, 0);
+        EmailNotificationService service = new EmailNotificationService(provider, memberMapper, deliveryMapper, properties);
 
         service.sendIfConfigured(1L, "PAYMENT_SUCCEEDED", "支付成功", "订单已支付", "evt-1");
         service.sendIfConfigured(1L, "PAYMENT_SUCCEEDED", "支付成功", "订单已支付", "evt-1");
@@ -87,7 +93,7 @@ class EmailNotificationServiceTest {
         ObjectProvider<JavaMailSender> provider = mock(ObjectProvider.class);
         EmailNotificationProperties properties = new EmailNotificationProperties();
         properties.setEnabled(true);
-        EmailNotificationService service = new EmailNotificationService(provider, mock(MemberUserMapper.class), properties);
+        EmailNotificationService service = new EmailNotificationService(provider, mock(MemberUserMapper.class), mock(ContentEmailDeliveryMapper.class), properties);
 
         service.sendIfConfigured(1L, "COUPON_GRANTED", "优惠券", "已领取", "evt-1");
 
