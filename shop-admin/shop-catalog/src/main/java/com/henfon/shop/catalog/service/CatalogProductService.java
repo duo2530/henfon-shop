@@ -9,6 +9,7 @@ import com.henfon.shop.catalog.entity.CatalogSku;
 import com.henfon.shop.catalog.mapper.CatalogProductMapper;
 import com.henfon.shop.catalog.mapper.CatalogSkuMapper;
 import com.henfon.shop.common.exception.BusinessException;
+import com.henfon.shop.integration.storage.MinioStorageService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -27,17 +28,23 @@ public class CatalogProductService {
 
     private final CatalogProductMapper catalogProductMapper;
     private final CatalogSkuMapper catalogSkuMapper;
+    private final MinioStorageService minioStorageService;
 
     /**
      * 创建商品目录服务。
      *
      * @param catalogProductMapper 商品数据访问对象
+     * @param catalogSkuMapper SKU数据访问对象
+     * @param minioStorageService MinIO 文件服务
      * @author Henfon
      * @date 2026-08-29
      */
-    public CatalogProductService(CatalogProductMapper catalogProductMapper, CatalogSkuMapper catalogSkuMapper) {
+    public CatalogProductService(CatalogProductMapper catalogProductMapper,
+                                 CatalogSkuMapper catalogSkuMapper,
+                                 MinioStorageService minioStorageService) {
         this.catalogProductMapper = catalogProductMapper;
         this.catalogSkuMapper = catalogSkuMapper;
+        this.minioStorageService = minioStorageService;
     }
 
     /**
@@ -64,7 +71,11 @@ public class CatalogProductService {
                         .or().like(CatalogProduct::getProductCode, keyword)
                         .or().like(CatalogProduct::getDefaultSkuCode, keyword))
                 .orderByDesc(CatalogProduct::getCreatedAt);
-        return catalogProductMapper.selectPage(new Page<>(safeCurrent, safeSize), wrapper);
+        IPage<CatalogProduct> productPage = catalogProductMapper.selectPage(new Page<>(safeCurrent, safeSize), wrapper);
+        // 商品主图可能是历史预签名地址，返回接口前统一生成当前有效地址。
+        productPage.getRecords().forEach(product -> product.setMainImageUrl(
+                minioStorageService.resolveAccessUrl(product.getMainImageUrl())));
+        return productPage;
     }
 
     /**
@@ -92,7 +103,8 @@ public class CatalogProductService {
         product.setCostPrice(request.costPrice() == null ? BigDecimal.ZERO : request.costPrice());
         product.setCurrentStock(request.currentStock() == null ? 0 : request.currentStock());
         product.setSafetyStock(request.safetyStock() == null ? 0 : request.safetyStock());
-        product.setMainImageUrl(request.mainImageUrl());
+        // 只持久化稳定对象键，避免商品主图在预签名过期后无法显示。
+        product.setMainImageUrl(minioStorageService.normalizeReference(request.mainImageUrl()));
         product.setTagsCsv(request.tagsCsv());
         product.setStatus(request.status() == null ? 1 : request.status());
         product.setRemark(request.remark());

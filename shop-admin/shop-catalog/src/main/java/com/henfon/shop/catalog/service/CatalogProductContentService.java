@@ -16,6 +16,7 @@ import com.henfon.shop.catalog.mapper.CatalogProductMediaMapper;
 import com.henfon.shop.catalog.mapper.CatalogProductSpecMapper;
 import com.henfon.shop.catalog.mapper.CatalogSkuMapper;
 import com.henfon.shop.common.exception.BusinessException;
+import com.henfon.shop.integration.storage.MinioStorageService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -37,6 +38,7 @@ public class CatalogProductContentService {
     private final CatalogProductSpecMapper specMapper;
     private final CatalogProductMediaMapper mediaMapper;
     private final CatalogSkuMapper skuMapper;
+    private final MinioStorageService minioStorageService;
 
     /**
      * 创建商品内容服务。
@@ -46,6 +48,7 @@ public class CatalogProductContentService {
      * @param specMapper 参数数据访问对象
      * @param mediaMapper 媒体数据访问对象
      * @param skuMapper SKU数据访问对象
+     * @param minioStorageService MinIO 文件服务
      * @author Henfon
      * @date 2026-08-31
      */
@@ -53,12 +56,14 @@ public class CatalogProductContentService {
                                         CatalogProductFeatureMapper featureMapper,
                                         CatalogProductSpecMapper specMapper,
                                         CatalogProductMediaMapper mediaMapper,
-                                        CatalogSkuMapper skuMapper) {
+                                        CatalogSkuMapper skuMapper,
+                                        MinioStorageService minioStorageService) {
         this.productMapper = productMapper;
         this.featureMapper = featureMapper;
         this.specMapper = specMapper;
         this.mediaMapper = mediaMapper;
         this.skuMapper = skuMapper;
+        this.minioStorageService = minioStorageService;
     }
 
     /**
@@ -81,10 +86,19 @@ public class CatalogProductContentService {
                 .eq(CatalogProductSpec::getProductId, productId)
                 .orderByAsc(CatalogProductSpec::getSortNo)
                 .orderByAsc(CatalogProductSpec::getId)));
-        result.put("media", mediaMapper.selectList(new LambdaQueryWrapper<CatalogProductMedia>()
+        List<CatalogProductMedia> media = mediaMapper.selectList(new LambdaQueryWrapper<CatalogProductMedia>()
                 .eq(CatalogProductMedia::getProductId, productId)
                 .orderByAsc(CatalogProductMedia::getSortNo)
-                .orderByAsc(CatalogProductMedia::getId)));
+                .orderByAsc(CatalogProductMedia::getId));
+        // 媒体地址与商品主图一样可能过期，优先按对象键重签，兼容旧数据中的历史地址。
+        media.forEach(item -> {
+            String reference = item.getObjectKey();
+            if (reference == null || reference.isBlank()) {
+                reference = item.getMediaUrl();
+            }
+            item.setMediaUrl(minioStorageService.resolveAccessUrl(reference));
+        });
+        result.put("media", media);
         return result;
     }
 
@@ -136,14 +150,14 @@ public class CatalogProductContentService {
             media.setProductId(productId);
             media.setSkuId(item.skuId());
             media.setMediaType(item.mediaType().trim().toUpperCase());
-            media.setObjectKey(item.objectKey().trim());
-            media.setMediaUrl(item.mediaUrl() == null ? null : item.mediaUrl().trim());
+            media.setObjectKey(minioStorageService.normalizeReference(item.objectKey().trim()));
+            media.setMediaUrl(item.mediaUrl() == null ? null : minioStorageService.normalizeReference(item.mediaUrl().trim()));
             media.setIsCover(item.coverFlag());
             media.setSortNo(item.sortNo() == null ? index : item.sortNo());
             media.setRemark(item.remark() == null ? null : item.remark().trim());
             mediaMapper.insert(media);
             if (Integer.valueOf(1).equals(item.coverFlag()) && coverUrl == null) {
-                coverUrl = media.getMediaUrl();
+                coverUrl = media.getObjectKey();
             }
         }
 
