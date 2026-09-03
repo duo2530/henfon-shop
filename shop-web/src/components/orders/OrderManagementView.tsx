@@ -591,8 +591,8 @@ export const OrderManagementView: React.FC = () => {
         </div>
 
         {/* Data Table */}
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
+        <div className="overflow-x-auto overscroll-x-contain rounded-b-xl">
+          <table className="min-w-[1240px] w-full text-left border-separate border-spacing-0">
             <thead className="bg-[#F8FAFC] border-b border-[#E2E8F0] text-xs font-semibold text-gray-600 uppercase tracking-wider">
               <tr>
                 <th className="py-3 px-4 w-12 text-center">
@@ -612,7 +612,7 @@ export const OrderManagementView: React.FC = () => {
                 <th className="py-3 px-4">购买商品清单</th>
                 <th className="py-3 px-4 text-right">实付 / 优惠</th>
                 <th className="py-3 px-4 text-center">订单状态</th>
-                <th className="py-3 px-4 text-right w-[160px]">操作指令</th>
+                <th className="sticky right-0 z-20 py-3 px-4 text-right w-[220px] min-w-[220px] bg-[#F8FAFC] border-l border-[#E2E8F0] shadow-[-8px_0_12px_-12px_rgba(15,23,42,0.45)]">操作指令</th>
               </tr>
             </thead>
 
@@ -795,8 +795,8 @@ export const OrderManagementView: React.FC = () => {
                       </td>
 
                       {/* Actions */}
-                      <td className="py-3 px-4 text-right">
-                        <div className="flex items-center justify-end gap-1">
+                      <td className={`sticky right-0 z-10 py-3 px-4 text-right w-[220px] min-w-[220px] border-l border-[#E2E8F0] shadow-[-8px_0_12px_-12px_rgba(15,23,42,0.45)] ${isSelected ? 'bg-blue-50/50' : idx % 2 === 1 ? 'bg-[#FCFDFF]' : 'bg-white'} group-hover:bg-[#F8FAFC]`}>
+                        <div className="flex min-h-8 flex-wrap items-center justify-end gap-1.5">
                           <button
                             onClick={() => setInspectOrder(order)}
                             className="p-1.5 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
