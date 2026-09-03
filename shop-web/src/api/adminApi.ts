@@ -389,6 +389,21 @@ export interface BackendTradeOrder {
   shippedAt?: string;
   completedAt?: string;
   version?: number;
+  items?: BackendTradeOrderItem[];
+}
+
+export interface BackendTradeOrderItem {
+  id: number;
+  orderId: number;
+  productId: number;
+  skuId?: number;
+  productName: string;
+  skuName?: string;
+  skuCode?: string;
+  imageUrl?: string;
+  unitPrice: number;
+  quantity: number;
+  itemAmount: number;
 }
 
 export interface BackendTradeFreightTemplate {

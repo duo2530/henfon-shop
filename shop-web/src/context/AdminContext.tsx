@@ -254,7 +254,14 @@ function backendOrdersToFrontend(records: BackendTradeOrder[]): Order[] {
     status: backendOrderStatusToFrontend(record.orderStatus),
     auditStatus: record.auditStatus === 20 ? 'approved' : record.auditStatus === 30 ? 'rejected' : 'pending',
     auditRemark: record.auditRemark || undefined,
-    items: [],
+    items: (record.items || []).map((item) => ({
+      productId: String(item.productId),
+      productName: item.productName,
+      price: Number(item.unitPrice || 0),
+      quantity: Number(item.quantity || 0),
+      imageUrl: item.imageUrl || '',
+      sku: item.skuCode || item.skuName || undefined,
+    })),
     shippingAddress: [record.receiverProvince, record.receiverCity, record.receiverDistrict, record.receiverAddress]
       .filter(Boolean)
       .join(' '),

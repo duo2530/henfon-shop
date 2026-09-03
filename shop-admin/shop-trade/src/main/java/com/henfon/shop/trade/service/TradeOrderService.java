@@ -46,8 +46,10 @@ import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.util.Locale;
 import java.util.List;
+import java.util.Map;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * 交易订单应用服务。
@@ -124,7 +126,22 @@ public class TradeOrderService {
                         .or().like(TradeOrder::getMemberName, keyword)
                         .or().like(TradeOrder::getReceiverName, keyword))
                 .orderByDesc(TradeOrder::getCreatedAt);
-        return tradeOrderMapper.selectPage(new Page<>(safeCurrent, safeSize), wrapper);
+        IPage<TradeOrder> orderPage = tradeOrderMapper.selectPage(new Page<>(safeCurrent, safeSize), wrapper);
+        List<TradeOrder> orders = orderPage.getRecords();
+        if (orders.isEmpty()) {
+            return orderPage;
+        }
+
+        // 一次查询当前页全部商品明细，避免管理端逐单查询产生 N+1 问题。
+        List<Long> orderIds = orders.stream().map(TradeOrder::getId).toList();
+        Map<Long, List<TradeOrderItem>> itemsByOrderId = tradeOrderItemMapper.selectList(
+                        new LambdaQueryWrapper<TradeOrderItem>()
+                                .in(TradeOrderItem::getOrderId, orderIds)
+                                .orderByAsc(TradeOrderItem::getId))
+                .stream()
+                .collect(Collectors.groupingBy(TradeOrderItem::getOrderId));
+        orders.forEach(order -> order.setItems(itemsByOrderId.getOrDefault(order.getId(), List.of())));
+        return orderPage;
     }
 
     /**
