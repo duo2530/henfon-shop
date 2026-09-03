@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { useAdmin } from '../../context/AdminContext';
 import { Order, OrderStatus } from '../../types';
 import { 
@@ -77,6 +77,15 @@ export const OrderManagementView: React.FC = () => {
   const [refundOrder, setRefundOrder] = useState<Order | null>(null);
   const [refundAmount, setRefundAmount] = useState(0);
   const [refundReason, setRefundReason] = useState('协商一致售后退款');
+
+  useEffect(() => {
+    if (!inspectOrder) return;
+    const latestOrder = orders.find((order) => order.id === inspectOrder.id);
+    if (latestOrder && latestOrder !== inspectOrder) {
+      // 订单后台刷新后同步当前详情弹框，避免弹框继续持有旧的空商品清单快照。
+      setInspectOrder(latestOrder);
+    }
+  }, [orders, inspectOrder]);
 
   // New Order Form state
   const [newOrderCustomer, setNewOrderCustomer] = useState('');

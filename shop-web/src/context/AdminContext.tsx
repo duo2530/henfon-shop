@@ -499,6 +499,17 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     void loadAdminSession();
   }, []);
 
+  useEffect(() => {
+    if (!currentUser || currentTab !== 'orders') return undefined;
+
+    // 进入订单履约页时立即同步，并在停留期间定时刷新，避免后端重启后页面继续使用旧内存数据。
+    void hydrateTradeMetadata();
+    const refreshTimer = window.setInterval(() => {
+      void hydrateTradeMetadata();
+    }, 30_000);
+    return () => window.clearInterval(refreshTimer);
+  }, [currentTab, currentUser?.userId]);
+
   const login = async (username: string, password: string) => {
     const result = await loginAdmin(username, password);
     const menus = await getAdminMenus();
