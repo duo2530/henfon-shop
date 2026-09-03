@@ -2,6 +2,8 @@ package com.henfon.shop.identity.web;
 
 import com.henfon.shop.identity.security.AuthenticatedUser;
 import com.henfon.shop.identity.service.AuditLogService;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.slf4j.MDC;
@@ -21,6 +23,7 @@ public class AuditLogInterceptor implements HandlerInterceptor {
 
     private static final String START_TIME_ATTRIBUTE = AuditLogInterceptor.class.getName() + ".START_TIME";
     private final AuditLogService auditLogService;
+    private final ObjectMapper objectMapper;
 
     /**
      * 创建审计拦截器。
@@ -29,8 +32,9 @@ public class AuditLogInterceptor implements HandlerInterceptor {
      * @author Henfon
      * @date 2026-08-31
      */
-    public AuditLogInterceptor(AuditLogService auditLogService) {
+    public AuditLogInterceptor(AuditLogService auditLogService, ObjectMapper objectMapper) {
         this.auditLogService = auditLogService;
+        this.objectMapper = objectMapper;
     }
 
     /**
@@ -78,11 +82,32 @@ public class AuditLogInterceptor implements HandlerInterceptor {
         Object start = request.getAttribute(START_TIME_ATTRIBUTE);
         long duration = start instanceof Long value ? System.currentTimeMillis() - value : 0;
         String query = request.getQueryString();
-        String params = query == null ? null : query.substring(0, Math.min(query.length(), 2000));
+        String params = requestParamsJson(query);
         String[] segments = uri.split("/");
         String module = segments.length > 3 ? segments[3] : "admin";
         String operation = request.getMethod() + " " + uri;
         auditLogService.recordOperation(MDC.get("requestId"), userId, username, module, operation,
                 request.getMethod(), uri, params, response.getStatus(), request.getRemoteAddr(), duration);
+    }
+
+    /**
+     * 将查询参数摘要编码为合法 JSON，避免写入 JSON 列时因原始字符串导致 SQL 异常。
+     *
+     * @param query 原始查询参数
+     * @return JSON 格式参数摘要
+     * @author Henfon
+     * @date 2026-09-03
+     */
+    private String requestParamsJson(String query) {
+        if (query == null || query.isBlank()) {
+            return null;
+        }
+        String summary = query.substring(0, Math.min(query.length(), 2000));
+        try {
+            return objectMapper.writeValueAsString(java.util.Map.of("query", summary));
+        } catch (JsonProcessingException exception) {
+            // 参数仅用于审计展示，序列化异常时不阻断原始业务请求。
+            return "{\"query\":\"参数序列化失败\"}";
+        }
     }
 }

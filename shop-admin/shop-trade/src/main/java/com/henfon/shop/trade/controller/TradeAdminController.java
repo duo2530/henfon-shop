@@ -15,6 +15,7 @@ import com.henfon.shop.trade.dto.TradeOrderBatchShipRequest;
 import com.henfon.shop.trade.dto.TradeOrderAuditRequest;
 import jakarta.validation.Valid;
 import com.henfon.shop.trade.service.TradeOrderService;
+import com.henfon.shop.identity.security.AuthenticatedUser;
 import org.slf4j.MDC;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -230,7 +231,7 @@ public class TradeAdminController {
                                          @RequestParam boolean approved,
                                          @Valid @RequestBody TradeOrderAuditRequest request,
                                          Authentication authentication) {
-        String auditor = authentication == null ? null : authentication.getName();
+        String auditor = auditorName(authentication);
         return ApiResponse.success(tradeOrderService.audit(orderId, approved, request, auditor), MDC.get("requestId"));
     }
 
@@ -249,7 +250,7 @@ public class TradeAdminController {
     public ApiResponse<TradeOrder> approve(@PathVariable Long orderId,
                                            @Valid @RequestBody TradeOrderAuditRequest request,
                                            Authentication authentication) {
-        String auditor = authentication == null ? null : authentication.getName();
+        String auditor = auditorName(authentication);
         return ApiResponse.success(tradeOrderService.audit(orderId, true, request, auditor), MDC.get("requestId"));
     }
 
@@ -268,8 +269,27 @@ public class TradeAdminController {
     public ApiResponse<TradeOrder> reject(@PathVariable Long orderId,
                                            @Valid @RequestBody TradeOrderAuditRequest request,
                                            Authentication authentication) {
-        String auditor = authentication == null ? null : authentication.getName();
+        String auditor = auditorName(authentication);
         return ApiResponse.success(tradeOrderService.audit(orderId, false, request, auditor), MDC.get("requestId"));
+    }
+
+    /**
+     * 从自定义认证主体中读取真实管理员用户名，避免 Authentication#getName 返回主体 toString 全量内容。
+     *
+     * @param authentication 当前认证信息
+     * @return 管理员用户名
+     * @author Henfon
+     * @date 2026-09-03
+     */
+    private String auditorName(Authentication authentication) {
+        if (authentication == null) {
+            return null;
+        }
+        Object principal = authentication.getPrincipal();
+        if (principal instanceof AuthenticatedUser user) {
+            return user.username();
+        }
+        return authentication.getName();
     }
 
     /**
