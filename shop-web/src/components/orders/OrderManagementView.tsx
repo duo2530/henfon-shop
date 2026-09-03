@@ -621,10 +621,11 @@ export const OrderManagementView: React.FC = () => {
 
                   let statusBadges = null;
                   if (order.status === 'pending_shipment') {
+                    const shipmentHint = order.auditStatus === 'approved' ? '审核通过' : order.auditStatus === 'rejected' ? '审核驳回' : '待审核';
                     statusBadges = (
                       <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold bg-orange-100 text-orange-800">
                         <span className="w-1.5 h-1.5 rounded-full bg-orange-500 mr-1.5 animate-pulse"></span>
-                        待发货 (待出库)
+                        待发货 ({shipmentHint})
                       </span>
                     );
                   } else if (order.status === 'shipped') {
@@ -774,6 +775,9 @@ export const OrderManagementView: React.FC = () => {
                           {statusBadges}
                           {order.auditStatus === 'pending' && order.status === 'pending_shipment' && (
                             <span className="text-[10px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">待审核</span>
+                          )}
+                          {order.auditStatus === 'approved' && order.status === 'pending_shipment' && (
+                            <span className="text-[10px] text-emerald-700 bg-emerald-50 border border-emerald-200 rounded px-1.5 py-0.5">审核通过，可发货</span>
                           )}
                           {order.auditStatus === 'rejected' && (
                             <span className="text-[10px] text-red-700 bg-red-50 border border-red-200 rounded px-1.5 py-0.5">审核驳回</span>
