@@ -7,6 +7,7 @@ import { CartDrawer } from './components/CartDrawer';
 import { CheckoutModal, CheckoutPersistenceResult } from './components/CheckoutModal';
 import { OrderSuccessModal } from './components/OrderSuccessModal';
 import { PaymentModal } from './components/PaymentModal';
+import { InvoiceModal } from './components/InvoiceModal';
 import { OrdersModal } from './components/OrdersModal';
 import { WishlistModal } from './components/WishlistModal';
 import { CompareModal } from './components/CompareModal';
@@ -60,6 +61,7 @@ import {
   PortalOrderLogisticsRecord,
   PortalAfterSaleRecord,
   PortalAfterSaleCreatePayload,
+  PortalInvoiceRecord,
   PortalCategoryRecord,
   PortalFlashSaleRecord,
 } from './api/portalApi';
@@ -783,6 +785,7 @@ export default function App() {
   const [completedOrder, setCompletedOrder] = useState<Order | null>(null);
   const [isOrdersOpen, setIsOrdersOpen] = useState(false);
   const [isWishlistOpen, setIsWishlistOpen] = useState(false);
+  const [invoiceModal, setInvoiceModal] = useState<{ order: Order; existing: PortalInvoiceRecord | null } | null>(null);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
 
   // Derived claimed coupons objects
@@ -1184,7 +1187,15 @@ export default function App() {
   };
 
   const handleClearCart = () => {
+    // 清空本地状态的同时删除服务端明细，否则刷新或重新登录时服务端商品会再次恢复。
+    const serverItemIds = cartItems
+      .map((item) => item.id.match(/^server-(\d+)$/)?.[1])
+      .filter((id): id is string => Boolean(id));
     setCartItems([]);
+    if (serverItemIds.length > 0) {
+      Promise.all(serverItemIds.map((id) => deletePortalCartItem(Number(id))))
+        .catch((error) => console.warn('服务端购物车清空失败', error));
+    }
     showToast('购物车已清空', 'info');
   };
 
@@ -1468,7 +1479,15 @@ export default function App() {
         };
         setOrders((prev) => [persistedOrder, ...prev.filter((order) => order.id !== persistedOrder.id)]);
         const purchasedProductIds = new Set(persistedOrder.items.map((item) => item.productId));
+        const purchasedServerItemIds = cartItems
+          .filter((item) => item.selected && purchasedProductIds.has(item.productId))
+          .map((item) => item.id.match(/^server-(\d+)$/)?.[1])
+          .filter((id): id is string => Boolean(id));
         setCartItems((prev) => prev.filter((item) => !purchasedProductIds.has(item.productId) || !item.selected));
+        if (purchasedServerItemIds.length > 0) {
+          Promise.all(purchasedServerItemIds.map((id) => deletePortalCartItem(Number(id))))
+            .catch((error) => console.warn('已购买购物车商品清理失败', error));
+        }
         setIsCheckoutOpen(false);
         setPaymentPolling({
           memberId,
@@ -1485,7 +1504,15 @@ export default function App() {
 
     // Remove purchased items from cart if they were from cart
     const purchasedProductIds = new Set(newOrder.items.map((i) => i.productId));
+    const purchasedServerItemIds = cartItems
+      .filter((item) => item.selected && purchasedProductIds.has(item.productId))
+      .map((item) => item.id.match(/^server-(\d+)$/)?.[1])
+      .filter((id): id is string => Boolean(id));
     setCartItems((prev) => prev.filter((it) => !purchasedProductIds.has(it.productId) || !it.selected));
+    if (purchasedServerItemIds.length > 0) {
+      Promise.all(purchasedServerItemIds.map((id) => deletePortalCartItem(Number(id))))
+        .catch((error) => console.warn('已购买购物车商品清理失败', error));
+    }
 
     setIsCheckoutOpen(false);
     if (newOrder.status === 'paid') {
@@ -1688,40 +1715,15 @@ export default function App() {
       return;
     }
     const existing = await fetchPortalOrderInvoice(orderId).catch(() => null);
-    if (existing) {
-      if (existing.invoiceUrl) {
-        window.open(existing.invoiceUrl, '_blank', 'noopener,noreferrer');
-        showToast('已打开电子发票附件', 'success');
-        return;
-      }
-      const statusLabels: Record<number, string> = { 0: '待开票', 1: '开票中', 2: '已开票', 3: '开票失败', 4: '已取消' };
-      showToast(`该订单已有发票申请（${existing.invoiceNo}），状态：${statusLabels[existing.status] || '处理中'}`, 'info');
-      return;
-    }
-    const invoiceTypeInput = window.prompt('请选择发票类型：1 普通发票，2 增值税专用发票', '1');
-    const invoiceType = Number(invoiceTypeInput);
-    if (invoiceType !== 1 && invoiceType !== 2) {
-      showToast('发票类型不合法，请重新申请', 'error');
-      return;
-    }
-    const title = window.prompt('请输入发票抬头', currentUser?.nickname || '个人');
-    if (!title?.trim()) {
-      showToast('发票抬头不能为空', 'error');
-      return;
-    }
-    const taxNo = invoiceType === 2 ? window.prompt('请输入纳税人识别号（专票必填）', '') || '' : '';
-    const email = window.prompt('请输入接收发票的邮箱（可选）', currentUser?.email || '') || '';
-    try {
-      const invoice = await applyPortalOrderInvoice(orderId, {
-        invoiceType: invoiceType as 1 | 2,
-        title: title.trim(),
-        taxNo: taxNo.trim() || undefined,
-        email: email.trim() || undefined,
-      });
-      showToast(`发票申请已提交（${invoice.invoiceNo}），等待商家开具`, 'success');
-    } catch (error) {
-      showToast(error instanceof Error ? error.message : '发票申请失败，请稍后重试', 'error');
-    }
+    setInvoiceModal({ order, existing });
+  };
+
+  const submitInvoice = async (payload: { invoiceType: 1 | 2; title: string; taxNo?: string; email?: string }) => {
+    if (!invoiceModal) throw new Error('发票订单信息已失效，请重新打开');
+    const invoice = await applyPortalOrderInvoice(Number(invoiceModal.order.id), payload);
+    setInvoiceModal(null);
+    showToast(`发票申请已提交（${invoice.invoiceNo}），等待商家开具`, 'success');
+    return invoice;
   };
 
   const handleCancelAfterSale = async (afterSale: PortalAfterSaleRecord) => {
@@ -2420,6 +2422,17 @@ export default function App() {
 
       {showPaymentPage && paymentPolling?.order && (
         <PaymentModal order={paymentPolling.order} onClose={() => setShowPaymentPage(false)} />
+      )}
+
+      {invoiceModal && (
+        <InvoiceModal
+          order={invoiceModal.order}
+          existing={invoiceModal.existing}
+          defaultTitle={currentUser?.nickname || '个人'}
+          defaultEmail={currentUser?.email || ''}
+          onClose={() => setInvoiceModal(null)}
+          onSubmit={submitInvoice}
+        />
       )}
 
       <OrdersModal

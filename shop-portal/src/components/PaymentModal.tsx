@@ -41,8 +41,8 @@ export const PaymentModal: React.FC<PaymentModalProps> = ({ order, onClose }) =>
   };
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
-      <div className="relative w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl">
+    <div className="fixed inset-0 z-[70] flex items-start justify-center overflow-y-auto overscroll-contain bg-black/60 p-4 backdrop-blur-sm sm:items-center">
+      <div className="relative my-auto max-h-[calc(100vh-2rem)] w-full max-w-md overflow-y-auto overscroll-contain rounded-3xl bg-white p-6 shadow-2xl">
         <button type="button" onClick={onClose} aria-label="关闭支付页面" className="absolute right-4 top-4 rounded-lg p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-900">
           <X className="h-5 w-5" />
         </button>

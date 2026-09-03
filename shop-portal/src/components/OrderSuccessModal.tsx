@@ -19,9 +19,9 @@ export const OrderSuccessModal: React.FC<OrderSuccessModalProps> = ({
   if (!order) return null;
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-50 overflow-y-auto overscroll-contain bg-black/60 backdrop-blur-xs flex items-start sm:items-center justify-center p-3 sm:p-6 animate-in fade-in duration-200">
       <div 
-        className="bg-white rounded-3xl border border-zinc-200 shadow-2xl max-w-2xl w-full overflow-hidden relative p-6 sm:p-8 space-y-6 animate-in zoom-in-95 duration-200"
+        className="bg-white rounded-3xl border border-zinc-200 shadow-2xl max-w-2xl w-full max-h-[calc(100vh-1.5rem)] sm:max-h-[90vh] overflow-y-auto overscroll-contain relative p-6 sm:p-8 space-y-6 animate-in zoom-in-95 duration-200"
         onClick={(e) => e.stopPropagation()}
       >
         <button

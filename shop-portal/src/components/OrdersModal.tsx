@@ -192,9 +192,9 @@ export const OrdersModal: React.FC<OrdersModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-50 overflow-y-auto overscroll-contain bg-black/60 backdrop-blur-xs flex items-start sm:items-center justify-center p-3 sm:p-6 animate-in fade-in duration-200">
       <div 
-        className="bg-white rounded-3xl border border-zinc-200 shadow-2xl max-w-3xl w-full overflow-hidden relative flex flex-col max-h-[90vh]"
+        className="bg-white rounded-3xl border border-zinc-200 shadow-2xl max-w-3xl w-full overflow-hidden relative flex flex-col min-h-0 max-h-[calc(100vh-1.5rem)] sm:max-h-[90vh]"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -217,7 +217,7 @@ export const OrdersModal: React.FC<OrdersModalProps> = ({
         </div>
 
         {/* List of Orders */}
-        <div className="overflow-y-auto p-5 sm:p-6 space-y-4 flex-1">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-5 sm:p-6 space-y-4">
           {orders.length === 0 ? (
             <div className="py-16 text-center text-zinc-400 space-y-3">
               <Package className="w-12 h-12 mx-auto stroke-1 text-zinc-300" />
