@@ -11,10 +11,11 @@ export interface AdminDialogRequest {
 
 interface AdminDialogProps {
   request: AdminDialogRequest | null;
+  onResolve: (request: AdminDialogRequest, value: boolean | string | null) => void;
 }
 
 /** 管理端统一确认/输入弹框，替代浏览器原生 alert、confirm 和 prompt。 */
-export const AdminDialog: React.FC<AdminDialogProps> = ({ request }) => {
+export const AdminDialog: React.FC<AdminDialogProps> = ({ request, onResolve }) => {
   const [value, setValue] = useState('');
 
   useEffect(() => {
@@ -23,7 +24,7 @@ export const AdminDialog: React.FC<AdminDialogProps> = ({ request }) => {
 
   if (!request) return null;
 
-  const close = (result: boolean | string | null) => request.resolve(result);
+  const close = (result: boolean | string | null) => onResolve(request, result);
   const isPrompt = request.kind === 'prompt';
 
   return (

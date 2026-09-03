@@ -321,6 +321,11 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     return typeof result === 'string' ? result : null;
   }, [openDialog]);
 
+  const resolveDialog = useCallback((request: AdminDialogRequest, value: DialogResult) => {
+    request.resolve(value);
+    setDialog((current) => current === request ? null : current);
+  }, []);
+
   const hasPermission = useCallback((permission: string): boolean => {
     const permissions = currentUser?.permissions || [];
     if (permissions.includes('*:*:*') || permissions.includes(permission)) return true;
@@ -1503,7 +1508,7 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       }}
     >
       {children}
-      <AdminDialog request={dialog} />
+      <AdminDialog request={dialog} onResolve={resolveDialog} />
     </AdminContext.Provider>
   );
 };
