@@ -14,7 +14,7 @@ import {
 import { PermissionGate } from '../common/PermissionGate';
 
 export const SettingsView: React.FC = () => {
-  const { showToast, requirePermission } = useAdmin();
+  const { showToast, requirePermission, confirm } = useAdmin();
 
   // Settings State
   const [storeName, setStoreName] = useState('极简臻品官方旗舰店');
@@ -105,7 +105,7 @@ export const SettingsView: React.FC = () => {
 
         <div className="flex items-center gap-3">
           <PermissionGate permission="system:config:save">
-            <button type="button" onClick={() => { if (window.confirm('确认重置系统设置为默认值吗？')) handleResetSettings(); }} className="h-[36px] px-3.5 rounded-lg border border-[#E2E8F0] bg-white text-gray-700 hover:bg-gray-50 flex items-center gap-1.5 text-xs font-semibold shadow-2xs transition-colors"><RotateCcw className="w-3.5 h-3.5 text-gray-500" /><span>重置默认</span></button>
+          <button type="button" onClick={async () => { if (await confirm('确认重置系统设置为默认值吗？', '恢复默认设置')) handleResetSettings(); }} className="h-[36px] px-3.5 rounded-lg border border-[#E2E8F0] bg-white text-gray-700 hover:bg-gray-50 flex items-center gap-1.5 text-xs font-semibold shadow-2xs transition-colors"><RotateCcw className="w-3.5 h-3.5 text-gray-500" /><span>重置默认</span></button>
             <button type="button" onClick={handleSaveSettings} className="h-[36px] px-4 rounded-lg bg-[#2563EB] text-white hover:bg-blue-700 flex items-center justify-center gap-1.5 text-xs font-semibold shadow-sm transition-colors cursor-pointer"><Save className="w-4 h-4" /><span>保存全部配置</span></button>
           </PermissionGate>
         </div>

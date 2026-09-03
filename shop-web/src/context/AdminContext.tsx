@@ -76,12 +76,15 @@ import {
 import { backendMenusToTree, containsMenuTab, firstMenuTab } from '../navigation/menuAdapter';
 import { backendDataRulesToFrontend, backendDepartmentsToFrontend, backendMembersToFrontend, backendMenusToFrontend, backendRolesToFrontend, backendUsersToFrontend } from '../navigation/identityAdapter';
 import { backendCategoriesToMap, backendCategoriesToOptions, backendProductsToFrontend } from '../navigation/catalogAdapter';
+import { AdminDialog, type AdminDialogRequest } from '../components/common/AdminDialog';
 
 interface Toast {
   id: string;
   message: string;
   type: 'success' | 'info' | 'warning' | 'error';
 }
+
+type DialogResult = boolean | string | null;
 
 interface AdminContextType {
   authLoading: boolean;
@@ -106,6 +109,8 @@ interface AdminContextType {
   toasts: Toast[];
   showToast: (message: string, type?: 'success' | 'info' | 'warning' | 'error') => void;
   removeToast: (id: string) => void;
+  confirm: (message: string, title?: string) => Promise<boolean>;
+  prompt: (message: string, options?: { title?: string; defaultValue?: string }) => Promise<string | null>;
   
   // Product actions
   addProduct: (product: Omit<Product, 'id' | 'createdAt' | 'salesCount'>) => Promise<number | null>;
@@ -277,6 +282,7 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   const [notifications, setNotifications] = useState<NotificationItem[]>(initialNotifications);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [toasts, setToasts] = useState<Toast[]>([]);
+  const [dialog, setDialog] = useState<AdminDialogRequest | null>(null);
 
   // RBAC state
   const [roles, setRoles] = useState<Role[]>(initialRoles);
@@ -291,6 +297,29 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     setToasts((prev) => [...prev, { id, message, type }]);
     setTimeout(() => setToasts((prev) => prev.filter((toast) => toast.id !== id)), 3500);
   }, []);
+
+  const openDialog = useCallback((request: Omit<AdminDialogRequest, 'resolve'>): Promise<DialogResult> => {
+    return new Promise<DialogResult>((resolve) => {
+      setDialog((previous) => {
+        if (previous) previous.resolve(previous.kind === 'confirm' ? false : null);
+        return { ...request, resolve: (value) => resolve(value) };
+      });
+    });
+  }, []);
+
+  const confirm = useCallback(async (message: string, title = '请确认操作'): Promise<boolean> => {
+    return (await openDialog({ kind: 'confirm', title, message })) === true;
+  }, [openDialog]);
+
+  const prompt = useCallback(async (message: string, options: { title?: string; defaultValue?: string } = {}): Promise<string | null> => {
+    const result = await openDialog({
+      kind: 'prompt',
+      title: options.title || '请输入信息',
+      message,
+      defaultValue: options.defaultValue
+    });
+    return typeof result === 'string' ? result : null;
+  }, [openDialog]);
 
   const hasPermission = useCallback((permission: string): boolean => {
     const permissions = currentUser?.permissions || [];
@@ -1421,6 +1450,8 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         toasts,
         showToast,
         removeToast,
+        confirm,
+        prompt,
         addProduct,
         updateProduct,
         deleteProduct,
@@ -1472,6 +1503,7 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       }}
     >
       {children}
+      <AdminDialog request={dialog} />
     </AdminContext.Provider>
   );
 };

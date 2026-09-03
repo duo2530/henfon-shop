@@ -33,7 +33,7 @@ import {
 } from 'lucide-react';
 
 export const MenuManagementView: React.FC = () => {
-  const { menuItems, addMenuItem, updateMenuItem, deleteMenuItem } = useAdmin();
+  const { menuItems, addMenuItem, updateMenuItem, deleteMenuItem, confirm } = useAdmin();
 
   const [searchKeyword, setSearchKeyword] = useState('');
   const [expandedRowIds, setExpandedRowIds] = useState<Record<string, boolean>>({
@@ -323,8 +323,8 @@ export const MenuManagementView: React.FC = () => {
                     <Edit3 className="w-4 h-4" />
                   </button>
                   <button
-                    onClick={() => {
-                      if (confirm(`确认删除「${item.title}」及其下属节点吗？`)) {
+                    onClick={async () => {
+                      if (await confirm(`确认删除「${item.title}」及其下属节点吗？`, '删除菜单节点')) {
                         deleteMenuItem(item.id);
                       }
                     }}

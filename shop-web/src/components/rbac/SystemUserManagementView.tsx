@@ -33,7 +33,8 @@ export const SystemUserManagementView: React.FC = () => {
     toggleSystemUserStatus,
     roles,
     departments,
-    showToast
+    showToast,
+    confirm
   } = useAdmin();
 
   const [searchKeyword, setSearchKeyword] = useState('');
@@ -435,8 +436,8 @@ export const SystemUserManagementView: React.FC = () => {
                           {user.username !== 'admin' && (
                             <button
                               id={`btn-delete-user-${user.id}`}
-                              onClick={() => {
-                                if (confirm(`确认要删除系统用户「${user.username}」吗？`)) {
+                              onClick={async () => {
+                                if (await confirm(`确认要删除系统用户「${user.username}」吗？`, '删除系统用户')) {
                                   deleteSystemUser(user.id);
                                 }
                               }}

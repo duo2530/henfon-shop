@@ -47,7 +47,7 @@ const emptySupplierForm = (): SupplierForm => ({
 const supplierStatusText = (status: number) => status === 1 ? '已启用' : '已停用';
 
 export const SupplierManagementView: React.FC = () => {
-  const { showToast } = useAdmin();
+  const { showToast, confirm } = useAdmin();
   const [suppliers, setSuppliers] = useState<BackendInventorySupplier[]>([]);
   const [supplierLoading, setSupplierLoading] = useState(true);
   const [supplierError, setSupplierError] = useState<string | null>(null);
@@ -147,7 +147,7 @@ export const SupplierManagementView: React.FC = () => {
   };
 
   const removeSupplier = async (supplier: BackendInventorySupplier) => {
-    if (!window.confirm(`确认删除供应商「${supplier.supplierName}」吗？`)) return;
+    if (!await confirm(`确认删除供应商「${supplier.supplierName}」吗？`, '删除供应商')) return;
     const previous = suppliers;
     setSupplierActionId(supplier.id);
     setSuppliers((current) => current.filter((item) => item.id !== supplier.id));

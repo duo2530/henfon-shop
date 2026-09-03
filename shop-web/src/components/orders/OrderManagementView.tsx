@@ -40,6 +40,8 @@ export const OrderManagementView: React.FC = () => {
     processOrderRefund,
     auditOrder,
     showToast, 
+    confirm,
+    prompt,
     products,
     requirePermission
   } = useAdmin();
@@ -563,8 +565,8 @@ export const OrderManagementView: React.FC = () => {
               </PermissionGate>
               <PermissionGate permission="order:cancel">
                 <button
-                  onClick={() => {
-                    if (window.confirm(`确认批量取消选中的 ${selectedOrderIds.length} 笔订单吗？`)) {
+                  onClick={async () => {
+                    if (await confirm(`确认批量取消选中的 ${selectedOrderIds.length} 笔订单吗？`, '批量取消订单')) {
                       if (requirePermission('order:cancel', '批量取消订单')) batchCancelOrders(selectedOrderIds);
                       setSelectedOrderIds([]);
                     }
@@ -795,8 +797,8 @@ export const OrderManagementView: React.FC = () => {
                               {order.auditStatus === 'pending' && (
                                 <PermissionGate permission="order:audit">
                                   <button
-                                    onClick={() => {
-                                      const remark = window.prompt('请输入订单审核备注（可选）') || undefined;
+                                    onClick={async () => {
+                                      const remark = (await prompt('请输入订单审核备注（可选）', { title: '通过订单审核' })) || undefined;
                                       void auditOrder(order.id, true, remark);
                                     }}
                                     className="px-2 py-1 text-xs font-semibold bg-emerald-50 text-emerald-700 hover:bg-emerald-100 rounded border border-emerald-200 transition-colors"
@@ -805,8 +807,8 @@ export const OrderManagementView: React.FC = () => {
                                     审核通过
                                   </button>
                                   <button
-                                    onClick={() => {
-                                      const remark = window.prompt('请输入驳回原因（建议填写）');
+                                    onClick={async () => {
+                                      const remark = await prompt('请输入驳回原因（建议填写）', { title: '驳回订单审核' });
                                       if (remark === null) return;
                                       void auditOrder(order.id, false, remark || undefined);
                                     }}
@@ -858,8 +860,8 @@ export const OrderManagementView: React.FC = () => {
                           {order.status !== 'cancelled' && order.status !== 'completed' && order.status !== 'refunded' && order.status !== 'refunding' && (
                             <PermissionGate permission="order:cancel">
                               <button
-                                onClick={() => {
-                                  if (window.confirm(`确认取消订单 ${order.orderNumber} 吗？`)) {
+                                onClick={async () => {
+                                  if (await confirm(`确认取消订单 ${order.orderNumber} 吗？`, '取消订单')) {
                                     if (requirePermission('order:cancel', '取消订单')) cancelOrder(order.id);
                                   }
                                 }}

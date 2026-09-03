@@ -65,7 +65,7 @@ const emptyWarehouseForm = (): WarehouseForm => ({
 });
 
 export const WarehouseStockView: React.FC = () => {
-  const { showToast } = useAdmin();
+  const { showToast, confirm } = useAdmin();
   const [stockOrders] = useState<StockOrder[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [typeFilter, setTypeFilter] = useState('all');
@@ -176,7 +176,7 @@ export const WarehouseStockView: React.FC = () => {
   };
 
   const removeWarehouse = async (warehouse: BackendInventoryWarehouse) => {
-    if (!window.confirm(`确认删除仓库「${warehouse.warehouseName}」吗？有库存台账的仓库无法删除。`)) return;
+    if (!await confirm(`确认删除仓库「${warehouse.warehouseName}」吗？有库存台账的仓库无法删除。`, '删除仓库')) return;
     const previous = warehouses;
     setWarehouseActionId(warehouse.id);
     setWarehouses((current) => current.filter((item) => item.id !== warehouse.id));

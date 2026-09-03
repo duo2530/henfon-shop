@@ -33,7 +33,7 @@ function displayDate(value?: string): string { return value ? value.slice(0, 10)
  * @date 2026-08-30
  */
 export const BannerManagementView: React.FC = () => {
-  const { showToast } = useAdmin();
+  const { showToast, confirm } = useAdmin();
   const [banners, setBanners] = useState<BackendContentBanner[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -60,7 +60,7 @@ export const BannerManagementView: React.FC = () => {
   };
 
   const remove = async (id: number) => {
-    if (!window.confirm('确定删除该 Banner 吗？删除后门户将不再展示。')) return;
+    if (!await confirm('确定删除该 Banner 吗？删除后门户将不再展示。', '删除 Banner')) return;
     try { await deleteContentBanner(id); showToast('Banner 已删除', 'success'); await loadBanners(); }
     catch (error) { showToast(error instanceof Error ? error.message : 'Banner 删除失败', 'error'); }
   };

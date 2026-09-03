@@ -27,7 +27,8 @@ export const RoleManagementView: React.FC = () => {
     updateRoleDataScope,
     systemUsers,
     setCurrentTab,
-    departments
+    departments,
+    confirm
   } = useAdmin();
 
   const [searchKeyword, setSearchKeyword] = useState('');
@@ -347,8 +348,8 @@ export const RoleManagementView: React.FC = () => {
                           {role.roleKey !== 'super_admin' && (
                             <button
                               id={`btn-role-delete-${role.id}`}
-                              onClick={() => {
-                                if (confirm(`确认要删除角色「${role.roleName}」吗？`)) {
+                              onClick={async () => {
+                                if (await confirm(`确认要删除角色「${role.roleName}」吗？`, '删除角色')) {
                                   deleteRole(role.id);
                                 }
                               }}

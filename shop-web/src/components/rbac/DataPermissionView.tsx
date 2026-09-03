@@ -31,7 +31,8 @@ export const DataPermissionView: React.FC = () => {
     roles,
     departments,
     orders,
-    showToast
+    showToast,
+    confirm
   } = useAdmin();
 
   const [searchKeyword, setSearchKeyword] = useState('');
@@ -342,8 +343,8 @@ export const DataPermissionView: React.FC = () => {
                             <Edit3 className="w-4 h-4" />
                           </button>
                           <button
-                            onClick={() => {
-                              if (confirm(`确认删除数据权限规则「${rule.ruleName}」吗？`)) {
+                            onClick={async () => {
+                              if (await confirm(`确认删除数据权限规则「${rule.ruleName}」吗？`, '删除数据权限规则')) {
                                 deleteDataRule(rule.id);
                               }
                             }}

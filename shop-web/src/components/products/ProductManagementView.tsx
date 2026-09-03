@@ -77,6 +77,7 @@ export const ProductManagementView: React.FC = () => {
     batchUpdateProductCategory,
     adjustProductStock,
     showToast,
+    confirm,
     requirePermission
   } = useAdmin();
 
@@ -636,8 +637,8 @@ export const ProductManagementView: React.FC = () => {
           <div className="flex items-center gap-2 flex-wrap">
             <PermissionGate permission="product:status">
               <button
-                onClick={() => {
-                  if (window.confirm(`确认批量上架选中的 ${selectedIds.length} 件商品吗？`)) {
+                onClick={async () => {
+                  if (await confirm(`确认批量上架选中的 ${selectedIds.length} 件商品吗？`, '批量上架商品')) {
                     batchUpdateProductStatus(selectedIds, 'active');
                     setSelectedIds([]);
                   }
@@ -647,8 +648,8 @@ export const ProductManagementView: React.FC = () => {
                 批量上架
               </button>
               <button
-                onClick={() => {
-                  if (window.confirm(`确认批量下架选中的 ${selectedIds.length} 件商品吗？`)) {
+                onClick={async () => {
+                  if (await confirm(`确认批量下架选中的 ${selectedIds.length} 件商品吗？`, '批量下架商品')) {
                     batchUpdateProductStatus(selectedIds, 'inactive');
                     setSelectedIds([]);
                   }
@@ -669,8 +670,8 @@ export const ProductManagementView: React.FC = () => {
             </PermissionGate>
             <PermissionGate permission="product:delete">
               <button
-                onClick={() => {
-                  if (window.confirm(`确认删除选中的 ${selectedIds.length} 件商品吗？此操作无法撤销。`)) {
+                onClick={async () => {
+                  if (await confirm(`确认删除选中的 ${selectedIds.length} 件商品吗？此操作无法撤销。`, '批量删除商品')) {
                     batchDeleteProducts(selectedIds);
                     setSelectedIds([]);
                   }
@@ -919,8 +920,8 @@ export const ProductManagementView: React.FC = () => {
                           </button>
                           <PermissionGate permission="product:status">
                             <button
-                              onClick={() => {
-                                if (window.confirm(`确认${product.status === 'active' ? '下架' : '上架'}商品「${product.name}」吗？`)) toggleProductStatus(product.id);
+                                onClick={async () => {
+                                  if (await confirm(`确认${product.status === 'active' ? '下架' : '上架'}商品「${product.name}」吗？`, '变更商品状态')) toggleProductStatus(product.id);
                               }}
                               className="px-2 py-1 text-xs font-medium rounded border border-gray-200 hover:bg-gray-100 text-gray-700 transition-colors"
                               title={product.status === 'active' ? '下架商品' : '上架商品'}

@@ -109,7 +109,7 @@ function formFromCategory(category: BackendCatalogCategory): CategoryForm {
  * @date 2026-09-01
  */
 export const CategoryManagementView: React.FC = () => {
-  const { showToast, requirePermission } = useAdmin();
+  const { showToast, requirePermission, confirm } = useAdmin();
   const [categories, setCategories] = useState<BackendCatalogCategory[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -203,7 +203,7 @@ export const CategoryManagementView: React.FC = () => {
 
   const remove = async (category: BackendCatalogCategory) => {
     if (!requirePermission('catalog:category:query', '删除类目')) return;
-    if (!window.confirm(`确定删除「${category.categoryName}」吗？如存在子类目或商品引用，服务端会拒绝删除。`)) return;
+    if (!await confirm(`确定删除「${category.categoryName}」吗？如存在子类目或商品引用，服务端会拒绝删除。`, '删除商品类目')) return;
     try {
       await deleteCatalogCategory(category.id);
       showToast('类目已删除', 'success');

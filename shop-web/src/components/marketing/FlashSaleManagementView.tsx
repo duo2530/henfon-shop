@@ -40,7 +40,7 @@ function statusText(status: number, startAt?: string, endAt?: string): string {
 }
 
 export const FlashSaleManagementView: React.FC = () => {
-  const { showToast, hasPermission } = useAdmin();
+  const { showToast, hasPermission, confirm } = useAdmin();
   const canQuery = hasPermission('marketing:flash:query'); const canSave = hasPermission('marketing:flash:save');
   const canStatus = hasPermission('marketing:flash:status'); const canDelete = hasPermission('marketing:flash:delete');
   const [records, setRecords] = useState<FlashSaleRecord[]>([]); const [page, setPage] = useState<BackendPage<BackendMarketingFlashSale> | null>(null);
@@ -93,7 +93,7 @@ export const FlashSaleManagementView: React.FC = () => {
     if (!canStatus) return; try { const next = record.status === 1 ? 2 : 1; await updateMarketingFlashSaleStatus(record.id, next); showToast(`活动已${next === 1 ? '启用' : '停用'}`, 'success'); await load(); } catch (requestError) { showToast(requestError instanceof Error ? requestError.message : '活动状态更新失败', 'error'); }
   };
   const remove = async (record: FlashSaleRecord) => {
-    if (!canDelete || !window.confirm(`确定删除活动「${record.activityName}」吗？`)) return;
+    if (!canDelete || !await confirm(`确定删除活动「${record.activityName}」吗？`, '删除秒杀活动')) return;
     try { await deleteMarketingFlashSale(record.id); showToast('活动已删除', 'success'); if (records.length === 1 && current > 1) setCurrent((value) => value - 1); else await load(); } catch (requestError) { showToast(requestError instanceof Error ? requestError.message : '活动删除失败', 'error'); }
   };
 
