@@ -26,6 +26,7 @@ import {
   Tag
 } from 'lucide-react';
 import { PermissionGate } from '../common/PermissionGate';
+import { Pagination } from '../common/Pagination';
 
 export const OrderManagementView: React.FC = () => {
   const { 
@@ -902,37 +903,7 @@ export const OrderManagementView: React.FC = () => {
             {Math.min(currentPage * pageSize, totalEntries)} 笔，共 {totalEntries} 笔订单
           </div>
 
-          <div className="flex items-center gap-1.5">
-            <button
-              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-              disabled={currentPage === 1}
-              className="px-2.5 py-1 rounded border border-[#E2E8F0] hover:bg-white disabled:opacity-40 disabled:pointer-events-none transition-colors"
-            >
-              上一页
-            </button>
-
-            {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
-              <button
-                key={page}
-                onClick={() => setCurrentPage(page)}
-                className={`w-7 h-7 rounded text-xs font-medium transition-all ${
-                  currentPage === page
-                    ? 'bg-[#2563EB] text-white font-bold'
-                    : 'border border-[#E2E8F0] hover:bg-white text-gray-700'
-                }`}
-              >
-                {page}
-              </button>
-            ))}
-
-            <button
-              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-              disabled={currentPage === totalPages}
-              className="px-2.5 py-1 rounded border border-[#E2E8F0] hover:bg-white disabled:opacity-40 disabled:pointer-events-none transition-colors"
-            >
-              下一页
-            </button>
-          </div>
+          <Pagination currentPage={currentPage} totalPages={totalPages} onPageChange={setCurrentPage} />
         </div>
       </div>
 

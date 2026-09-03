@@ -585,16 +585,18 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   const toggleProductStatus = (id: string) => {
     const target = products.find((product) => product.id === id);
     const nextStatus = target?.status === 'active' ? 'inactive' : 'active';
+    if (!target) return;
     setProducts((prev) =>
       prev.map((p) => {
         if (p.id === id) {
-          showToast(`商品状态已变更为「${nextStatus === 'active' ? '上架中' : '已下架'}」`, 'info');
           return { ...p, status: nextStatus };
         }
         return p;
       })
     );
-    if (target && Number.isFinite(Number(id))) {
+    // 状态更新函数可能在开发模式被重复执行，提示必须放在函数外避免重复弹窗。
+    showToast(`商品状态已变更为「${nextStatus === 'active' ? '上架中' : '已下架'}」`, 'info');
+    if (Number.isFinite(Number(id))) {
       void updateCatalogProductStatus(Number(id), nextStatus === 'active' ? 1 : 2)
         .catch(() => {
           setProducts((prev) => prev.map((product) => product.id === id ? { ...product, status: target.status } : product));

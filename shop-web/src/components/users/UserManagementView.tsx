@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { useAdmin } from '../../context/AdminContext';
 import { User, UserStatus } from '../../types';
 import { PermissionGate } from '../common/PermissionGate';
+import { Pagination } from '../common/Pagination';
 import { 
   Users, 
   UserPlus, 
@@ -726,37 +727,7 @@ export const UserManagementView: React.FC = () => {
             {Math.min(currentPage * pageSize, totalEntries)} 位，共 {totalEntries} 位会员
           </div>
 
-          <div className="flex items-center gap-1.5">
-            <button
-              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-              disabled={currentPage === 1}
-              className="px-2.5 py-1 rounded border border-[#E2E8F0] hover:bg-white disabled:opacity-40 transition-colors"
-            >
-              上一页
-            </button>
-
-            {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
-              <button
-                key={page}
-                onClick={() => setCurrentPage(page)}
-                className={`w-7 h-7 rounded text-xs font-medium transition-all ${
-                  currentPage === page
-                    ? 'bg-[#2563EB] text-white font-bold'
-                    : 'hover:bg-white text-gray-700 border border-[#E2E8F0]'
-                }`}
-              >
-                {page}
-              </button>
-            ))}
-
-            <button
-              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-              disabled={currentPage === totalPages}
-              className="px-2.5 py-1 rounded border border-[#E2E8F0] hover:bg-white disabled:opacity-40 transition-colors"
-            >
-              下一页
-            </button>
-          </div>
+          <Pagination currentPage={currentPage} totalPages={totalPages} onPageChange={setCurrentPage} />
         </div>
       </div>
 

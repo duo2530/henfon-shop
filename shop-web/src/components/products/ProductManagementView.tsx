@@ -31,27 +31,13 @@ import {
   deleteStorageFile
 } from '../../api/adminApi';
 import { PermissionGate } from '../common/PermissionGate';
+import { Pagination } from '../common/Pagination';
 
 type ProductContentDraft = {
   features: string[];
   specs: Array<{ specName: string; specValue: string }>;
   media: Array<{ skuId?: number; mediaType: 'IMAGE' | 'VIDEO'; objectKey: string; mediaUrl?: string; isCover: number; remark?: string; persisted?: boolean }>;
 };
-
-type PaginationItem = number | 'ellipsis-start' | 'ellipsis-end';
-
-function buildPaginationItems(currentPage: number, totalPages: number): PaginationItem[] {
-  if (totalPages <= 7) {
-    return Array.from({ length: totalPages }, (_, index) => index + 1);
-  }
-  if (currentPage <= 4) {
-    return [1, 2, 3, 4, 5, 'ellipsis-end', totalPages];
-  }
-  if (currentPage >= totalPages - 3) {
-    return [1, 'ellipsis-start', totalPages - 4, totalPages - 3, totalPages - 2, totalPages - 1, totalPages];
-  }
-  return [1, 'ellipsis-start', currentPage - 1, currentPage, currentPage + 1, 'ellipsis-end', totalPages];
-}
 
 const emptyProductContent: ProductContentDraft = { features: [], specs: [], media: [] };
 
@@ -201,7 +187,6 @@ export const ProductManagementView: React.FC = () => {
   // Paginated records
   const totalEntries = filteredProducts.length;
   const totalPages = Math.ceil(totalEntries / pageSize) || 1;
-  const paginationItems = buildPaginationItems(currentPage, totalPages);
   const paginatedProducts = filteredProducts.slice(
     (currentPage - 1) * pageSize,
     currentPage * pageSize
@@ -988,39 +973,7 @@ export const ProductManagementView: React.FC = () => {
             {Math.min(currentPage * pageSize, totalEntries)} 条，共计 {totalEntries} 条商品
           </div>
 
-          <div className="flex items-center gap-1.5">
-            <button
-              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-              disabled={currentPage === 1}
-              className="px-2.5 py-1 rounded border border-[#E2E8F0] hover:bg-white disabled:opacity-40 disabled:pointer-events-none transition-colors"
-            >
-              上一页
-            </button>
-
-            {paginationItems.map((item) => item === 'ellipsis-start' || item === 'ellipsis-end' ? (
-              <span key={item} className="w-7 h-7 flex items-center justify-center text-gray-400">...</span>
-            ) : (
-              <button
-                key={item}
-                onClick={() => setCurrentPage(item)}
-                className={`w-7 h-7 rounded text-xs font-medium transition-all ${
-                  currentPage === item
-                    ? 'bg-[#2563EB] text-white font-bold'
-                    : 'border border-[#E2E8F0] hover:bg-white text-gray-700'
-                }`}
-              >
-                {item}
-              </button>
-            ))}
-
-            <button
-              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-              disabled={currentPage === totalPages}
-              className="px-2.5 py-1 rounded border border-[#E2E8F0] hover:bg-white disabled:opacity-40 disabled:pointer-events-none transition-colors"
-            >
-              下一页
-            </button>
-          </div>
+          <Pagination currentPage={currentPage} totalPages={totalPages} onPageChange={setCurrentPage} />
         </div>
       </div>
 
