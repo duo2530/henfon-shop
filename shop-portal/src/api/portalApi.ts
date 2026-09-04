@@ -122,6 +122,8 @@ export interface PortalBanner {
   bannerTag?: string;
   subtitle?: string;
   imageUrl: string;
+  /** Banner 跳转类型：商品、类目、优惠券、外部链接或无跳转。 */
+  linkType?: 'PRODUCT' | 'CATEGORY' | 'COUPON' | 'URL' | 'NONE' | string;
   linkTarget?: string;
 }
 

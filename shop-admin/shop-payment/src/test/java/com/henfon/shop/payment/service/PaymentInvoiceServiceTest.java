@@ -142,6 +142,46 @@ class PaymentInvoiceServiceTest {
     }
 
     /**
+     * 校验已开票状态必须关联电子发票文件地址。
+     *
+     * @author Henfon
+     * @date 2026-09-04
+     */
+    @Test
+    void shouldRequireInvoiceUrlWhenIssued() {
+        PaymentInvoice invoice = new PaymentInvoice();
+        invoice.setInvoiceNo("INV-31");
+        invoice.setStatus(1);
+        when(invoiceMapper.selectOne(any())).thenReturn(invoice);
+
+        PaymentInvoiceService service = new PaymentInvoiceService(invoiceMapper, tradeOrderService);
+        BusinessException exception = assertThrows(BusinessException.class,
+                () -> service.updateStatus("INV-31", new PaymentInvoiceStatusRequest(2, "  ", null)));
+
+        assertEquals("PAYMENT_INVOICE_URL_REQUIRED", exception.getCode());
+    }
+
+    /**
+     * 校验开票失败状态必须填写失败原因。
+     *
+     * @author Henfon
+     * @date 2026-09-04
+     */
+    @Test
+    void shouldRequireFailureReasonWhenFailed() {
+        PaymentInvoice invoice = new PaymentInvoice();
+        invoice.setInvoiceNo("INV-31");
+        invoice.setStatus(1);
+        when(invoiceMapper.selectOne(any())).thenReturn(invoice);
+
+        PaymentInvoiceService service = new PaymentInvoiceService(invoiceMapper, tradeOrderService);
+        BusinessException exception = assertThrows(BusinessException.class,
+                () -> service.updateStatus("INV-31", new PaymentInvoiceStatusRequest(3, null, " ")));
+
+        assertEquals("PAYMENT_INVOICE_FAILURE_REASON_REQUIRED", exception.getCode());
+    }
+
+    /**
      * 创建已支付订单测试夹具。
      *
      * @param orderId 订单ID

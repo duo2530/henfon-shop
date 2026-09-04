@@ -280,7 +280,30 @@ public class TradeOrderService {
             upsertLogistics(orderId, request);
             syncedCount++;
         }
+        // 第三方确认签收后自动完成订单，避免物流已签收但订单长期停留在已发货状态。
+        completeOrderWhenLogisticsSigned(order, result.status());
         return new TradeOrderLogisticsSyncResult(true, result.provider(), result.status(), syncedCount, result.message());
+    }
+
+    /**
+     * 根据物流标准状态推进订单完成状态。
+     *
+     * @param order 订单实体
+     * @param logisticsStatus 物流标准状态
+     * @author Henfon
+     * @date 2026-09-04
+     */
+    private void completeOrderWhenLogisticsSigned(TradeOrder order, String logisticsStatus) {
+        if (!"SIGNED".equalsIgnoreCase(logisticsStatus)
+                || !Integer.valueOf(TradeOrderStateMachine.STATUS_SHIPPED).equals(order.getOrderStatus())) {
+            return;
+        }
+        // 使用状态机校验并沿用订单乐观锁，确保自动签收与人工确认收货不会互相覆盖。
+        TradeOrderStateMachine.requireTransition(order.getOrderStatus(), TradeOrderStateMachine.STATUS_COMPLETED);
+        order.setOrderStatus(TradeOrderStateMachine.STATUS_COMPLETED);
+        order.setCompletedAt(LocalDateTime.now());
+        updateOrder(order);
+        tradeEventOutboxService.recordOrderCompleted(order);
     }
 
     /**

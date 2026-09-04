@@ -169,6 +169,7 @@ public class PaymentInvoiceService {
         if (!canTransition(invoice.getStatus(), target)) {
             throw new BusinessException("PAYMENT_INVOICE_STATUS_INVALID", "发票状态不允许重复或逆向变更");
         }
+        validateStatusPayload(target, request);
         invoice.setStatus(target);
         invoice.setInvoiceUrl(normalize(request.invoiceUrl()));
         invoice.setFailureReason(normalize(request.failureReason()));
@@ -182,6 +183,25 @@ public class PaymentInvoiceService {
             throw new BusinessException("PAYMENT_INVOICE_CONCURRENT_UPDATE", "发票申请已被其他操作修改");
         }
         return PaymentInvoiceResponse.from(invoice);
+    }
+
+    /**
+     * 校验发票终态所需的开票结果信息，确保状态更新后具备完整交付凭证。
+     *
+     * @param target 目标状态
+     * @param request 状态更新请求
+     * @author Henfon
+     * @date 2026-09-04
+     */
+    private void validateStatusPayload(int target, PaymentInvoiceStatusRequest request) {
+        // 已开票必须关联可下载的电子发票地址，避免用户看到已开票却无法取得凭证。
+        if (target == STATUS_ISSUED && !StringUtils.hasText(request.invoiceUrl())) {
+            throw new BusinessException("PAYMENT_INVOICE_URL_REQUIRED", "已开票状态必须提供发票文件地址");
+        }
+        // 开票失败必须记录原因，便于客服和运营定位后续补开或联系用户。
+        if (target == STATUS_FAILED && !StringUtils.hasText(request.failureReason())) {
+            throw new BusinessException("PAYMENT_INVOICE_FAILURE_REASON_REQUIRED", "开票失败必须填写失败原因");
+        }
     }
 
     /**

@@ -2180,6 +2180,49 @@ export default function App() {
               const p = products.find((it) => it.id === normalizedId) || PRODUCTS.find((it) => it.id === normalizedId);
               if (p) openProduct(p);
             }}
+            onNavigateBanner={(linkType, linkTarget) => {
+              const target = (linkTarget || '').trim();
+              if (linkType === 'PRODUCT') {
+                const normalizedId = /^\d+$/.test(target) ? `prod-${target}` : target;
+                const product = products.find((item) => item.id === normalizedId)
+                  || PRODUCTS.find((item) => item.id === normalizedId);
+                if (product) {
+                  openProduct(product);
+                } else {
+                  showToast('该 Banner 关联的商品暂不可用', 'warning');
+                }
+                return;
+              }
+              if (linkType === 'CATEGORY') {
+                const category = portalCategories.find((item) =>
+                  String(item.id) === target || item.categoryCode === target || item.categoryName === target);
+                if (category) {
+                  setSelectedCategory(category.categoryCode || category.categoryName);
+                  setProductPage(1);
+                  return;
+                }
+                showToast('该 Banner 关联的类目暂不可用', 'warning');
+                return;
+              }
+              if (linkType === 'COUPON') {
+                const element = document.getElementById('coupon-center-section');
+                element?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                if (target) {
+                  const coupon = coupons.find((item) => String(item.id) === target || item.code === target);
+                  if (coupon) {
+                    handleApplyCoupon(coupon.code);
+                  }
+                }
+                return;
+              }
+              if (linkType === 'URL' && /^https?:\/\//i.test(target)) {
+                window.open(target, '_blank', 'noopener,noreferrer');
+                return;
+              }
+              if (linkType !== 'NONE') {
+                showToast('Banner 跳转目标无效', 'warning');
+              }
+            }}
           />
         )}
 

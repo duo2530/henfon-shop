@@ -10,13 +10,17 @@ interface HeroBannerProps {
     bannerTag?: string;
     subtitle?: string;
     imageUrl: string;
+    linkType?: string;
     linkTarget?: string;
   }>;
+  /** 处理远程 Banner 的多种跳转目标。 */
+  onNavigateBanner?: (linkType: string, linkTarget?: string) => void;
 }
 
 export const HeroBanner: React.FC<HeroBannerProps> = ({
   onExploreCategory,
   onSelectProduct,
+  onNavigateBanner,
   banners = [],
 }) => {
   const [currentSlide, setCurrentSlide] = useState(0);
@@ -69,6 +73,7 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({
         title: banner.bannerTitle,
         subtitle: banner.subtitle || '',
         productId: banner.linkTarget || '',
+        linkType: banner.linkType || 'PRODUCT',
         category: 'all',
         ctaText: '立即查看',
         bgGradient: 'from-zinc-900 via-zinc-800 to-zinc-950',
@@ -119,7 +124,13 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({
 
             <div className="flex items-center gap-4 flex-wrap">
               <button
-                onClick={() => onSelectProduct(slide.productId)}
+                onClick={() => {
+                  if (slide.id.startsWith('remote-') && onNavigateBanner) {
+                    onNavigateBanner(slide.linkType || 'NONE', slide.productId);
+                    return;
+                  }
+                  onSelectProduct(slide.productId);
+                }}
                 className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-white text-zinc-950 font-semibold text-sm hover:bg-zinc-100 transition shadow-lg group"
               >
                 <span>{slide.ctaText}</span>
