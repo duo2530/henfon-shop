@@ -89,4 +89,53 @@ class PaymentReconciliationServiceTest {
         assertEquals(1, page.getTotal());
         assertEquals("discrepancy", page.getRecords().get(0).status());
     }
+
+    /**
+     * 验证同一支付单累计退款超过实付金额时，相关退款流水全部标记为差异。
+     *
+     * @author Henfon
+     * @date 2026-09-04
+     */
+    @Test
+    void shouldMarkOverRefundAsDiscrepancy() {
+        PaymentOrder payment = new PaymentOrder();
+        payment.setId(4L);
+        payment.setPaymentNo("PAY-OVER");
+        payment.setOrderNo("ORD-OVER");
+        payment.setStatus(2);
+        payment.setAmount(new BigDecimal("100.00"));
+
+        PaymentRefundOrder first = refund("REF-OVER-1", "PAY-OVER", "60.00");
+        PaymentRefundOrder second = refund("REF-OVER-2", "PAY-OVER", "50.00");
+        when(paymentOrderMapper.selectList(any(Wrapper.class))).thenReturn(List.of(payment));
+        when(refundOrderMapper.selectList(any(Wrapper.class))).thenReturn(List.of(first, second));
+
+        var page = service.page(null, "refund_payout", null, 1, 20);
+
+        // 累计退款超过收款金额时，不能将任一笔退款显示为已平账。
+        assertEquals(2, page.getTotal());
+        assertEquals(2, page.getRecords().stream().filter(record -> "discrepancy".equals(record.status())).count());
+    }
+
+    /**
+     * 构造成功退款测试数据。
+     *
+     * @param refundNo 退款单号
+     * @param paymentNo 支付单号
+     * @param amount 退款金额
+     * @return 退款单实体
+     * @author Henfon
+     * @date 2026-09-04
+     */
+    private PaymentRefundOrder refund(String refundNo, String paymentNo, String amount) {
+        PaymentRefundOrder refund = new PaymentRefundOrder();
+        refund.setId((long) refundNo.hashCode());
+        refund.setRefundNo(refundNo);
+        refund.setPaymentNo(paymentNo);
+        refund.setOrderNo("ORD-OVER");
+        refund.setStatus(2);
+        refund.setAmount(new BigDecimal(amount));
+        refund.setRefundedAt(LocalDateTime.now());
+        return refund;
+    }
 }
