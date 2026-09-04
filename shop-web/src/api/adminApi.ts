@@ -565,6 +565,12 @@ export interface BackendReportingMemberAnalysis {
   levelStats: BackendReportingMemberLevelStat[];
 }
 
+export interface BackendReportingChannelStat {
+  channel: string;
+  paymentOrderCount: number;
+  paidAmount: number;
+}
+
 export interface BackendLoginLog {
   id: number;
   userId?: number;
@@ -1266,6 +1272,14 @@ export function getReportingMemberAnalysis(startDate?: string, endDate?: string)
   if (endDate) query.set('endDate', endDate);
   const queryString = query.toString();
   return request<BackendReportingMemberAnalysis>(`/api/admin/reporting/member-analysis${queryString ? `?${queryString}` : ''}`);
+}
+
+export function getReportingChannelStats(startDate?: string, endDate?: string): Promise<BackendReportingChannelStat[]> {
+  const query = new URLSearchParams();
+  if (startDate) query.set('startDate', startDate);
+  if (endDate) query.set('endDate', endDate);
+  const queryString = query.toString();
+  return request<BackendReportingChannelStat[]>(`/api/admin/reporting/channel-stats${queryString ? `?${queryString}` : ''}`);
 }
 
 export async function downloadReportingExport(params: {

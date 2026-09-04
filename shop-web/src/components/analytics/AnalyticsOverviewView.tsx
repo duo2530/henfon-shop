@@ -10,9 +10,11 @@ import {
   getReportingDashboardMetrics,
   getReportingMemberAnalysis,
   getReportingSalesTrend,
+  getReportingChannelStats,
   BackendReportingDashboardMetrics,
   BackendReportingMemberAnalysis,
   BackendReportingSalesTrendPoint,
+  BackendReportingChannelStat,
 } from '../../api/adminApi';
 import { 
   AreaChart, 
@@ -36,6 +38,10 @@ export const AnalyticsOverviewView: React.FC = () => {
   const [memberAnalysis, setMemberAnalysis] = useState<BackendReportingMemberAnalysis | null>(null);
   const [memberAnalysisLoading, setMemberAnalysisLoading] = useState(false);
   const [memberAnalysisError, setMemberAnalysisError] = useState<string | null>(null);
+  const [channelStats, setChannelStats] = useState<BackendReportingChannelStat[]>([]);
+  const [channelStatsLoading, setChannelStatsLoading] = useState(false);
+  const [channelStatsError, setChannelStatsError] = useState<string | null>(null);
+  const [channelStatsReloadKey, setChannelStatsReloadKey] = useState(0);
 
   const memberAnalysisStartDate = useMemo(() => {
     const end = new Date();
@@ -101,6 +107,33 @@ export const AnalyticsOverviewView: React.FC = () => {
     };
   }, [memberAnalysisStartDate]);
 
+  useEffect(() => {
+    let active = true;
+    const endDate = new Date();
+    const days = timeRange === 'today' ? 0 : timeRange === '7d' ? 6 : 29;
+    const startDate = new Date(endDate);
+    startDate.setDate(endDate.getDate() - days);
+    const toDate = (value: Date) => value.toISOString().slice(0, 10);
+    setChannelStatsLoading(true);
+    setChannelStatsError(null);
+    // 渠道统计与销售趋势使用同一日期范围，确保卡片之间口径一致。
+    void getReportingChannelStats(toDate(startDate), toDate(endDate))
+      .then((result) => {
+        if (active) setChannelStats(Array.isArray(result) ? result : []);
+      })
+      .catch((error) => {
+        if (!active) return;
+        setChannelStats([]);
+        setChannelStatsError(error instanceof Error ? error.message : '渠道统计加载失败');
+      })
+      .finally(() => {
+        if (active) setChannelStatsLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [timeRange, overviewReloadKey, channelStatsReloadKey]);
+
   const memberLevelChartData = (memberAnalysis?.levelStats || []).map((item) => ({
     level: item.memberLevel,
     members: Number(item.memberCount || 0),
@@ -112,6 +145,9 @@ export const AnalyticsOverviewView: React.FC = () => {
     salesAmount: Number(item.salesAmount || 0),
     orderCount: Number(item.orderCount || 0),
   }));
+
+  const channelTotalAmount = channelStats.reduce((sum, item) => sum + Number(item.paidAmount || 0), 0);
+  const channelTotalOrders = channelStats.reduce((sum, item) => sum + Number(item.paymentOrderCount || 0), 0);
 
   const formatAmount = (value?: number) => overviewLoading || overviewError || value === undefined
     ? '—'
@@ -278,9 +314,46 @@ export const AnalyticsOverviewView: React.FC = () => {
           </div>
         </div>
 
-        <div className="bg-white rounded-xl border border-dashed border-[#CBD5E1] shadow-xs p-5 flex flex-col justify-center">
-          <h3 className="text-sm font-bold text-gray-900">渠道来源分析</h3>
-          <p className="mt-2 text-xs leading-5 text-gray-500">当前报表接口尚未接入访问埋点，暂不展示估算占比。接入渠道埋点后将在此处显示真实来源数据。</p>
+        <div className="bg-white rounded-xl border border-[#E2E8F0] shadow-xs p-5">
+          <div className="flex items-center justify-between gap-2">
+            <div>
+              <h3 className="text-sm font-bold text-gray-900">支付渠道分析</h3>
+              <p className="mt-1 text-xs text-gray-400">按已支付订单统计，金额合计 ¥{channelTotalAmount.toLocaleString('zh-CN', { minimumFractionDigits: 2 })}</p>
+            </div>
+            {channelStatsLoading && <span className="text-xs text-blue-600">加载中...</span>}
+          </div>
+          {channelStatsError ? (
+            <div role="alert" className="mt-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+              <div className="flex items-center justify-between gap-2">
+                <span>{channelStatsError}</span>
+                <button type="button" onClick={() => setChannelStatsReloadKey((value) => value + 1)} className="inline-flex min-h-8 items-center gap-1 rounded-md border border-red-300 bg-white px-2.5 text-xs font-semibold text-red-700 hover:bg-red-100">
+                  <RefreshCw className="w-3.5 h-3.5" />重试
+                </button>
+              </div>
+            </div>
+          ) : channelStatsLoading ? (
+            <div className="mt-8 text-center text-xs text-gray-400">正在加载渠道数据...</div>
+          ) : channelStats.length === 0 ? (
+            <div className="mt-8 text-center text-xs text-gray-400">当前范围暂无支付渠道数据</div>
+          ) : (
+            <div className="mt-4 space-y-3" aria-label={`支付渠道统计，共${channelTotalOrders}笔订单`}>
+              {channelStats.map((item) => {
+                const amount = Number(item.paidAmount || 0);
+                const percent = channelTotalAmount > 0 ? Math.round((amount / channelTotalAmount) * 100) : 0;
+                return (
+                  <div key={item.channel}>
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="font-semibold text-gray-700">{item.channel}</span>
+                      <span className="text-gray-500">¥{amount.toLocaleString('zh-CN', { minimumFractionDigits: 2 })} · {item.paymentOrderCount} 单</span>
+                    </div>
+                    <div className="mt-1 h-2 rounded-full bg-slate-100" aria-hidden="true">
+                      <div className="h-2 rounded-full bg-indigo-500 transition-all duration-300" style={{ width: `${Math.min(percent, 100)}%` }} />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       </div>
 

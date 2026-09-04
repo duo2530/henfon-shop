@@ -152,6 +152,15 @@ public class MarketingPortalService {
         if (order.getMemberId() == null || !order.getMemberId().equals(memberId)) {
             throw new BusinessException("MARKETING_COUPON_ORDER_FORBIDDEN", "无权为该订单核销优惠券");
         }
+        // 当前订单暂不支持叠加多张优惠券，避免后一次核销覆盖折扣却遗留多条核销流水。
+        MarketingCouponUsage existingUsage = usageMapper.selectOne(new LambdaQueryWrapper<MarketingCouponUsage>()
+                .eq(MarketingCouponUsage::getMemberId, memberId)
+                .eq(MarketingCouponUsage::getOrderId, request.orderId())
+                .eq(MarketingCouponUsage::getAction, 1)
+                .last("LIMIT 1"));
+        if (existingUsage != null && !request.couponId().equals(existingUsage.getCouponId())) {
+            throw new BusinessException("MARKETING_COUPON_STACK_NOT_SUPPORTED", "同一订单不支持叠加使用多张优惠券");
+        }
         // 多张同券场景必须先查询当前订单已核销记录，避免重复请求误用另一张未使用优惠券。
         MarketingMemberCoupon record = memberCouponMapper.selectOne(new LambdaQueryWrapper<MarketingMemberCoupon>()
                 .eq(MarketingMemberCoupon::getMemberId, memberId)

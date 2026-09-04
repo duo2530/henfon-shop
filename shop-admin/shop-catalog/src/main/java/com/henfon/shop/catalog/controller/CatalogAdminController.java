@@ -229,6 +229,21 @@ public class CatalogAdminController {
     }
 
     /**
+     * 复制商品及其 SKU。
+     *
+     * @param id 原商品ID
+     * @return 新商品ID
+     * @author Henfon
+     * @date 2026-09-04
+     */
+    @PostMapping("/products/{id}/copy")
+    @PreAuthorize("hasAuthority('catalog:product:query')")
+    public ApiResponse<Long> copyProduct(@PathVariable Long id) {
+        // 复制结果以草稿形式返回，前端可继续编辑后再上架。
+        return ApiResponse.success(catalogProductService.copy(id), requestId());
+    }
+
+    /**
      * 查询启用类目。
      *
      * @return 类目列表

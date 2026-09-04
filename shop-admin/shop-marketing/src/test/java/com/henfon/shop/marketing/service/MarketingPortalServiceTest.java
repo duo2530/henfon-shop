@@ -7,6 +7,7 @@ import com.henfon.shop.catalog.mapper.CatalogProductMapper;
 import com.henfon.shop.common.exception.BusinessException;
 import com.henfon.shop.marketing.entity.MarketingCoupon;
 import com.henfon.shop.marketing.entity.MarketingMemberCoupon;
+import com.henfon.shop.marketing.entity.MarketingCouponUsage;
 import com.henfon.shop.marketing.mapper.MarketingCouponMapper;
 import com.henfon.shop.marketing.mapper.MarketingCouponUsageMapper;
 import com.henfon.shop.marketing.mapper.MarketingMemberCouponMapper;
@@ -201,6 +202,34 @@ class MarketingPortalServiceTest {
         verify(tradeOrderService, never()).applyCouponDiscount(any(), any());
         verify(couponMapper, never()).selectById(any());
         verify(memberCouponMapper, never()).updateById(org.mockito.ArgumentMatchers.any(MarketingMemberCoupon.class));
+    }
+
+    /**
+     * 验证订单已有其他优惠券核销记录时拒绝叠加使用，避免折扣金额和流水不一致。
+     *
+     * @author Henfon
+     * @date 2026-09-04
+     */
+    @Test
+    void shouldRejectStackingDifferentCouponOnSameOrder() {
+        long memberId = 7L;
+        long orderId = 19L;
+        long existingCouponId = 11L;
+        long requestedCouponId = 12L;
+        MarketingCouponUsage usage = new MarketingCouponUsage();
+        usage.setCouponId(existingCouponId);
+        usage.setMemberId(memberId);
+        usage.setOrderId(orderId);
+        usage.setAction(1);
+
+        when(tradeOrderService.findById(orderId)).thenReturn(pendingOrder(orderId, memberId, "100.00"));
+        when(usageMapper.selectOne(any())).thenReturn(usage);
+
+        // 不应继续查询或修改会员优惠券，直接返回叠加不支持的业务错误。
+        assertThrows(BusinessException.class,
+                () -> service.redeem(memberId, new MarketingCouponRedeemRequest(requestedCouponId, orderId)));
+        verify(memberCouponMapper, never()).selectOne(any());
+        verify(tradeOrderService, never()).applyCouponDiscount(any(), any());
     }
 
     /**

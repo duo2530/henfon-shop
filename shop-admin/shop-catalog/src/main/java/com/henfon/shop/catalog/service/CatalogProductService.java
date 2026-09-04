@@ -134,6 +134,124 @@ public class CatalogProductService {
     }
 
     /**
+     * 复制商品及其 SKU，生成草稿商品供后台二次编辑。
+     *
+     * @param id 原商品ID
+     * @return 新商品ID
+     * @author Henfon
+     * @date 2026-09-04
+     */
+    @Transactional
+    public Long copy(Long id) {
+        CatalogProduct source = catalogProductMapper.selectById(id);
+        if (source == null) {
+            throw new BusinessException("CATALOG_PRODUCT_NOT_FOUND", "商品不存在");
+        }
+        // 复制商品时重置销售状态和销量，避免草稿直接影响线上数据。
+        CatalogProduct target = new CatalogProduct();
+        target.setCategoryId(source.getCategoryId());
+        target.setCategoryName(source.getCategoryName());
+        target.setProductName(source.getProductName() + "-副本");
+        target.setProductCode(nextProductCode(source.getProductCode()));
+        target.setBrandName(source.getBrandName());
+        target.setShortDescription(source.getShortDescription());
+        target.setDescription(source.getDescription());
+        target.setPrice(source.getPrice());
+        target.setMarketPrice(source.getMarketPrice());
+        target.setCostPrice(source.getCostPrice());
+        target.setWeightGram(source.getWeightGram());
+        target.setCurrentStock(0);
+        target.setSafetyStock(source.getSafetyStock());
+        target.setSalesCount(0L);
+        target.setMainImageUrl(source.getMainImageUrl());
+        target.setTagsCsv(source.getTagsCsv());
+        target.setStatus(0);
+        target.setRemark(source.getRemark());
+        catalogProductMapper.insert(target);
+
+        // SKU 编码必须全局唯一，复制时统一追加副本后缀。
+        List<CatalogSku> sourceSkus = catalogSkuMapper.selectList(new LambdaQueryWrapper<CatalogSku>()
+                .eq(CatalogSku::getProductId, id).orderByAsc(CatalogSku::getId));
+        for (CatalogSku sourceSku : sourceSkus) {
+            CatalogSku targetSku = new CatalogSku();
+            targetSku.setProductId(target.getId());
+            targetSku.setSkuCode(nextSkuCode(sourceSku.getSkuCode()));
+            targetSku.setSkuName(sourceSku.getSkuName());
+            targetSku.setAttributesJson(sourceSku.getAttributesJson());
+            targetSku.setPrice(sourceSku.getPrice());
+            targetSku.setMarketPrice(sourceSku.getMarketPrice());
+            targetSku.setCostPrice(sourceSku.getCostPrice());
+            targetSku.setStock(sourceSku.getStock());
+            targetSku.setSafetyStock(sourceSku.getSafetyStock());
+            targetSku.setStatus(sourceSku.getStatus());
+            targetSku.setRemark(sourceSku.getRemark());
+            catalogSkuMapper.insert(targetSku);
+            if (target.getDefaultSkuCode() == null && sourceSku.getSkuCode().equals(source.getDefaultSkuCode())) {
+                target.setDefaultSkuCode(targetSku.getSkuCode());
+            }
+        }
+        // 无默认 SKU 时保持空值；有 SKU 时使用复制后的默认编码。
+        catalogProductMapper.updateById(target);
+        return target.getId();
+    }
+
+    /**
+     * 生成不重复的商品编码。
+     *
+     * @param sourceCode 原商品编码
+     * @return 新商品编码
+     * @author Henfon
+     * @date 2026-09-04
+     */
+    private String nextProductCode(String sourceCode) {
+        String base = withCopySuffix(sourceCode);
+        String candidate = base;
+        int index = 1;
+        while (catalogProductMapper.selectOne(new LambdaQueryWrapper<CatalogProduct>()
+                .eq(CatalogProduct::getProductCode, candidate)) != null) {
+            candidate = base + index++;
+        }
+        return candidate;
+    }
+
+    /**
+     * 生成不重复的 SKU 编码。
+     *
+     * @param sourceCode 原 SKU 编码
+     * @return 新 SKU 编码
+     * @author Henfon
+     * @date 2026-09-04
+     */
+    private String nextSkuCode(String sourceCode) {
+        String base = withCopySuffix(sourceCode);
+        String candidate = base;
+        int index = 1;
+        while (catalogSkuMapper.selectOne(new LambdaQueryWrapper<CatalogSku>()
+                .eq(CatalogSku::getSkuCode, candidate)) != null) {
+            candidate = base + index++;
+        }
+        return candidate;
+    }
+
+    /**
+     * 追加副本后缀并限制编码长度，避免超出数据库字段上限。
+     *
+     * @param sourceCode 原编码
+     * @return 带副本后缀的编码
+     * @author Henfon
+     * @date 2026-09-04
+     */
+    private String withCopySuffix(String sourceCode) {
+        String suffix = "-COPY";
+        String normalized = sourceCode == null ? "PRODUCT" : sourceCode.trim();
+        int maxPrefixLength = Math.max(1, 64 - suffix.length());
+        if (normalized.length() > maxPrefixLength) {
+            normalized = normalized.substring(0, maxPrefixLength);
+        }
+        return normalized + suffix;
+    }
+
+    /**
      * 修改商品状态并校验上下架条件。
      *
      * @param id 商品ID
