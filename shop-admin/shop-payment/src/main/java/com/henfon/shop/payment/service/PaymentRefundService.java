@@ -240,6 +240,7 @@ public class PaymentRefundService {
         if (refundOrder == null) {
             throw new BusinessException("PAYMENT_REFUND_NOT_FOUND", "退款单不存在");
         }
+        validateNotifyAmount(refundOrder, request.amount());
         if (refundOrder.getStatus() == REFUND_SUCCEEDED || refundOrder.getStatus() == REFUND_FAILED) {
             if (StringUtils.hasText(refundOrder.getTransactionNo())
                     && !refundOrder.getTransactionNo().equals(request.transactionNo().trim())) {
@@ -318,6 +319,24 @@ public class PaymentRefundService {
         if (request == null || !StringUtils.hasText(request.refundNo())
                 || !StringUtils.hasText(request.transactionNo()) || request.success() == null) {
             throw new BusinessException("PAYMENT_REFUND_NOTIFY_INVALID", "退款回调参数不完整");
+        }
+    }
+
+    /**
+     * 校验渠道退款金额与本地退款单金额一致，防止错误金额入账。
+     *
+     * @param refundOrder 本地退款单
+     * @param callbackAmount 渠道回调退款金额（人民币），历史联调请求可为空
+     * @author Henfon
+     * @date 2026-09-04
+     */
+    private void validateNotifyAmount(PaymentRefundOrder refundOrder, BigDecimal callbackAmount) {
+        if (callbackAmount == null) {
+            return;
+        }
+        if (callbackAmount.signum() <= 0 || refundOrder.getAmount() == null
+                || callbackAmount.compareTo(refundOrder.getAmount()) != 0) {
+            throw new BusinessException("PAYMENT_REFUND_AMOUNT_MISMATCH", "退款回调金额与退款单金额不一致");
         }
     }
 
