@@ -1,6 +1,7 @@
 package com.henfon.shop.integration.logistics;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -12,6 +13,7 @@ import java.util.List;
  * @date 2026-09-04
  */
 @ConfigurationProperties(prefix = "shop.integration.logistics.routing")
+@Component
 public class LogisticsProviderRoutingProperties {
     private List<String> providers = new ArrayList<>(List.of("kuaidi100"));
     private int failureThreshold = 3;

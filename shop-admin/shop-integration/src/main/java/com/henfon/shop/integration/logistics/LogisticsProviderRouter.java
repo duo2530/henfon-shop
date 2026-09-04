@@ -1,5 +1,6 @@
 package com.henfon.shop.integration.logistics;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Component;
 
@@ -24,6 +25,7 @@ public class LogisticsProviderRouter implements LogisticsProvider {
     private final Clock clock;
 
     /** 创建物流服务商路由器。 @param properties 路由配置 @param kuaidi100 快递100服务商 @author Henfon @date 2026-09-04 */
+    @Autowired
     public LogisticsProviderRouter(LogisticsProviderRoutingProperties properties,
                                    Kuaidi100LogisticsProvider kuaidi100) {
         this(properties, kuaidi100, Clock.systemUTC());
