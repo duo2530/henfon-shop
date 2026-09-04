@@ -15,8 +15,12 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
 
 /**
  * 财务对账查询服务，基于支付单和退款单事实记录生成统一流水视图。
@@ -70,6 +74,7 @@ public class PaymentReconciliationService {
         long safeSize = Math.min(Math.max(size, 1), 200);
         String normalizedKeyword = StringUtils.hasText(keyword) ? keyword.trim().toLowerCase(Locale.ROOT) : null;
         List<PaymentReconciliationRecord> records = new ArrayList<>();
+        Map<String, PaymentOrder> paymentByNo = new HashMap<>();
 
         // 支付单成功或待处理状态都保留在对账视图中，便于财务追踪在途资金。
         LambdaQueryWrapper<PaymentOrder> paymentQuery = new LambdaQueryWrapper<PaymentOrder>()
@@ -77,6 +82,10 @@ public class PaymentReconciliationService {
                 .orderByDesc(PaymentOrder::getPaidAt)
                 .orderByDesc(PaymentOrder::getCreatedAt);
         for (PaymentOrder payment : paymentOrderMapper.selectList(paymentQuery)) {
+            if (StringUtils.hasText(payment.getPaymentNo())) {
+                // 使用支付单号建立索引，供退款流水做资金事实关联校验。
+                paymentByNo.put(payment.getPaymentNo(), payment);
+            }
             PaymentReconciliationRecord record = toPaymentRecord(payment);
             if (matches(record, normalizedKeyword, type, status)) {
                 records.add(record);
@@ -88,8 +97,24 @@ public class PaymentReconciliationService {
                 .in(PaymentRefundOrder::getStatus, List.of(REFUND_PENDING, REFUND_PROCESSING, REFUND_SUCCEEDED, REFUND_FAILED))
                 .orderByDesc(PaymentRefundOrder::getRefundedAt)
                 .orderByDesc(PaymentRefundOrder::getRequestedAt);
-        for (PaymentRefundOrder refund : refundOrderMapper.selectList(refundQuery)) {
-            PaymentReconciliationRecord record = toRefundRecord(refund);
+        List<PaymentRefundOrder> refunds = refundOrderMapper.selectList(refundQuery);
+        Map<String, BigDecimal> successfulRefundTotals = new HashMap<>();
+        for (PaymentRefundOrder refund : refunds) {
+            if (refund.getStatus() != null && refund.getStatus() == REFUND_SUCCEEDED
+                    && StringUtils.hasText(refund.getPaymentNo())) {
+                // 先汇总同一支付单的成功退款，校验多次部分退款是否超出实付金额。
+                successfulRefundTotals.merge(refund.getPaymentNo(), safeAmount(refund.getAmount()), BigDecimal::add);
+            }
+        }
+        Set<String> overRefundPaymentNos = new HashSet<>();
+        successfulRefundTotals.forEach((paymentNo, total) -> {
+            PaymentOrder payment = paymentByNo.get(paymentNo);
+            if (payment != null && total.compareTo(safeAmount(payment.getAmount())) > 0) {
+                overRefundPaymentNos.add(paymentNo);
+            }
+        });
+        for (PaymentRefundOrder refund : refunds) {
+            PaymentReconciliationRecord record = toRefundRecord(refund, paymentByNo, overRefundPaymentNos);
             if (matches(record, normalizedKeyword, type, status)) {
                 records.add(record);
             }
@@ -132,10 +157,17 @@ public class PaymentReconciliationService {
      * @author Henfon
      * @date 2026-09-01
      */
-    private PaymentReconciliationRecord toRefundRecord(PaymentRefundOrder refund) {
+    private PaymentReconciliationRecord toRefundRecord(PaymentRefundOrder refund,
+                                                       Map<String, PaymentOrder> paymentByNo,
+                                                       Set<String> overRefundPaymentNos) {
         String status;
         if (refund.getStatus() != null && refund.getStatus() == REFUND_SUCCEEDED) {
-            status = "reconciled";
+            PaymentOrder payment = StringUtils.hasText(refund.getPaymentNo())
+                    ? paymentByNo.get(refund.getPaymentNo()) : null;
+            // 退款成功必须能关联到成功支付单，否则属于渠道回调孤儿流水，需要人工核查。
+            status = payment != null && PAYMENT_SUCCEEDED == payment.getStatus()
+                    && !overRefundPaymentNos.contains(refund.getPaymentNo())
+                    ? "reconciled" : "discrepancy";
         } else if (refund.getStatus() != null
                 && (refund.getStatus() == REFUND_PENDING || refund.getStatus() == REFUND_PROCESSING)) {
             status = "pending_settle";

@@ -63,4 +63,30 @@ class PaymentReconciliationServiceTest {
         assertEquals(new BigDecimal("-20.00"), page.getRecords().get(0).amount());
         assertEquals("order_income", page.getRecords().get(1).type());
     }
+
+    /**
+     * 验证退款成功但缺少对应成功支付单时标记为差异，避免孤儿退款被误判为平账。
+     *
+     * @author Henfon
+     * @date 2026-09-04
+     */
+    @Test
+    void shouldMarkOrphanSuccessfulRefundAsDiscrepancy() {
+        PaymentRefundOrder refund = new PaymentRefundOrder();
+        refund.setId(3L);
+        refund.setRefundNo("REF-ORPHAN");
+        refund.setPaymentNo("PAY-MISSING");
+        refund.setOrderNo("ORD-ORPHAN");
+        refund.setStatus(2);
+        refund.setAmount(new BigDecimal("12.00"));
+        refund.setRefundedAt(LocalDateTime.now());
+        when(paymentOrderMapper.selectList(any(Wrapper.class))).thenReturn(List.of());
+        when(refundOrderMapper.selectList(any(Wrapper.class))).thenReturn(List.of(refund));
+
+        var page = service.page(null, "refund_payout", null, 1, 20);
+
+        // 渠道已退款但本地支付事实缺失，必须进入差异队列供人工核查。
+        assertEquals(1, page.getTotal());
+        assertEquals("discrepancy", page.getRecords().get(0).status());
+    }
 }
