@@ -2189,7 +2189,7 @@ export default function App() {
                 if (product) {
                   openProduct(product);
                 } else {
-                  showToast('该 Banner 关联的商品暂不可用', 'warning');
+                  showToast('该 Banner 关联的商品暂不可用', 'info');
                 }
                 return;
               }
@@ -2201,7 +2201,7 @@ export default function App() {
                   setProductPage(1);
                   return;
                 }
-                showToast('该 Banner 关联的类目暂不可用', 'warning');
+                showToast('该 Banner 关联的类目暂不可用', 'info');
                 return;
               }
               if (linkType === 'COUPON') {
@@ -2220,7 +2220,7 @@ export default function App() {
                 return;
               }
               if (linkType !== 'NONE') {
-                showToast('Banner 跳转目标无效', 'warning');
+                showToast('Banner 跳转目标无效', 'info');
               }
             }}
           />
