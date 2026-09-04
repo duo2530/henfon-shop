@@ -9,6 +9,7 @@ import com.henfon.shop.reporting.dto.ReportingProductRankingRow;
 import com.henfon.shop.reporting.dto.ReportingMemberAnalysisResponse;
 import com.henfon.shop.reporting.dto.ReportingMemberLevelStat;
 import com.henfon.shop.reporting.dto.ReportingMemberLevelStatRow;
+import com.henfon.shop.reporting.dto.ReportingChannelStat;
 import com.henfon.shop.reporting.mapper.ReportingMetricsMapper;
 import org.springframework.stereotype.Service;
 
@@ -204,6 +205,34 @@ public class ReportingDashboardService {
                 valueOrZero(totalMemberCount), valueOrZero(newMemberCount), activeMemberCount,
                 repeatPurchaseMemberCount, repurchaseRate, paidOrderCount, paidAmount,
                 averageOrderAmount, levelStats);
+    }
+
+    /**
+     * 查询指定日期范围内的支付渠道统计。
+     *
+     * @param startDate 开始日期，为空时默认结束日期前29天
+     * @param endDate 结束日期，为空时默认当天
+     * @return 支付渠道统计列表
+     * @author Henfon
+     * @date 2026-09-04
+     */
+    public List<ReportingChannelStat> queryChannelStats(LocalDate startDate, LocalDate endDate) {
+        DateRange range = resolveRange(startDate, endDate);
+        List<ReportingChannelStat> rows = reportingMetricsMapper.listChannelStats(
+                range.startTime(), range.endTime());
+        if (rows == null || rows.isEmpty()) {
+            return List.of();
+        }
+        // 清理历史脏数据中的空渠道，避免接口返回不可识别的统计分组。
+        List<ReportingChannelStat> result = new ArrayList<>();
+        for (ReportingChannelStat row : rows) {
+            if (row == null || row.channel() == null || row.channel().isBlank()) {
+                continue;
+            }
+            result.add(new ReportingChannelStat(row.channel().trim().toUpperCase(Locale.ROOT),
+                    Math.max(0L, row.paymentOrderCount()), amountOrZero(row.paidAmount())));
+        }
+        return result;
     }
 
     /**

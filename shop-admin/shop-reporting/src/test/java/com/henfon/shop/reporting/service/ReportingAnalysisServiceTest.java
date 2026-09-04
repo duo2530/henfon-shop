@@ -5,6 +5,7 @@ import com.henfon.shop.reporting.dto.ReportingMemberAnalysisResponse;
 import com.henfon.shop.reporting.dto.ReportingMemberLevelStatRow;
 import com.henfon.shop.reporting.dto.ReportingProductRankingItem;
 import com.henfon.shop.reporting.dto.ReportingProductRankingRow;
+import com.henfon.shop.reporting.dto.ReportingChannelStat;
 import com.henfon.shop.reporting.mapper.ReportingMetricsMapper;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -127,5 +128,29 @@ class ReportingAnalysisServiceTest {
                 () -> service.export("UNKNOWN", LocalDate.now(), LocalDate.now(), 20));
 
         assertEquals("REPORTING_TYPE_INVALID", exception.getCode());
+    }
+
+    /**
+     * 校验支付渠道统计会规范化渠道编码并过滤空渠道。
+     *
+     * @author Henfon
+     * @date 2026-09-04
+     */
+    @Test
+    void shouldNormalizeChannelStats() {
+        ReportingDashboardService service = new ReportingDashboardService(reportingMetricsMapper);
+        LocalDate end = LocalDate.now();
+        LocalDate start = end;
+        ReportingChannelStat valid = new ReportingChannelStat(" wechat_native ", 3L,
+                new BigDecimal("12.50"));
+        ReportingChannelStat blank = new ReportingChannelStat(" ", 9L, new BigDecimal("99.00"));
+        when(reportingMetricsMapper.listChannelStats(start.atStartOfDay(), end.plusDays(1).atStartOfDay()))
+                .thenReturn(List.of(valid, blank));
+
+        List<ReportingChannelStat> result = service.queryChannelStats(start, end);
+
+        assertEquals(1, result.size());
+        assertEquals("WECHAT_NATIVE", result.get(0).channel());
+        assertEquals(new BigDecimal("12.50"), result.get(0).paidAmount());
     }
 }

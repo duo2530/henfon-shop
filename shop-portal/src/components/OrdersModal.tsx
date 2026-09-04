@@ -14,6 +14,7 @@ interface OrdersModalProps {
   afterSales?: PortalAfterSaleRecord[];
   afterSalesLoading?: boolean;
   afterSalesError?: string | null;
+  onRetryAfterSales?: () => Promise<void> | void;
   onApplyAfterSale?: (order: Order, payload: PortalAfterSaleCreatePayload) => Promise<void> | void;
   onCancelAfterSale?: (afterSale: PortalAfterSaleRecord) => Promise<void> | void;
   onApplyInvoice?: (order: Order) => Promise<void> | void;
@@ -30,6 +31,7 @@ export const OrdersModal: React.FC<OrdersModalProps> = ({
   afterSales = [],
   afterSalesLoading = false,
   afterSalesError,
+  onRetryAfterSales,
   onApplyAfterSale,
   onCancelAfterSale,
   onApplyInvoice,
@@ -390,7 +392,19 @@ export const OrdersModal: React.FC<OrdersModalProps> = ({
                             <p className="text-[11px] text-zinc-400">售后记录加载中…</p>
                           )}
                           {afterSalesError && (
-                            <p className="text-[11px] text-rose-600">{afterSalesError}</p>
+                            <div className="flex items-center justify-between gap-3 rounded-lg bg-rose-50 px-2.5 py-2">
+                              <p className="text-[11px] text-rose-600">{afterSalesError}</p>
+                              {onRetryAfterSales && (
+                                <button
+                                  type="button"
+                                  onClick={() => void onRetryAfterSales()}
+                                  disabled={afterSalesLoading}
+                                  className="shrink-0 rounded-md border border-rose-200 bg-white px-2 py-1 text-[10px] font-semibold text-rose-700 hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50"
+                                >
+                                  {afterSalesLoading ? '加载中…' : '重新加载'}
+                                </button>
+                              )}
+                            </div>
                           )}
                           {orderAfterSales.map((afterSale) => (
                             <div key={afterSale.id} className="rounded-xl bg-amber-50/60 border border-amber-200/80 p-2.5 text-[11px] text-zinc-600 space-y-1.5">

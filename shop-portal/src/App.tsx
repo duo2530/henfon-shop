@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { Navbar } from './components/Navbar';
 import { HeroBanner } from './components/HeroBanner';
 import { ProductCard } from './components/ProductCard';
@@ -343,6 +343,7 @@ export default function App() {
   const [afterSales, setAfterSales] = useState<PortalAfterSaleRecord[]>([]);
   const [afterSalesLoading, setAfterSalesLoading] = useState(false);
   const [afterSalesError, setAfterSalesError] = useState<string | null>(null);
+  const afterSalesRequestSeq = useRef(0);
   const [paymentPolling, setPaymentPolling] = useState<PaymentPollingTask | null>(null);
   const [showPaymentPage, setShowPaymentPage] = useState(false);
   const [flashSales, setFlashSales] = useState<PortalFlashSaleRecord[]>([]);
@@ -777,8 +778,9 @@ export default function App() {
     };
   }, [paymentPolling]);
 
-  // 登录会员切换后独立加载售后记录，避免售后接口异常影响订单列表展示。
-  useEffect(() => {
+  /** 加载当前会员售后记录，支持订单弹窗错误态主动重试。 */
+  const loadAfterSales = useCallback(async () => {
+    const requestSeq = ++afterSalesRequestSeq.current;
     const memberId = resolveMemberId(currentUser);
     setAfterSales([]);
     setAfterSalesError(null);
@@ -786,25 +788,24 @@ export default function App() {
       setAfterSalesLoading(false);
       return;
     }
-    let active = true;
     setAfterSalesLoading(true);
-    fetchPortalAfterSales(memberId)
-      .then((records) => {
-        if (active) setAfterSales(records || []);
-      })
-      .catch((error) => {
-        if (active) {
-          console.warn('售后记录加载失败', error);
-          setAfterSalesError(error instanceof Error ? error.message : '售后记录加载失败，请稍后重试');
-        }
-      })
-      .finally(() => {
-        if (active) setAfterSalesLoading(false);
-      });
-    return () => {
-      active = false;
-    };
+    try {
+      const records = await fetchPortalAfterSales(memberId);
+      if (requestSeq !== afterSalesRequestSeq.current) return;
+      setAfterSales(records || []);
+    } catch (error) {
+      if (requestSeq !== afterSalesRequestSeq.current) return;
+      console.warn('售后记录加载失败', error);
+      setAfterSalesError(error instanceof Error ? error.message : '售后记录加载失败，请稍后重试');
+    } finally {
+      if (requestSeq === afterSalesRequestSeq.current) setAfterSalesLoading(false);
+    }
   }, [currentUser]);
+
+  // 登录会员切换后独立加载售后记录，避免售后接口异常影响订单列表展示。
+  useEffect(() => {
+    void loadAfterSales();
+  }, [loadAfterSales]);
 
   // Modals & Drawers
   const [quickViewProduct, setQuickViewProduct] = useState<Product | null>(null);
@@ -2556,6 +2557,7 @@ export default function App() {
         afterSales={afterSales}
         afterSalesLoading={afterSalesLoading}
         afterSalesError={afterSalesError}
+        onRetryAfterSales={loadAfterSales}
         onApplyAfterSale={handleApplyAfterSale}
         onCancelAfterSale={handleCancelAfterSale}
         onApplyInvoice={handleApplyInvoice}

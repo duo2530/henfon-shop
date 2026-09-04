@@ -7,6 +7,7 @@ import com.henfon.shop.common.exception.BusinessException;
 import com.henfon.shop.content.dto.ContentReviewReplyRequest;
 import com.henfon.shop.content.entity.ContentReview;
 import com.henfon.shop.content.mapper.ContentReviewMapper;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -26,6 +27,7 @@ public class ContentReviewAdminService {
     private static final int VISIBLE = 1;
 
     private final ContentReviewMapper reviewMapper;
+    private final ContentNotificationService notificationService;
 
     /**
      * 创建评价后台审核服务。
@@ -35,7 +37,21 @@ public class ContentReviewAdminService {
      * @date 2026-08-30
      */
     public ContentReviewAdminService(ContentReviewMapper reviewMapper) {
+        this(reviewMapper, null);
+    }
+
+    /**
+     * 创建带会员通知能力的评价审核服务。
+     *
+     * @param reviewMapper 评价数据访问对象
+     * @param notificationService 会员通知服务
+     * @author Henfon
+     * @date 2026-09-04
+     */
+    @Autowired
+    public ContentReviewAdminService(ContentReviewMapper reviewMapper, ContentNotificationService notificationService) {
         this.reviewMapper = reviewMapper;
+        this.notificationService = notificationService;
     }
 
     /**
@@ -78,6 +94,7 @@ public class ContentReviewAdminService {
             throw new BusinessException("CONTENT_REVIEW_STATUS_INVALID", "评价状态必须为0或1");
         }
         ContentReview review = getRequired(id);
+        Integer previousStatus = review.getStatus();
         review.setStatus(status);
         if (status == VISIBLE) {
             // 审核通过时记录审核时间，门户只展示状态为1的评价。
@@ -85,6 +102,18 @@ public class ContentReviewAdminService {
         }
         if (reviewMapper.updateById(review) == 0) {
             throw new BusinessException("CONTENT_REVIEW_CONCURRENT_UPDATE", "评价已被其他操作修改，请刷新后重试");
+        }
+        // 只有状态真正变化时发送审核结果通知，重复点击由通知幂等键兜底。
+        if (!Integer.valueOf(status).equals(previousStatus) && notificationService != null
+                && review.getMemberId() != null) {
+            String eventType = status == VISIBLE ? "REVIEW_APPROVED" : "REVIEW_HIDDEN";
+            String title = status == VISIBLE ? "评价审核通过" : "评价已隐藏";
+            String content = status == VISIBLE
+                    ? "您提交的商品评价已审核通过，感谢您的分享。"
+                    : "您提交的商品评价未通过审核，暂不对外展示。";
+            notificationService.saveEvent(new com.henfon.shop.content.dto.NotificationEventRequest(
+                    review.getMemberId(), null, String.valueOf(review.getId()), eventType,
+                    title, content, eventType + ":" + review.getId()));
         }
     }
 

@@ -5,6 +5,7 @@ import com.henfon.shop.reporting.dto.ReportingDashboardMetricsResponse;
 import com.henfon.shop.reporting.dto.ReportingSalesTrendPoint;
 import com.henfon.shop.reporting.dto.ReportingProductRankingItem;
 import com.henfon.shop.reporting.dto.ReportingMemberAnalysisResponse;
+import com.henfon.shop.reporting.dto.ReportingChannelStat;
 import com.henfon.shop.reporting.service.ReportingDashboardService;
 import jakarta.validation.constraints.PastOrPresent;
 import org.slf4j.MDC;
@@ -130,6 +131,29 @@ public class ReportingAdminController {
             @PastOrPresent(message = "会员分析结束日期不能晚于今天")
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate) {
         return ApiResponse.success(reportingDashboardService.queryMemberAnalysis(startDate, endDate),
+                MDC.get("requestId"));
+    }
+
+    /**
+     * 查询支付渠道统计。
+     *
+     * @param startDate 开始日期，默认结束日期前29天
+     * @param endDate 结束日期，默认当天
+     * @return 支付渠道统计列表
+     * @author Henfon
+     * @date 2026-09-04
+     */
+    @GetMapping({"/channel-stats", "/payments/channel-stats"})
+    @PreAuthorize("hasAuthority('reporting:overview:query')")
+    public ApiResponse<List<ReportingChannelStat>> channelStats(
+            @RequestParam(required = false)
+            @PastOrPresent(message = "渠道统计开始日期不能晚于今天")
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
+            @RequestParam(required = false)
+            @PastOrPresent(message = "渠道统计结束日期不能晚于今天")
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate) {
+        // 日期范围及最大窗口由服务层统一校验，保证各报表入口规则一致。
+        return ApiResponse.success(reportingDashboardService.queryChannelStats(startDate, endDate),
                 MDC.get("requestId"));
     }
 

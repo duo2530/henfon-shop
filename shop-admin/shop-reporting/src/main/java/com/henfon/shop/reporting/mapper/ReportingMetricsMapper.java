@@ -6,6 +6,7 @@ import org.apache.ibatis.annotations.Select;
 import com.henfon.shop.reporting.dto.ReportingSalesTrendRow;
 import com.henfon.shop.reporting.dto.ReportingProductRankingRow;
 import com.henfon.shop.reporting.dto.ReportingMemberLevelStatRow;
+import com.henfon.shop.reporting.dto.ReportingChannelStat;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -19,6 +20,30 @@ import java.util.List;
  */
 @Mapper
 public interface ReportingMetricsMapper {
+
+    /**
+     * 按支付渠道聚合成功支付统计。
+     *
+     * @param startTime 开始时间（包含）
+     * @param endTime 结束时间（不包含）
+     * @return 渠道统计原始结果
+     * @author Henfon
+     * @date 2026-09-04
+     */
+    @Select("""
+            SELECT UPPER(TRIM(channel)) AS channel,
+                   COUNT(*) AS payment_order_count,
+                   COALESCE(SUM(amount), 0.00) AS paid_amount
+            FROM payment_order
+            WHERE is_deleted = 0
+              AND status = 2
+              AND paid_at >= #{startTime}
+              AND paid_at < #{endTime}
+            GROUP BY UPPER(TRIM(channel))
+            ORDER BY paid_amount DESC, channel ASC
+            """)
+    List<ReportingChannelStat> listChannelStats(@Param("startTime") LocalDateTime startTime,
+                                                @Param("endTime") LocalDateTime endTime);
 
     /**
      * 按销售额聚合商品排行。
