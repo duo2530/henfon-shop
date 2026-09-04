@@ -354,6 +354,9 @@ export default function App() {
   // 首屏加载优惠券、Banner 和类目；商品列表由下方分页 effect 独立管理。
   useEffect(() => {
     let active = true;
+    const refreshFlashSales = () => fetchPortalFlashSales()
+      .then((records) => { if (active) setFlashSales(records); })
+      .catch((error) => console.warn('秒杀库存刷新失败，保留上次数据', error));
     Promise.allSettled([
       fetchPortalCoupons(),
       fetchPortalBanners(),
@@ -376,8 +379,11 @@ export default function App() {
         }
       })
       .catch((error) => console.warn('门户基础数据接口暂不可用，继续使用演示数据', error));
+    // 活动页库存和剩余限购会实时变化，定时刷新避免展示过期库存。
+    const timer = window.setInterval(refreshFlashSales, 30000);
     return () => {
       active = false;
+      window.clearInterval(timer);
     };
   }, []);
 
@@ -2067,8 +2073,13 @@ export default function App() {
           });
           if (!matchSku) return false;
         }
-        // Stock filter
-        if (onlyInStock && prod.stock <= 0) return false;
+        // 库存筛选：存在 SKU 时以 SKU 汇总库存为准，避免商品聚合库存与规格库存不一致。
+        if (onlyInStock) {
+          const availableStock = prod.skus?.length
+            ? prod.skus.reduce((total, sku) => total + Math.max(0, sku.stock), 0)
+            : prod.stock;
+          if (availableStock <= 0) return false;
+        }
         // Discount filter
         if (onlyDiscount && prod.price >= prod.originalPrice) return false;
         // Price filter
@@ -2791,6 +2802,7 @@ export default function App() {
         isOpen={isUserProfileModalOpen}
         user={currentUser}
         claimedCoupons={claimedCoupons}
+        orders={orders}
         onClose={() => setIsUserProfileModalOpen(false)}
         onUpdateUser={handleUpdateUser}
         onLogout={handleLogout}

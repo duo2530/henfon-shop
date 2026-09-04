@@ -50,6 +50,22 @@ function mapPortalReview(review: Awaited<ReturnType<typeof fetchPortalProductRev
   };
 }
 
+/**
+ * 清理商品富文本，仅保留安全的展示标签。
+ * @author Henfon
+ * @date 2026-09-04
+ * @description 移除脚本、事件属性和危险协议，避免后台富文本影响门户页面安全。
+ */
+export function sanitizeProductRichText(value: string): string {
+  if (!value) return '';
+  return value
+    .replace(/<\s*(script|style|iframe|object|embed)[^>]*>[\s\S]*?<\s*\/\s*\1\s*>/gi, '')
+    .replace(/<\/?(script|style|iframe|object|embed)[^>]*>/gi, '')
+    .replace(/<[^>]*\s+on[a-z-]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, '')
+    .replace(/javascript\s*:/gi, '')
+    .trim();
+}
+
 interface ProductQuickViewProps {
   product: Product | null;
   /** 详情接口加载状态。 */
@@ -1014,7 +1030,16 @@ const ProductQuickViewContent: React.FC<Omit<ProductQuickViewProps, 'product'> &
             {/* Tab: Details */}
             {activeTab === 'details' && (
               <div className="space-y-6 text-sm text-zinc-600 leading-relaxed">
-                <p>{product.description}</p>
+                {product.description?.trim() ? (
+                  <div
+                    className="prose prose-sm max-w-none text-zinc-600 [&_img]:max-w-full [&_img]:rounded-xl [&_p]:mb-3 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5"
+                    dangerouslySetInnerHTML={{ __html: sanitizeProductRichText(product.description) }}
+                  />
+                ) : (
+                  <div className="rounded-xl border border-dashed border-zinc-200 bg-zinc-50 px-4 py-5 text-center text-xs text-zinc-500">
+                    该商品暂未提供详细介绍，您可以查看规格参数或咨询在线客服。
+                  </div>
+                )}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {product.features.map((feat, idx) => (
                     <div key={idx} className="flex items-start gap-2.5 p-3 rounded-xl bg-zinc-50 border border-zinc-100">

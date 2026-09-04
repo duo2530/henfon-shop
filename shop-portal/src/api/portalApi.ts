@@ -44,6 +44,8 @@ interface CatalogProductRecord {
   salesCount?: number;
   mainImageUrl?: string;
   tagsCsv?: string;
+  /** 商品列表接口可选返回 SKU 摘要，用于门户端完整规格检索。 */
+  skus?: CatalogSkuRecord[];
 }
 
 interface CatalogSkuRecord {
@@ -256,7 +258,8 @@ function mapCategory(categoryName?: string): Product['category'] {
 function mapProduct(record: CatalogProductRecord): Product {
   const originalPrice = Number(record.marketPrice || record.price);
   const price = Number(record.price || 0);
-  return {
+  const mappedSkus = (record.skus || []).map(mapSku);
+  const product: Product = {
     id: `prod-${record.id}`,
     title: record.productName,
     subtitle: record.shortDescription || '',
@@ -277,6 +280,13 @@ function mapProduct(record: CatalogProductRecord): Product {
     isFreeShipping: true,
     deliveryEstimate: '预计 2-3 天送达',
   };
+  // 列表接口返回 SKU 时直接挂载，保证编码、条码和规格属性均可参与筛选。
+  if (mappedSkus.length > 0) {
+    product.skus = mappedSkus;
+    product.variants = buildSkuVariants(mappedSkus, product.price);
+    product.stock = mappedSkus.reduce((total, sku) => total + Math.max(0, sku.stock), 0);
+  }
+  return product;
 }
 
 function parseSkuAttributes(value?: string | Record<string, string | number>): Record<string, string> {
@@ -527,7 +537,7 @@ export async function fetchPortalProductDetail(productId: string): Promise<Produ
     features?: Array<{ featureText: string }>;
     specs?: Array<{ specName: string; specValue: string }>;
     skus?: CatalogSkuRecord[];
-    media?: Array<{ mediaUrl?: string; isCover?: number }>;
+    media?: Array<{ mediaUrl?: string; mediaType?: string; mediaTitle?: string; isCover?: number }>;
   }>(`/api/portal/catalog/products/${numericId}`);
   if (!detail?.product) return null;
   const product = mapProduct(detail.product);
@@ -543,8 +553,15 @@ export async function fetchPortalProductDetail(productId: string): Promise<Produ
   }
   product.features = (detail.features || []).map((item) => item.featureText);
   product.specs = Object.fromEntries((detail.specs || []).map((item) => [item.specName, item.specValue]));
-  const mediaUrls = (detail.media || []).map((item) => item.mediaUrl).filter((url): url is string => Boolean(url));
+  const mediaUrls = (detail.media || [])
+    .filter((item) => (item.mediaType || '').toLowerCase() !== 'video')
+    .map((item) => item.mediaUrl)
+    .filter((url): url is string => Boolean(url));
   product.images = Array.from(new Set([...mediaUrls, ...product.images]));
+  // 后端可能返回富文本 HTML，空值或异常内容统一回退为可读提示，避免详情区域出现空白。
+  if (!product.description.trim()) {
+    product.description = '该商品暂未提供详细介绍，您可以查看规格参数或咨询在线客服。';
+  }
   return product;
 }
 

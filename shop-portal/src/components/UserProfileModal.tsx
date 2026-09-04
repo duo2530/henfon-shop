@@ -18,12 +18,14 @@ import {
   Calendar,
   Layers,
 } from 'lucide-react';
-import { UserProfile, MemberLevel, Coupon } from '../types/ecommerce';
+import { UserProfile, MemberLevel, Coupon, Order } from '../types/ecommerce';
 
 interface UserProfileModalProps {
   isOpen: boolean;
   user: UserProfile | null;
   claimedCoupons?: Coupon[];
+  /** 当前会员订单快照，用于展示消费统计和快捷查看订单明细。 */
+  orders?: Order[];
   onClose: () => void;
   onUpdateUser: (updatedUser: UserProfile) => void;
   onLogout: () => void;
@@ -45,6 +47,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
   isOpen,
   user,
   claimedCoupons = [],
+  orders = [],
   onClose,
   onUpdateUser,
   onLogout,
@@ -97,6 +100,8 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
   };
 
   const levelInfo = getMemberLevelColor(user.memberLevel);
+  const paidOrders = orders.filter((order) => order.paymentState === 'succeeded' || order.status === 'paid' || order.status === 'processing' || order.status === 'shipped' || order.status === 'delivered');
+  const totalSpent = paidOrders.reduce((sum, order) => sum + Number(order.totalPaid || 0), 0);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-zinc-950/70 backdrop-blur-sm animate-in fade-in duration-200">
@@ -183,6 +188,16 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                 {claimedCoupons.length || user.couponsCount} 张
               </span>
             </button>
+          </div>
+          <div className="grid grid-cols-2 gap-2 mt-2 text-center">
+            <div className="rounded-xl bg-zinc-800/60 border border-zinc-700/60 px-2 py-2">
+              <span className="text-[10px] text-zinc-400 block">累计消费</span>
+              <span className="text-sm font-black text-emerald-300">¥{totalSpent.toFixed(2)}</span>
+            </div>
+            <div className="rounded-xl bg-zinc-800/60 border border-zinc-700/60 px-2 py-2">
+              <span className="text-[10px] text-zinc-400 block">已完成订单</span>
+              <span className="text-sm font-black text-sky-300">{paidOrders.length} 笔</span>
+            </div>
           </div>
         </div>
 
@@ -418,6 +433,23 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                     </div>
                   </div>
                 </button>
+              </div>
+
+              <div className="rounded-2xl border border-zinc-200 bg-white p-4">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-black text-zinc-900 flex items-center gap-1.5"><Layers className="w-4 h-4 text-sky-600" />最近订单明细</span>
+                  <button type="button" onClick={() => { onClose(); onOpenOrders(); }} className="text-[11px] font-bold text-sky-700 hover:text-sky-900">查看全部</button>
+                </div>
+                {orders.length === 0 ? <p className="text-xs text-zinc-400 py-2">暂无订单记录</p> : (
+                  <div className="space-y-2">
+                    {orders.slice(0, 3).map((order) => (
+                      <div key={order.id} className="flex items-center justify-between text-[11px] border-b border-zinc-100 pb-2 last:border-0 last:pb-0">
+                        <div className="min-w-0"><p className="font-semibold text-zinc-800 truncate">{order.orderNumber}</p><p className="text-zinc-400">{order.createdAt?.slice(0, 10) || '-'} · {order.items.length} 件</p></div>
+                        <span className="font-bold text-zinc-900">¥{Number(order.totalPaid || 0).toFixed(2)}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {/* Security & Account Details List */}

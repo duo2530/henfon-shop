@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { ProductCard } from '../src/components/ProductCard';
+import { sanitizeProductRichText } from '../src/components/ProductQuickView';
 import { HeroBanner } from '../src/components/HeroBanner';
 import { normalizeSmsPhone } from '../src/components/AuthModal';
 import type { Product } from '../src/types/ecommerce';
@@ -77,5 +78,10 @@ assert.match(remoteBannerMarkup, /立即查看/);
 assert.equal(normalizeSmsPhone('+86', ' 138-0013-8000 '), '+8613800138000');
 assert.equal(normalizeSmsPhone('+86', '123'), null);
 assert.equal(normalizeSmsPhone('+86', '1234567890123456'), null);
+
+// 商品富文本应移除脚本和危险协议，同时保留常规排版标签。
+const richText = sanitizeProductRichText('<p>安全介绍</p><script>alert(1)</script><a href="javascript:alert(1)" onclick="evil()">查看</a>');
+assert.match(richText, /<p>安全介绍<\/p>/);
+assert.doesNotMatch(richText, /script|onclick|javascript:/i);
 
 console.log('shop-portal 组件冒烟测试通过：商品卡片、库存禁购、Banner 跳转数据和键盘语义正常');

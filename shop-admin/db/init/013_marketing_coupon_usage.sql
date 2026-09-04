@@ -8,7 +8,7 @@ CREATE TABLE IF NOT EXISTS marketing_coupon_usage (
     member_id BIGINT UNSIGNED NOT NULL COMMENT '会员ID',
     order_id BIGINT UNSIGNED NOT NULL COMMENT '订单ID',
     discount_amount DECIMAL(18,2) NOT NULL DEFAULT 0.00 COMMENT '优惠金额',
-    action TINYINT UNSIGNED NOT NULL COMMENT '动作：1核销，2回滚',
+    action TINYINT UNSIGNED NOT NULL COMMENT '动作：1核销，2回滚，3部分退款分摊',
     created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) COMMENT '创建时间',
     PRIMARY KEY (id),
     UNIQUE KEY uk_marketing_coupon_usage_action (member_coupon_id, order_id, action),
