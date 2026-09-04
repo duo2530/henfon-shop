@@ -3,6 +3,7 @@ package com.henfon.shop.inventory.controller;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.henfon.shop.common.api.ApiResponse;
 import com.henfon.shop.inventory.dto.InventoryStocktakeCompleteRequest;
+import com.henfon.shop.inventory.dto.InventoryStocktakeCancelRequest;
 import com.henfon.shop.inventory.dto.InventoryStocktakeCreateRequest;
 import com.henfon.shop.inventory.dto.InventoryStocktakeImportRequest;
 import com.henfon.shop.inventory.entity.InventoryStocktake;
@@ -128,5 +129,21 @@ public class InventoryStocktakeAdminController {
     public ApiResponse<InventoryStocktake> complete(@PathVariable Long id,
                                                     @Valid @RequestBody InventoryStocktakeCompleteRequest request) {
         return ApiResponse.success(stocktakeService.complete(id, request), MDC.get("requestId"));
+    }
+
+    /**
+     * 取消进行中的库存盘点单。
+     *
+     * @param id 盘点单ID
+     * @param request 取消盘点请求
+     * @return 取消后的盘点单
+     * @author Henfon
+     * @date 2026-09-04
+     */
+    @PostMapping("/{id}/cancel")
+    @PreAuthorize("hasAuthority('inventory:stocktake:cancel')")
+    public ApiResponse<InventoryStocktake> cancel(@PathVariable Long id,
+                                                  @Valid @RequestBody InventoryStocktakeCancelRequest request) {
+        return ApiResponse.success(stocktakeService.cancel(id, request), MDC.get("requestId"));
     }
 }

@@ -53,7 +53,7 @@ class ContentBannerAdminServiceTest {
         assertEquals(0, notStarted.getStatus());
         assertEquals(0, expired.getStatus());
         assertEquals(1, active.getStatus());
-        verify(bannerMapper, times(2)).updateById(any(ContentBanner.class));
+        verify(bannerMapper, times(1)).updateById(any(ContentBanner.class));
     }
 
     /**

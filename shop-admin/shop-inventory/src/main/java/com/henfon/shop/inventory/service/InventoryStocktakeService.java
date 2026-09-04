@@ -267,6 +267,33 @@ public class InventoryStocktakeService {
     }
 
     /**
+     * 取消尚未完成的库存盘点单。
+     *
+     * @param id 盘点单ID
+     * @param request 取消盘点请求
+     * @return 取消后的盘点单
+     * @author Henfon
+     * @date 2026-09-04
+     */
+    @Transactional
+    public InventoryStocktake cancel(Long id, InventoryStocktakeCancelRequest request) {
+        InventoryStocktake stocktake = requireStocktake(id);
+        if (!Integer.valueOf(STATUS_OPEN).equals(stocktake.getStatus())) {
+            throw new BusinessException("INVENTORY_STOCKTAKE_STATUS_INVALID", "仅进行中的盘点单可以取消");
+        }
+        // 取消只变更盘点单状态，不改动库存台账，避免产生虚假的盘盈盘亏流水。
+        stocktake.setStatus(STATUS_CANCELLED);
+        stocktake.setCompletedAt(LocalDateTime.now());
+        if (request != null && StringUtils.hasText(request.remark())) {
+            stocktake.setRemark(request.remark().trim());
+        }
+        if (stocktakeMapper.updateById(stocktake) == 0) {
+            throw new BusinessException("INVENTORY_STOCKTAKE_CONCURRENT", "盘点单已被其他操作修改");
+        }
+        return stocktake;
+    }
+
+    /**
      * 查询盘点单，不存在时抛出业务异常。
      *
      * @param id 盘点单ID

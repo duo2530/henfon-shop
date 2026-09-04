@@ -343,7 +343,8 @@ public class IdentityDataInitializer implements ApplicationRunner {
                 {"库存盘点查询", "inventory:stocktake:query"},
                 {"库存盘点创建", "inventory:stocktake:create"},
                 {"库存盘点完成", "inventory:stocktake:complete"},
-                {"库存盘点导入", "inventory:stocktake:import"}
+                {"库存盘点导入", "inventory:stocktake:import"},
+                {"库存盘点取消", "inventory:stocktake:cancel"}
         };
         for (String[] button : stocktakeButtons) {
             SysMenu menu = ensureMenu(button[0], "BUTTON", button[1], null, 102);

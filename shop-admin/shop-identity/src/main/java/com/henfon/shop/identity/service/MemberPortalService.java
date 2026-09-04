@@ -18,6 +18,7 @@ import com.henfon.shop.identity.mapper.MemberUserMapper;
 import com.henfon.shop.identity.entity.MemberUser;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.dao.DuplicateKeyException;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -86,13 +87,20 @@ public class MemberPortalService {
             throw new BusinessException("MEMBER_NOT_FOUND", "会员不存在或已被冻结");
         }
         // 仅允许修改公开资料，账号、等级、积分和余额由服务端维护。
-        if (request.nickname() != null) member.setNickname(request.nickname().trim());
-        if (request.phone() != null) member.setPhone(request.phone().trim());
-        if (request.email() != null) member.setEmail(request.email().trim());
-        if (request.avatarUrl() != null) member.setAvatarUrl(request.avatarUrl().trim());
+        if (request.nickname() != null && !request.nickname().isBlank()) {
+            member.setNickname(request.nickname().trim());
+        }
+        if (request.phone() != null) member.setPhone(trimToNull(request.phone()));
+        if (request.email() != null) member.setEmail(trimToNull(request.email()));
+        if (request.avatarUrl() != null) member.setAvatarUrl(trimToNull(request.avatarUrl()));
         member.setUpdatedAt(LocalDateTime.now());
-        if (userMapper.updateById(member) == 0) {
-            throw new BusinessException("MEMBER_PROFILE_CONCURRENT_UPDATE", "会员资料已被其他操作修改，请刷新后重试");
+        try {
+            if (userMapper.updateById(member) == 0) {
+                throw new BusinessException("MEMBER_PROFILE_CONCURRENT_UPDATE", "会员资料已被其他操作修改，请刷新后重试");
+            }
+        } catch (DuplicateKeyException exception) {
+            // 手机号和邮箱由数据库唯一索引兜底，转换为稳定业务错误码供门户展示。
+            throw new BusinessException("MEMBER_CONTACT_EXISTS", "手机号或邮箱已被其他会员使用");
         }
         return member;
     }
@@ -274,6 +282,19 @@ public class MemberPortalService {
         if (addressMapper.updateById(candidate) == 0) {
             throw new BusinessException("MEMBER_ADDRESS_CONCURRENT_UPDATE", "默认地址已被其他操作修改，请刷新后重试");
         }
+    }
+
+    /**
+     * 清理会员资料中的可选文本字段。
+     *
+     * @param value 原始文本
+     * @return 去除首尾空白后的文本，空白内容返回 null
+     * @author Henfon
+     * @date 2026-09-04
+     */
+    private String trimToNull(String value) {
+        // 空白手机号、邮箱和头像统一转换为空值，避免数据库保存无意义字符串。
+        return value == null || value.isBlank() ? null : value.trim();
     }
 
     /**
