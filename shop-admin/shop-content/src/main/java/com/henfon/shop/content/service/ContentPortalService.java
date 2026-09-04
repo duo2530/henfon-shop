@@ -72,12 +72,18 @@ public class ContentPortalService {
      * @date 2026-08-29
      */
     public List<ContentReview> reviews(Long productId, int limit) {
+        if (productId == null) {
+            throw new BusinessException("CONTENT_REVIEW_PRODUCT_REQUIRED", "商品ID不能为空");
+        }
         int safeLimit = Math.min(Math.max(limit, 1), 100);
-        return reviewMapper.selectList(new LambdaQueryWrapper<ContentReview>()
+        // 门户评价必须绑定具体商品，避免空商品参数被 ORM 忽略后误查全量评价。
+        List<ContentReview> reviews = reviewMapper.selectList(new LambdaQueryWrapper<ContentReview>()
                 .eq(ContentReview::getProductId, productId)
                 .eq(ContentReview::getStatus, 1)
                 .orderByDesc(ContentReview::getReviewedAt)
                 .last("LIMIT " + safeLimit));
+        // 统一将数据访问层的 null 结果转换为空列表，简化控制器和调用方处理。
+        return reviews == null ? java.util.Collections.emptyList() : reviews;
     }
 
     /**

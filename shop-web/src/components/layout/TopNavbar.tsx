@@ -21,7 +21,7 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
   onOpenMobileMenu, 
   onOpenNotifications 
 }) => {
-  const { searchQuery, setSearchQuery, notifications, setCurrentTab, showToast, authorizedMenuItems, currentUser } = useAdmin();
+  const { searchQuery, setSearchQuery, notifications, setCurrentTab, showToast, authorizedMenuItems, currentUser, products, orders, users } = useAdmin();
   const [profileOpen, setProfileOpen] = useState(false);
   const [helpModalOpen, setHelpModalOpen] = useState(false);
   const [avatarLoadFailed, setAvatarLoadFailed] = useState(false);
@@ -32,6 +32,18 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
   const permissionLabel = currentUser?.permissions?.length ? `已授权 ${currentUser.permissions.length} 项` : '暂无权限';
   const avatarUrl = currentUser?.avatarUrl?.trim();
   const avatarInitial = displayName.slice(0, 1).toUpperCase();
+
+  const handleGlobalSearchKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (event.key !== 'Enter') return;
+    const keyword = searchQuery.trim().toLowerCase();
+    if (!keyword) return;
+    const productMatched = products.some((item) => item.name.toLowerCase().includes(keyword) || item.sku.toLowerCase().includes(keyword));
+    const orderMatched = orders.some((item) => item.orderNumber.toLowerCase().includes(keyword) || item.customerName.toLowerCase().includes(keyword) || item.customerPhone.includes(keyword));
+    const userMatched = users.some((item) => item.name.toLowerCase().includes(keyword) || item.phone.includes(keyword) || item.userCode.toLowerCase().includes(keyword) || item.email.toLowerCase().includes(keyword));
+    const target: 'products' | 'orders' | 'users' = productMatched ? 'products' : orderMatched ? 'orders' : userMatched ? 'users' : 'products';
+    setCurrentTab(target);
+    showToast(productMatched || orderMatched || userMatched ? '已定位到匹配的业务列表' : '未找到精确匹配，已打开商品列表供筛选', 'info');
+  };
 
   useEffect(() => {
     // 管理员切换头像后清理旧的失败状态，立即尝试加载新地址。
@@ -63,6 +75,7 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={handleGlobalSearchKeyDown}
               placeholder="搜索商品、订单编号、客户姓名..."
               className="w-full h-[36px] pl-9 pr-4 rounded-md bg-[#F1F5F9] border border-transparent focus:border-[#2563EB] focus:bg-white focus:ring-2 focus:ring-[#2563EB]/20 text-sm text-gray-800 placeholder-gray-400 transition-all outline-none"
             />

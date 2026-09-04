@@ -284,7 +284,7 @@ public class TradeAfterSaleService {
      */
     @Transactional
     public boolean markRefundSucceeded(Long orderId, BigDecimal refundAmount) {
-        TradeAfterSale afterSale = findProcessingRefundOnly(orderId, refundAmount);
+        TradeAfterSale afterSale = findProcessingRefundAfterSale(orderId, refundAmount);
         if (afterSale == null) {
             return false;
         }
@@ -312,7 +312,7 @@ public class TradeAfterSaleService {
      */
     @Transactional
     public boolean markRefundFailed(Long orderId, BigDecimal refundAmount) {
-        TradeAfterSale afterSale = findProcessingRefundOnly(orderId, refundAmount);
+        TradeAfterSale afterSale = findProcessingRefundAfterSale(orderId, refundAmount);
         if (afterSale == null) {
             return false;
         }
@@ -439,7 +439,7 @@ public class TradeAfterSaleService {
     }
 
     /**
-     * 查询与退款金额匹配的处理中仅退款售后单。
+     * 查询与退款金额匹配的处理中退款售后单。
      *
      * @param orderId 订单ID
      * @param refundAmount 退款金额
@@ -447,14 +447,15 @@ public class TradeAfterSaleService {
      * @author Henfon
      * @date 2026-08-31
      */
-    private TradeAfterSale findProcessingRefundOnly(Long orderId, BigDecimal refundAmount) {
+    private TradeAfterSale findProcessingRefundAfterSale(Long orderId, BigDecimal refundAmount) {
         if (orderId == null || refundAmount == null || refundAmount.signum() <= 0) {
             return null;
         }
         // 金额参与匹配，避免同一订单多明细售后时把回调错误归属到其他售后单。
+        // 仅退款和退货退款都会在资金退款成功后完成售后单，换货不创建退款单因此不参与匹配。
         return afterSaleMapper.selectOne(new LambdaQueryWrapper<TradeAfterSale>()
                 .eq(TradeAfterSale::getOrderId, orderId)
-                .eq(TradeAfterSale::getAfterSaleType, TYPE_REFUND_ONLY)
+                .in(TradeAfterSale::getAfterSaleType, TYPE_REFUND_ONLY, TYPE_RETURN_REFUND)
                 .eq(TradeAfterSale::getStatus, STATUS_PROCESSING)
                 .eq(TradeAfterSale::getRefundAmount, refundAmount)
                 .orderByAsc(TradeAfterSale::getCreatedAt)

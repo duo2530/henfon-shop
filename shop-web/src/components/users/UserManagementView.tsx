@@ -40,7 +40,8 @@ export const UserManagementView: React.FC = () => {
     batchUpdateUserStatus,
     adjustUserBalanceAndPoints,
     updateUserTags,
-    showToast 
+    showToast,
+    searchQuery
   } = useAdmin();
 
   // Search & Filters
@@ -103,11 +104,11 @@ export const UserManagementView: React.FC = () => {
   const filteredUsers = useMemo(() => {
     return users.filter((u) => {
       const matchesSearch =
-        searchTerm === '' ||
-        u.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        u.phone.includes(searchTerm) ||
-        u.userCode.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        u.email.toLowerCase().includes(searchTerm.toLowerCase());
+        (searchTerm === '' && searchQuery.trim() === '') ||
+        u.name.toLowerCase().includes((searchTerm || searchQuery).toLowerCase()) ||
+        u.phone.includes(searchTerm || searchQuery) ||
+        u.userCode.toLowerCase().includes((searchTerm || searchQuery).toLowerCase()) ||
+        u.email.toLowerCase().includes((searchTerm || searchQuery).toLowerCase());
 
       const matchesStatus =
         statusFilter === 'all' || u.status === statusFilter;
@@ -120,7 +121,7 @@ export const UserManagementView: React.FC = () => {
 
       return matchesSearch && matchesStatus && matchesTier && matchesTag;
     });
-  }, [users, searchTerm, statusFilter, tierFilter, tagFilter]);
+  }, [users, searchTerm, searchQuery, statusFilter, tierFilter, tagFilter]);
 
   // Paginated Users
   const totalEntries = filteredUsers.length;

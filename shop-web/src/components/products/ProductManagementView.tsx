@@ -79,7 +79,8 @@ export const ProductManagementView: React.FC = () => {
     adjustProductStock,
     showToast,
     confirm,
-    requirePermission
+    requirePermission,
+    searchQuery
   } = useAdmin();
 
   // 类目名称和ID由后端提供；接口暂不可用时保留本地选项，避免页面无法录入商品。
@@ -154,9 +155,9 @@ export const ProductManagementView: React.FC = () => {
     return products
       .filter((item) => {
         const matchesSearch =
-          searchTerm === '' ||
-          item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          item.sku.toLowerCase().includes(searchTerm.toLowerCase());
+          (searchTerm === '' && searchQuery.trim() === '') ||
+          item.name.toLowerCase().includes((searchTerm || searchQuery).toLowerCase()) ||
+          item.sku.toLowerCase().includes((searchTerm || searchQuery).toLowerCase());
         const matchesCategory =
           selectedCategory === 'all' || item.category === selectedCategory;
         const matchesStatus =
@@ -182,7 +183,7 @@ export const ProductManagementView: React.FC = () => {
           return valA < valB ? 1 : -1;
         }
       });
-  }, [products, searchTerm, selectedCategory, selectedStatus, stockFilter, tagFilter, sortBy, sortOrder]);
+  }, [products, searchTerm, searchQuery, selectedCategory, selectedStatus, stockFilter, tagFilter, sortBy, sortOrder]);
 
   // Paginated records
   const totalEntries = filteredProducts.length;

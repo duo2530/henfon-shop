@@ -44,7 +44,8 @@ export const OrderManagementView: React.FC = () => {
     confirm,
     prompt,
     products,
-    requirePermission
+    requirePermission,
+    searchQuery
   } = useAdmin();
 
   // Tab filter
@@ -108,16 +109,16 @@ export const OrderManagementView: React.FC = () => {
       else if (activeTab === 'refunded') matchesTab = order.status === 'refunded' || Boolean(order.refundStatus);
 
       const matchesSearch =
-        searchTerm === '' ||
-        order.orderNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        order.customerName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        order.customerPhone.includes(searchTerm);
+        (searchTerm === '' && searchQuery.trim() === '') ||
+        order.orderNumber.toLowerCase().includes((searchTerm || searchQuery).toLowerCase()) ||
+        order.customerName.toLowerCase().includes((searchTerm || searchQuery).toLowerCase()) ||
+        order.customerPhone.includes(searchTerm || searchQuery);
 
       const matchesFlag = flagFilter === 'all' || order.flagColor === flagFilter;
 
       return matchesTab && matchesSearch && matchesFlag;
     });
-  }, [orders, activeTab, searchTerm, flagFilter]);
+  }, [orders, activeTab, searchTerm, searchQuery, flagFilter]);
 
   // Tab dynamic counts
   const pendingPaymentCount = orders.filter((o) => o.status === 'pending_payment').length;
