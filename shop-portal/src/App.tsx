@@ -19,6 +19,7 @@ import { ToastContainer, ToastMessage } from './components/Toast';
 import { PRODUCTS, AVAILABLE_COUPONS } from './data/products';
 import {
   addPortalCartItem,
+  mergePortalCartItems,
   claimPortalCoupon,
   createPortalOrder,
   createPortalPayment,
@@ -512,19 +513,19 @@ export default function App() {
         const failedLocalItems: CartItem[] = [];
         if (shouldMergeLocalCart && localCartItems.length > 0) {
           // 逐项合并，单条失败不阻断其余商品同步，并保留失败条目供用户重试。
-          const mergeResults = await Promise.all(localCartItems.map(async (item) => {
-            const productId = Number(item.productId.replace(/^prod-/, ''));
-            if (!Number.isFinite(productId) || productId <= 0) return { item, success: false };
-            try {
-              await addPortalCartItem(memberId, productId, item.quantity, item.skuId);
-              return { item, success: true };
-            } catch (error) {
-              console.warn(`本地购物车商品 ${item.productId} 合并失败`, error);
-              return { item, success: false };
-            }
-          }));
-          failedLocalItems.push(...mergeResults.filter((result) => !result.success).map((result) => result.item));
-          if (mergeResults.some((result) => result.success)) {
+          const mergePayload = localCartItems.map((item) => ({
+            productId: Number(item.productId.replace(/^prod-/, '')),
+            skuId: item.skuId,
+            quantity: item.quantity,
+            selected: item.selected ? 1 : 0,
+          })).filter((item) => Number.isFinite(item.productId) && item.productId > 0);
+          try {
+            await mergePortalCartItems(memberId, mergePayload);
+          } catch (error) {
+            console.warn('本地购物车批量合并失败', error);
+            failedLocalItems.push(...localCartItems);
+          }
+          if (failedLocalItems.length < localCartItems.length) {
             try {
               // 合并成功后重新读取，获得服务端生成的条目 ID 和最新库存状态。
               remoteCart = await fetchPortalCart(memberId);

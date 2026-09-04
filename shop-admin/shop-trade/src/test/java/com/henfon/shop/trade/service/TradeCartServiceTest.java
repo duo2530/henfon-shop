@@ -4,6 +4,7 @@ import com.henfon.shop.catalog.entity.CatalogProduct;
 import com.henfon.shop.catalog.mapper.CatalogProductMapper;
 import com.henfon.shop.catalog.mapper.CatalogSkuMapper;
 import com.henfon.shop.trade.entity.TradeCartItem;
+import com.henfon.shop.trade.dto.TradeCartMergeItemRequest;
 import com.henfon.shop.trade.mapper.TradeCartItemMapper;
 import org.junit.jupiter.api.Test;
 
@@ -52,5 +53,33 @@ class TradeCartServiceTest {
 
         assertEquals(3, result.get(0).getQuantity());
         verify(cartMapper).updateById(org.mockito.ArgumentMatchers.any(TradeCartItem.class));
+    }
+
+    /**
+     * 合并本地购物车时合并同规格数量并限制在当前库存内。
+     *
+     * @author Henfon
+     * @date 2026-09-04
+     */
+    @Test
+    void shouldMergeLocalItemsAndCapQuantityByStock() {
+        CatalogProduct product = new CatalogProduct();
+        product.setId(20L);
+        product.setStatus(1);
+        product.setCurrentStock(5);
+        TradeCartItem existing = new TradeCartItem();
+        existing.setId(11L);
+        existing.setMemberId(99L);
+        existing.setProductId(20L);
+        existing.setQuantity(3);
+        when(productMapper.selectById(20L)).thenReturn(product);
+        when(cartMapper.selectOne(any())).thenReturn(existing);
+        when(cartMapper.updateById(any(TradeCartItem.class))).thenReturn(1);
+
+        int merged = service.merge(99L, List.of(new TradeCartMergeItemRequest(20L, null, 4, 1)));
+
+        assertEquals(1, merged);
+        assertEquals(5, existing.getQuantity());
+        verify(cartMapper).updateById(existing);
     }
 }

@@ -748,6 +748,14 @@ export async function addPortalCartItem(memberId: number, productId: number, qua
   });
 }
 
+/** 登录后一次性合并本地购物车，失效商品由服务端自动跳过。 */
+export async function mergePortalCartItems(memberId: number, items: Array<{ productId: number; skuId?: number; quantity: number; selected?: number }>): Promise<number> {
+  return request<number>('/api/portal/trade/cart/merge', {
+    method: 'POST',
+    body: JSON.stringify(items),
+  });
+}
+
 export async function deletePortalCartItem(id: number) {
   return request<void>(`/api/portal/trade/cart/items/${id}`, { method: 'DELETE' });
 }

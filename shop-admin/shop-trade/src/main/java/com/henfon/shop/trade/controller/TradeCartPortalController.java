@@ -3,6 +3,7 @@ package com.henfon.shop.trade.controller;
 import com.henfon.shop.common.api.ApiResponse;
 import com.henfon.shop.trade.dto.TradeCartItemRequest;
 import com.henfon.shop.trade.dto.TradeCartItemUpdateRequest;
+import com.henfon.shop.trade.dto.TradeCartMergeItemRequest;
 import com.henfon.shop.trade.entity.TradeCartItem;
 import com.henfon.shop.trade.service.TradeCartService;
 import com.henfon.shop.identity.security.MemberPrincipalResolver;
@@ -71,6 +72,22 @@ public class TradeCartPortalController {
         Long memberId = MemberPrincipalResolver.requireMemberId(authentication, null);
         // 返回清理数量，前端可据此提示用户并重新拉取购物车。
         return ApiResponse.success(service.cleanInvalid(memberId), MDC.get("requestId"));
+    }
+
+    /**
+     * 合并登录前本地购物车明细。
+     *
+     * @param requests 本地购物车明细
+     * @param authentication 当前认证信息
+     * @return 成功合并的明细数量
+     * @author Henfon
+     * @date 2026-09-04
+     */
+    @PostMapping("/merge")
+    public ApiResponse<Integer> merge(@Valid @RequestBody List<@Valid TradeCartMergeItemRequest> requests,
+                                      Authentication authentication) {
+        Long memberId = MemberPrincipalResolver.requireMemberId(authentication, null);
+        return ApiResponse.success(service.merge(memberId, requests), MDC.get("requestId"));
     }
 
     /**

@@ -19,10 +19,16 @@ import com.henfon.shop.common.exception.BusinessException;
 import com.henfon.shop.integration.storage.MinioStorageService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * 商品卖点、参数和媒体内容服务。
@@ -32,6 +38,8 @@ import java.util.Map;
  */
 @Service
 public class CatalogProductContentService {
+
+    private static final Logger log = LoggerFactory.getLogger(CatalogProductContentService.class);
 
     private final CatalogProductMapper productMapper;
     private final CatalogProductFeatureMapper featureMapper;
@@ -116,6 +124,18 @@ public class CatalogProductContentService {
         ensureProductExists(productId);
         validateMedia(productId, request.media());
 
+        // 先记录旧媒体对象键，保存成功后回收不再引用的历史对象，避免 MinIO 垃圾文件长期堆积。
+        List<CatalogProductMedia> previousMedia = mediaMapper.selectList(new LambdaQueryWrapper<CatalogProductMedia>()
+                .eq(CatalogProductMedia::getProductId, productId));
+        Set<String> previousObjectKeys = collectObjectKeys(previousMedia);
+        Set<String> retainedObjectKeys = new HashSet<>();
+        request.media().forEach(item -> {
+            String normalized = minioStorageService.normalizeReference(item.objectKey().trim());
+            if (normalized != null && !normalized.isBlank() && !normalized.startsWith("http")) {
+                retainedObjectKeys.add(normalized);
+            }
+        });
+
         // 使用逻辑删除后整体重建，保证前端拖拽排序和删除操作在一个事务内完成。
         featureMapper.delete(new LambdaQueryWrapper<CatalogProductFeature>()
                 .eq(CatalogProductFeature::getProductId, productId));
@@ -166,7 +186,78 @@ public class CatalogProductContentService {
         if (productMapper.updateById(product) == 0) {
             throw new BusinessException("CATALOG_PRODUCT_CONCURRENT", "商品已被其他操作修改，请刷新后重试");
         }
+        scheduleObjectRecycle(previousObjectKeys, retainedObjectKeys);
         return getContent(productId);
+    }
+
+    /**
+     * 在数据库事务提交后回收历史对象，避免事务回滚造成媒体文件误删。
+     *
+     * @param previousObjectKeys 保存前对象键
+     * @param retainedObjectKeys 保存后仍被引用的对象键
+     * @author Henfon
+     * @date 2026-09-04
+     */
+    private void scheduleObjectRecycle(Set<String> previousObjectKeys, Set<String> retainedObjectKeys) {
+        Runnable recycle = () -> recycleObsoleteObjects(previousObjectKeys, retainedObjectKeys);
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    recycle.run();
+                }
+            });
+        } else {
+            recycle.run();
+        }
+    }
+
+    /**
+     * 收集媒体记录中的 MinIO 对象键。
+     *
+     * @param mediaList 媒体记录列表
+     * @return 对象键集合
+     * @author Henfon
+     * @date 2026-09-04
+     */
+    private Set<String> collectObjectKeys(List<CatalogProductMedia> mediaList) {
+        Set<String> keys = new HashSet<>();
+        if (mediaList == null) {
+            return keys;
+        }
+        // 仅回收稳定对象键，外部 URL 不属于本系统存储范围。
+        mediaList.forEach(media -> {
+            String key = media == null ? null : minioStorageService.normalizeReference(media.getObjectKey());
+            if (key != null && !key.isBlank() && !key.startsWith("http")) {
+                keys.add(key);
+            }
+        });
+        return keys;
+    }
+
+    /**
+     * 删除已从商品内容中移除的历史对象，删除失败仅记录告警等待后续运维重试。
+     *
+     * @param previousObjectKeys 保存前对象键
+     * @param retainedObjectKeys 保存后仍被引用的对象键
+     * @author Henfon
+     * @date 2026-09-04
+     */
+    private void recycleObsoleteObjects(Set<String> previousObjectKeys, Set<String> retainedObjectKeys) {
+        previousObjectKeys.removeAll(retainedObjectKeys);
+        previousObjectKeys.forEach(key -> {
+            try {
+                // 对象可能被多个商品复用，仅在数据库确认无其他引用时执行物理删除。
+                long references = mediaMapper.selectCount(new LambdaQueryWrapper<CatalogProductMedia>()
+                        .eq(CatalogProductMedia::getObjectKey, key));
+                if (references > 0) {
+                    return;
+                }
+                minioStorageService.delete(key);
+            } catch (RuntimeException exception) {
+                log.warn("商品历史媒体对象回收失败，objectKey={}", key, exception);
+            }
+        });
     }
 
     /**

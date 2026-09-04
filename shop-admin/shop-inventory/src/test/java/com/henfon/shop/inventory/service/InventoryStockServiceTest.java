@@ -20,6 +20,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.verify;
+import static org.mockito.ArgumentMatchers.any;
 
 /**
  * 库存台账服务单元测试。
@@ -178,5 +179,27 @@ class InventoryStockServiceTest {
 
         assertEquals("INVENTORY_WAREHOUSE_INVALID", exception.getCode());
         verifyNoInteractions(stockMapper, logMapper);
+    }
+
+    /**
+     * 查询库存预警应返回低库存台账，支持后台补货列表展示。
+     *
+     * @author Henfon
+     * @date 2026-09-04
+     */
+    @Test
+    void shouldListWarningsWithOptionalFilters() {
+        InventoryStock warning = new InventoryStock();
+        warning.setId(12L);
+        warning.setWarehouseId(2L);
+        warning.setSkuId(88L);
+        warning.setAvailableStock(1);
+        warning.setSafetyStock(5);
+        when(stockMapper.selectList(any())).thenReturn(List.of(warning));
+
+        List<InventoryStock> result = service.listWarnings(2L, 88L);
+
+        assertEquals(1, result.size());
+        assertEquals(88L, result.get(0).getSkuId());
     }
 }

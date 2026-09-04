@@ -109,7 +109,23 @@ public class InventoryStockService {
      * @date 2026-08-30
      */
     public List<InventoryStock> listWarnings() {
+        return listWarnings(null, null);
+    }
+
+    /**
+     * 按仓库或 SKU 查询低于安全库存的台账，供后台补货处置使用。
+     *
+     * @param warehouseId 仓库ID，可选
+     * @param skuId SKU ID，可选
+     * @return 低库存台账列表
+     * @author Henfon
+     * @date 2026-09-04
+     */
+    public List<InventoryStock> listWarnings(Long warehouseId, Long skuId) {
+        // 仅返回启用台账且可用库存低于阈值的数据，按缺口优先排序便于补货处置。
         return stockMapper.selectList(new LambdaQueryWrapper<InventoryStock>()
+                .eq(warehouseId != null, InventoryStock::getWarehouseId, warehouseId)
+                .eq(skuId != null, InventoryStock::getSkuId, skuId)
                 .apply("available_stock <= safety_stock")
                 .orderByAsc(InventoryStock::getAvailableStock)
                 .orderByDesc(InventoryStock::getUpdatedAt));

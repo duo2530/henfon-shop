@@ -949,8 +949,12 @@ export function saveCatalogProductContent(productId: number, content: {
   });
 }
 
-export function listInventoryWarnings(): Promise<BackendInventoryStock[]> {
-  return request<BackendInventoryStock[]>('/api/admin/inventory/stocks/warnings');
+export function listInventoryWarnings(params: { warehouseId?: number; skuId?: number } = {}): Promise<BackendInventoryStock[]> {
+  const query = new URLSearchParams();
+  if (params.warehouseId !== undefined) query.set('warehouseId', String(params.warehouseId));
+  if (params.skuId !== undefined) query.set('skuId', String(params.skuId));
+  const suffix = query.toString() ? `?${query.toString()}` : '';
+  return request<BackendInventoryStock[]>(`/api/admin/inventory/stocks/warnings${suffix}`);
 }
 
 export function listInventoryWarehouses(params: { current?: number; size?: number; keyword?: string; status?: number } = {}): Promise<BackendPage<BackendInventoryWarehouse>> {

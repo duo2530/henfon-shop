@@ -183,8 +183,9 @@ public class InventoryAdminController {
      */
     @GetMapping("/stocks/warnings")
     @PreAuthorize("hasAuthority('inventory:stock:query')")
-    public ApiResponse<List<InventoryStock>> warnings() {
-        return ApiResponse.success(inventoryStockService.listWarnings(), MDC.get("requestId"));
+    public ApiResponse<List<InventoryStock>> warnings(@RequestParam(required = false) Long warehouseId,
+                                                      @RequestParam(required = false) Long skuId) {
+        return ApiResponse.success(inventoryStockService.listWarnings(warehouseId, skuId), MDC.get("requestId"));
     }
 
     /**

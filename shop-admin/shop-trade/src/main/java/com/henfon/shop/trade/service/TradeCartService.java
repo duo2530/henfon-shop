@@ -3,6 +3,7 @@ package com.henfon.shop.trade.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.henfon.shop.trade.dto.TradeCartItemRequest;
 import com.henfon.shop.trade.dto.TradeCartItemUpdateRequest;
+import com.henfon.shop.trade.dto.TradeCartMergeItemRequest;
 import com.henfon.shop.trade.entity.TradeCartItem;
 import com.henfon.shop.trade.mapper.TradeCartItemMapper;
 import com.henfon.shop.catalog.entity.CatalogProduct;
@@ -163,6 +164,90 @@ public class TradeCartService {
             mapper.updateById(item);
         }
         return item.getId();
+    }
+
+    /**
+     * 合并登录前保存在浏览器中的购物车明细，失效商品会被跳过并由调用方提示用户。
+     *
+     * @param memberId 当前会员ID
+     * @param requests 本地购物车明细
+     * @return 成功合并的明细数量
+     * @author Henfon
+     * @date 2026-09-04
+     */
+    @Transactional
+    public int merge(Long memberId, List<TradeCartMergeItemRequest> requests) {
+        if (memberId == null || requests == null || requests.isEmpty()) {
+            return 0;
+        }
+        int merged = 0;
+        // 单条处理，保证一件商品失效不会阻断其他有效商品合并。
+        for (TradeCartMergeItemRequest request : requests) {
+            if (request == null || request.productId() == null || request.quantity() == null
+                    || request.quantity() <= 0) {
+                continue;
+            }
+            try {
+                Integer stock = resolveMergeStock(request.productId(), request.skuId());
+                if (stock == null || stock <= 0) {
+                    continue;
+                }
+                LambdaQueryWrapper<TradeCartItem> query = new LambdaQueryWrapper<TradeCartItem>()
+                        .eq(TradeCartItem::getMemberId, memberId)
+                        .eq(TradeCartItem::getProductId, request.productId());
+                if (request.skuId() == null) {
+                    query.isNull(TradeCartItem::getSkuId);
+                } else {
+                    query.eq(TradeCartItem::getSkuId, request.skuId());
+                }
+                TradeCartItem item = mapper.selectOne(query);
+                int current = item == null || item.getQuantity() == null ? 0 : item.getQuantity();
+                int quantity = Math.min(stock, current + request.quantity());
+                if (item == null) {
+                    item = new TradeCartItem();
+                    item.setMemberId(memberId);
+                    item.setProductId(request.productId());
+                    item.setSkuId(request.skuId());
+                    item.setQuantity(quantity);
+                    item.setSelected(request.selected() == null ? 1 : request.selected());
+                    mapper.insert(item);
+                } else if (quantity != current) {
+                    item.setQuantity(quantity);
+                    if (request.selected() != null) {
+                        item.setSelected(request.selected());
+                    }
+                    mapper.updateById(item);
+                }
+                merged++;
+            } catch (RuntimeException ignored) {
+                // 商品在合并期间可能被删除或下架，忽略该条即可继续处理其他明细。
+            }
+        }
+        return merged;
+    }
+
+    /**
+     * 解析合并明细对应的可售库存。
+     *
+     * @param productId 商品ID
+     * @param skuId SKU ID
+     * @return 可售库存，商品或SKU失效时返回 null
+     * @author Henfon
+     * @date 2026-09-04
+     */
+    private Integer resolveMergeStock(Long productId, Long skuId) {
+        CatalogProduct product = productMapper.selectById(productId);
+        if (product == null || !Integer.valueOf(1).equals(product.getStatus())) {
+            return null;
+        }
+        if (skuId == null) {
+            return product.getCurrentStock();
+        }
+        CatalogSku sku = skuMapper.selectById(skuId);
+        if (sku == null || !productId.equals(sku.getProductId()) || !Integer.valueOf(1).equals(sku.getStatus())) {
+            return null;
+        }
+        return sku.getStock();
     }
 
     /**
