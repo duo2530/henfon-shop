@@ -14,6 +14,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.ArrayList;
 
 /**
  * 门户购物车服务。
@@ -50,17 +51,55 @@ public class TradeCartService {
      */
     @Transactional
     public List<TradeCartItem> list(Long memberId) {
-        List<TradeCartItem> items = mapper.selectList(new LambdaQueryWrapper<TradeCartItem>()
-                .eq(TradeCartItem::getMemberId, memberId).orderByDesc(TradeCartItem::getUpdatedAt));
+        List<TradeCartItem> items = new ArrayList<>(mapper.selectList(new LambdaQueryWrapper<TradeCartItem>()
+                .eq(TradeCartItem::getMemberId, memberId).orderByDesc(TradeCartItem::getUpdatedAt)));
         // 查询时主动清理已下架、规格失效或库存归零的明细，避免结算页继续展示不可购买商品。
         items.removeIf(item -> {
             if (!isAvailable(item)) {
                 mapper.deleteById(item.getId());
                 return true;
             }
+            normalizeQuantityToStock(item);
             return false;
         });
         return items;
+    }
+
+    /**
+     * 将购物车数量收敛到当前可售库存，避免库存下降后用户继续持有超量明细。
+     *
+     * @param item 购物车明细
+     * @author Henfon
+     * @date 2026-09-04
+     */
+    private void normalizeQuantityToStock(TradeCartItem item) {
+        Integer stock = resolveStock(item);
+        if (stock == null || item.getQuantity() == null || item.getQuantity() <= stock) {
+            return;
+        }
+        // 直接持久化收敛后的数量，使刷新页面和后续结算都使用同一份库存事实。
+        item.setQuantity(stock);
+        mapper.updateById(item);
+    }
+
+    /**
+     * 查询购物车明细对应商品或 SKU 的可用库存。
+     *
+     * @param item 购物车明细
+     * @return 当前库存
+     * @author Henfon
+     * @date 2026-09-04
+     */
+    private Integer resolveStock(TradeCartItem item) {
+        CatalogProduct product = productMapper.selectById(item.getProductId());
+        if (product == null) {
+            return null;
+        }
+        if (item.getSkuId() == null) {
+            return product.getCurrentStock();
+        }
+        CatalogSku sku = skuMapper.selectById(item.getSkuId());
+        return sku == null || !item.getProductId().equals(sku.getProductId()) ? null : sku.getStock();
     }
 
     /**
