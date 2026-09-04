@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { ProductCard } from '../src/components/ProductCard';
+import { HeroBanner } from '../src/components/HeroBanner';
 import type { Product } from '../src/types/ecommerce';
 
 const baseProduct: Product = {
@@ -51,4 +52,24 @@ const outOfStockMarkup = renderCard({ ...baseProduct, stock: 0 }, 'list');
 assert.match(outOfStockMarkup, /disabled=""/);
 assert.match(outOfStockMarkup, /测试降噪耳机 暂时缺货/);
 
-console.log('shop-portal 组件冒烟测试通过：商品卡片、库存禁购、键盘语义和标签正常');
+const remoteBannerMarkup = renderToStaticMarkup(
+  <HeroBanner
+    banners={[{
+      id: 99,
+      bannerTitle: '夏日清凉专题',
+      bannerTag: '限时活动',
+      subtitle: '精选商品低至五折',
+      imageUrl: 'https://example.com/summer.webp',
+      linkType: 'CATEGORY',
+      linkTarget: 'outdoor',
+    }]}
+    onExploreCategory={() => undefined}
+    onSelectProduct={() => undefined}
+    onNavigateBanner={() => undefined}
+  />,
+);
+assert.match(remoteBannerMarkup, /夏日清凉专题/);
+assert.match(remoteBannerMarkup, /限时活动/);
+assert.match(remoteBannerMarkup, /立即查看/);
+
+console.log('shop-portal 组件冒烟测试通过：商品卡片、库存禁购、Banner 跳转数据和键盘语义正常');
