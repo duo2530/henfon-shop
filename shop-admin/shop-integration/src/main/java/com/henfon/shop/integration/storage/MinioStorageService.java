@@ -6,6 +6,8 @@ import io.minio.MinioClient;
 import io.minio.PutObjectArgs;
 import io.minio.RemoveObjectArgs;
 import io.minio.http.Method;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
@@ -28,11 +30,13 @@ public class MinioStorageService {
 
     private static final long MAX_FILE_SIZE = 10 * 1024 * 1024;
     private static final Duration PRESIGN_DURATION = Duration.ofHours(24);
+    private static final int MAX_UPLOAD_ATTEMPTS = 3;
     private static final Set<String> ALLOWED_CONTENT_TYPES = Set.of(
             "image/jpeg", "image/png", "image/webp", "image/gif", "video/mp4", "application/pdf");
 
     private final MinioClient minioClient;
     private final MinioProperties properties;
+    private final Logger logger = LoggerFactory.getLogger(MinioStorageService.class);
 
     /**
      * 创建 MinIO 文件服务。
@@ -56,6 +60,7 @@ public class MinioStorageService {
      * @date 2026-08-30
      */
     public UploadResult upload(MultipartFile file) {
+        ensureConfigured();
         if (file == null || file.isEmpty()) {
             throw new BusinessException("STORAGE_FILE_EMPTY", "上传文件不能为空");
         }
@@ -68,18 +73,24 @@ public class MinioStorageService {
             throw new BusinessException("STORAGE_FILE_TYPE_INVALID", "仅支持 JPG、PNG、WEBP、GIF、MP4 和 PDF 文件");
         }
         String objectKey = buildObjectKey(file.getOriginalFilename(), contentType);
-        try {
-            ensureBucket();
-            minioClient.putObject(PutObjectArgs.builder()
-                    .bucket(properties.bucket())
-                    .object(objectKey)
-                    .stream(file.getInputStream(), file.getSize(), -1)
-                    .contentType(contentType)
-                    .build());
-            return new UploadResult(objectKey, presign(objectKey), file.getSize(), contentType);
-        } catch (Exception exception) {
-            throw new BusinessException("STORAGE_UPLOAD_FAILED", "文件上传失败，请稍后重试");
+        for (int attempt = 1; attempt <= MAX_UPLOAD_ATTEMPTS; attempt++) {
+            try {
+                ensureBucket();
+                // 每次重试重新获取输入流，避免上一次失败已消耗流导致空文件上传。
+                minioClient.putObject(PutObjectArgs.builder()
+                        .bucket(properties.bucket())
+                        .object(objectKey)
+                        .stream(file.getInputStream(), file.getSize(), -1)
+                        .contentType(contentType)
+                        .build());
+                return new UploadResult(objectKey, presign(objectKey), file.getSize(), contentType);
+            } catch (Exception exception) {
+                logger.warn("MinIO 文件上传失败，第{}次尝试，共{}次，对象键={}", attempt, MAX_UPLOAD_ATTEMPTS, objectKey,
+                        exception);
+            }
         }
+        throw new BusinessException("STORAGE_UPLOAD_FAILED",
+                "文件上传失败，已重试" + MAX_UPLOAD_ATTEMPTS + "次，请检查存储服务配置或稍后重试");
     }
 
     /**
@@ -91,6 +102,7 @@ public class MinioStorageService {
      * @date 2026-08-30
      */
     public String presign(String objectKey) {
+        ensureConfigured();
         if (!StringUtils.hasText(objectKey) || objectKey.contains("..") || objectKey.startsWith("/")) {
             throw new BusinessException("STORAGE_OBJECT_KEY_INVALID", "文件对象键不合法");
         }
@@ -194,6 +206,7 @@ public class MinioStorageService {
      * @date 2026-08-30
      */
     public void delete(String objectKey) {
+        ensureConfigured();
         if (!StringUtils.hasText(objectKey) || objectKey.contains("..") || objectKey.startsWith("/")) {
             throw new BusinessException("STORAGE_OBJECT_KEY_INVALID", "文件对象键不合法");
         }
@@ -214,6 +227,18 @@ public class MinioStorageService {
     private void ensureBucket() throws Exception {
         if (!minioClient.bucketExists(io.minio.BucketExistsArgs.builder().bucket(properties.bucket()).build())) {
             minioClient.makeBucket(io.minio.MakeBucketArgs.builder().bucket(properties.bucket()).build());
+        }
+    }
+
+    /**
+     * 校验 MinIO 配置和客户端状态。
+     *
+     * @author Henfon
+     * @date 2026-09-04
+     */
+    private void ensureConfigured() {
+        if (properties == null || !properties.isConfigured() || minioClient == null) {
+            throw new BusinessException("STORAGE_NOT_CONFIGURED", "文件存储服务未配置，请联系管理员");
         }
     }
 

@@ -20,6 +20,7 @@ import org.springframework.util.StringUtils;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.math.BigDecimal;
+import java.util.Set;
 
 /**
  * 支付单应用服务，负责支付单生命周期和异步通知幂等处理。
@@ -37,6 +38,8 @@ public class PaymentService {
     private static final int STATUS_SUCCEEDED = 2;
     private static final int STATUS_CLOSED = 3;
     private static final int STATUS_FAILED = 4;
+    /** 当前已完成真实或联调支付流程的渠道白名单。 */
+    private static final Set<String> SUPPORTED_CHANNELS = Set.of("WECHAT_NATIVE", "MOCK");
 
     private final PaymentOrderMapper paymentOrderMapper;
     private final TradeOrderService tradeOrderService;
@@ -70,12 +73,12 @@ public class PaymentService {
      */
     @Transactional
     public PaymentOrderResponse create(Long memberId, Long orderId, PaymentCreateRequest request) {
+        String channel = normalizeChannel(request);
         TradeOrder order = requireMemberOrder(memberId, orderId);
         if (!Integer.valueOf(0).equals(order.getPaymentStatus())
                 || !Integer.valueOf(TradeOrderStateMachine.STATUS_PENDING_PAYMENT).equals(order.getOrderStatus())) {
             throw new BusinessException("PAYMENT_ORDER_STATUS_INVALID", "只有待付款订单允许创建支付单");
         }
-        String channel = request.channel().trim().toUpperCase();
         PaymentOrder existing = paymentOrderMapper.selectOne(new LambdaQueryWrapper<PaymentOrder>()
                 .eq(PaymentOrder::getOrderId, orderId)
                 .eq(PaymentOrder::getChannel, channel)
@@ -98,6 +101,26 @@ public class PaymentService {
         paymentOrder.setExpireAt(LocalDateTime.now().plusMinutes(timeoutMinutes));
         paymentOrderMapper.insert(paymentOrder);
         return PaymentOrderResponse.from(paymentOrder);
+    }
+
+    /**
+     * 校验并标准化支付渠道，避免未接入渠道生成无法完成的待支付单。
+     *
+     * @param request 支付创建请求
+     * @return 大写支付渠道
+     * @author Henfon
+     * @date 2026-09-04
+     */
+    private String normalizeChannel(PaymentCreateRequest request) {
+        if (request == null || !StringUtils.hasText(request.channel())) {
+            throw new BusinessException("PAYMENT_CHANNEL_INVALID", "支付渠道不能为空");
+        }
+        String channel = request.channel().trim().toUpperCase();
+        // 支付宝、银联等渠道尚未接入，必须明确返回错误而不是留下悬挂支付单。
+        if (!SUPPORTED_CHANNELS.contains(channel)) {
+            throw new BusinessException("PAYMENT_CHANNEL_UNSUPPORTED", "暂不支持该支付渠道，请选择微信支付");
+        }
+        return channel;
     }
 
     /**

@@ -21,6 +21,8 @@ public class MemberTokenStore {
     private static final String REVOKED_PREFIX = "shop:jwt:revoked:";
     private static final String PASSWORD_RESET_PREFIX = "shop:member:password-reset:";
     private static final String PASSWORD_RESET_COOLDOWN_PREFIX = "shop:member:password-reset:cooldown:";
+    private static final String SMS_CODE_PREFIX = "shop:member:sms-code:";
+    private static final String SMS_COOLDOWN_PREFIX = "shop:member:sms-cooldown:";
     private static final Duration REFRESH_TTL = Duration.ofDays(30);
     /** Redis 5 兼容的一次性读取并删除脚本，避免依赖 Redis 6 的 GETDEL 命令。 */
     private static final DefaultRedisScript<String> GET_AND_DELETE_SCRIPT = new DefaultRedisScript<>(
@@ -182,6 +184,50 @@ public class MemberTokenStore {
         }
         Boolean acquired = redisTemplate.opsForValue().setIfAbsent(
                 PASSWORD_RESET_COOLDOWN_PREFIX + email.trim().toLowerCase(java.util.Locale.ROOT), "1", cooldown);
+        return Boolean.TRUE.equals(acquired);
+    }
+
+    /**
+     * 保存会员短信验证码。
+     *
+     * @param phone 手机号
+     * @param code 验证码
+     * @param ttl 有效期
+     * @author Henfon
+     * @date 2026-09-04
+     */
+    public void saveSmsCode(String phone, String code, Duration ttl) {
+        // 验证码仅保存于 Redis，过期后自动清理，避免落库保存敏感信息。
+        redisTemplate.opsForValue().set(SMS_CODE_PREFIX + phone.trim(), code, ttl);
+    }
+
+    /**
+     * 原子消费会员短信验证码。
+     *
+     * @param phone 手机号
+     * @return 验证码，不存在或已消费时返回 null
+     * @author Henfon
+     * @date 2026-09-04
+     */
+    public String consumeSmsCode(String phone) {
+        if (phone == null || phone.isBlank()) return null;
+        // Lua 脚本保证验证码只能成功校验一次，防止并发重放。
+        return redisTemplate.execute(GET_AND_DELETE_SCRIPT,
+                Collections.singletonList(SMS_CODE_PREFIX + phone.trim()));
+    }
+
+    /**
+     * 尝试获取短信发送冷却锁。
+     *
+     * @param phone 手机号
+     * @param cooldown 冷却时间
+     * @return 是否允许发送
+     * @author Henfon
+     * @date 2026-09-04
+     */
+    public boolean tryAcquireSmsCooldown(String phone, Duration cooldown) {
+        if (phone == null || phone.isBlank() || cooldown == null || cooldown.isZero() || cooldown.isNegative()) return false;
+        Boolean acquired = redisTemplate.opsForValue().setIfAbsent(SMS_COOLDOWN_PREFIX + phone.trim(), "1", cooldown);
         return Boolean.TRUE.equals(acquired);
     }
 }

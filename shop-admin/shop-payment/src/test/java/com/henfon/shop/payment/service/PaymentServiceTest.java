@@ -2,6 +2,7 @@ package com.henfon.shop.payment.service;
 
 import com.henfon.shop.common.exception.BusinessException;
 import com.henfon.shop.payment.dto.PaymentNotifyRequest;
+import com.henfon.shop.payment.dto.PaymentCreateRequest;
 import com.henfon.shop.payment.entity.PaymentOrder;
 import com.henfon.shop.payment.mapper.PaymentOrderMapper;
 import com.henfon.shop.trade.service.TradeOrderService;
@@ -90,5 +91,23 @@ class PaymentServiceTest {
 
         assertEquals("PAYMENT_NOTIFY_INVALID", exception.getCode());
         verify(paymentOrderMapper, never()).selectOne(any());
+    }
+
+    /**
+     * 校验未接入的支付宝渠道不会创建悬挂支付单，并返回明确错误码。
+     *
+     * @author Henfon
+     * @date 2026-09-04
+     */
+    @Test
+    void shouldRejectUnsupportedPaymentChannel() {
+        PaymentService service = new PaymentService(paymentOrderMapper, tradeOrderService, 30);
+
+        BusinessException exception = assertThrows(BusinessException.class,
+                () -> service.create(1L, 10L, new PaymentCreateRequest("ALIPAY")));
+
+        assertEquals("PAYMENT_CHANNEL_UNSUPPORTED", exception.getCode());
+        verify(tradeOrderService, never()).findById(any());
+        verify(paymentOrderMapper, never()).insert(any(PaymentOrder.class));
     }
 }

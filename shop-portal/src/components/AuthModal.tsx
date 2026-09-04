@@ -21,6 +21,8 @@ import {
 import { UserProfile, MemberLevel } from '../types/ecommerce';
 import {
   loginPortalMember,
+  loginPortalMemberBySms,
+  sendPortalSmsCode,
   registerPortalMember,
   requestPortalPasswordReset,
   confirmPortalPasswordReset,
@@ -29,8 +31,8 @@ import {
 
 export type AuthMode = 'login-pwd' | 'login-sms' | 'register' | 'forgot-pwd' | 'reset-pwd';
 
-// 首期仅开放账号密码登录和邮箱找回密码，短信及第三方授权暂不接入。
-const ENABLE_SMS_LOGIN = false;
+// 短信登录已接入验证码接口；社交授权仍保留演示开关。
+const ENABLE_SMS_LOGIN = true;
 const ENABLE_SOCIAL_LOGIN = false;
 
 interface AuthModalProps {
@@ -167,17 +169,22 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
   if (!isOpen) return null;
 
-  // Send SMS Code Simulator
-  const handleSendSms = () => {
+  // 发送短信验证码并在开发环境自动填入服务端返回的验证码。
+  const handleSendSms = async () => {
     if (!phoneInput || phoneInput.length < 7) {
       setErrorMsg('请输入正确的手机号码');
       return;
     }
     setErrorMsg(null);
-    setCountdown(60);
-    setSmsCodeInput('888888'); // Auto-fill for friendly testing
-    setSuccessMsg('验证码已发送（测试环境已为您自动填入: 888888）');
-    setTimeout(() => setSuccessMsg(null), 5000);
+    try {
+      const result = await sendPortalSmsCode(`${countryCode}${phoneInput}`);
+      setCountdown(Math.min(60, result.expiresInSeconds || 60));
+      if (result.verificationCode) setSmsCodeInput(result.verificationCode);
+      setSuccessMsg(result.verificationCode ? `验证码已发送（测试环境已自动填入）` : '验证码已发送，请查收短信');
+      setTimeout(() => setSuccessMsg(null), 5000);
+    } catch (error) {
+      setErrorMsg(error instanceof Error ? error.message : '验证码发送失败，请稍后重试');
+    }
   };
 
   // Password strength calculation
@@ -291,8 +298,20 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       }
 
     if (mode === 'login-sms') {
-      // 短信登录入口当前关闭，保留分支仅兼容历史调用方。
-      setErrorMsg('短信登录暂未开放');
+      if (!phoneInput || !smsCodeInput) {
+        setErrorMsg('请输入手机号和短信验证码');
+        return;
+      }
+      setIsLoading(true);
+      try {
+        const targetUser = mapMember(await loginPortalMemberBySms(`${countryCode}${phoneInput}`, smsCodeInput));
+        onLoginSuccess(targetUser, `登录成功！欢迎回来，${targetUser.nickname}`);
+        onClose();
+      } catch (error) {
+        setErrorMsg(error instanceof Error ? error.message : '短信登录失败，请稍后重试');
+      } finally {
+        setIsLoading(false);
+      }
       return;
     }
 

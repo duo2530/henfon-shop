@@ -76,6 +76,20 @@ public class MemberAuthService {
         if (!Integer.valueOf(1).equals(member.getStatus())) {
             throw new BusinessException("MEMBER_AUTH_DISABLED", "会员账号已被冻结");
         }
+        return loginByMember(member);
+    }
+
+    /**
+     * 更新会员登录时间并签发令牌，供密码和短信登录复用。
+     *
+     * @param member 已校验的会员
+     * @return 登录响应
+     * @author Henfon
+     * @date 2026-09-04
+     */
+    @Transactional
+    public MemberLoginResponse loginByMember(MemberUser member) {
+        // 统一记录最近登录时间，保证不同认证方式的会员资料一致。
         member.setLastLoginAt(LocalDateTime.now());
         memberUserMapper.updateById(member);
         return issueToken(member);

@@ -17,7 +17,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
  * @date 2026-08-29
  */
 @Configuration
-@EnableConfigurationProperties(MemberPasswordResetProperties.class)
+@EnableConfigurationProperties({MemberPasswordResetProperties.class, MemberSmsProperties.class})
 public class IdentityConfiguration {
 
     /**

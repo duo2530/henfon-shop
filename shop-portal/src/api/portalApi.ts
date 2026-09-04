@@ -392,6 +392,20 @@ export async function loginPortalMember(account: string, password: string): Prom
   return response;
 }
 
+/** 发送会员短信验证码。 */
+export async function sendPortalSmsCode(phone: string): Promise<{ phone: string; expiresInSeconds: number; verificationCode?: string }> {
+  return request('/api/portal/auth/sms/send', { method: 'POST', body: JSON.stringify({ phone }) });
+}
+
+/** 使用会员短信验证码登录。 */
+export async function loginPortalMemberBySms(phone: string, verificationCode: string): Promise<MemberAuthResponse> {
+  const response = await request<MemberAuthResponse>('/api/portal/auth/sms/login', {
+    method: 'POST', body: JSON.stringify({ phone, verificationCode }),
+  });
+  saveMemberTokens(response);
+  return response;
+}
+
 export async function registerPortalMember(payload: {
   username: string;
   password: string;

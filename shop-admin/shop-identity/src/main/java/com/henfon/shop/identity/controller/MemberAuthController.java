@@ -7,9 +7,13 @@ import com.henfon.shop.identity.dto.MemberRegisterRequest;
 import com.henfon.shop.identity.dto.MemberRefreshRequest;
 import com.henfon.shop.identity.dto.MemberLogoutRequest;
 import com.henfon.shop.identity.dto.MemberPasswordResetConfirmRequest;
+import com.henfon.shop.identity.dto.MemberSmsCodeRequest;
+import com.henfon.shop.identity.dto.MemberSmsCodeResponse;
+import com.henfon.shop.identity.dto.MemberSmsLoginRequest;
 import com.henfon.shop.identity.dto.MemberPasswordResetRequest;
 import com.henfon.shop.identity.service.MemberAuthService;
 import com.henfon.shop.identity.service.MemberPasswordResetService;
+import com.henfon.shop.identity.service.MemberSmsService;
 import jakarta.validation.Valid;
 import org.slf4j.MDC;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -30,6 +34,7 @@ public class MemberAuthController {
 
     private final MemberAuthService memberAuthService;
     private final MemberPasswordResetService memberPasswordResetService;
+    private final MemberSmsService memberSmsService;
 
     /**
      * 创建会员认证控制器。
@@ -38,9 +43,11 @@ public class MemberAuthController {
      * @author Henfon
      * @date 2026-08-30
      */
-    public MemberAuthController(MemberAuthService memberAuthService, MemberPasswordResetService memberPasswordResetService) {
+    public MemberAuthController(MemberAuthService memberAuthService, MemberPasswordResetService memberPasswordResetService,
+                                MemberSmsService memberSmsService) {
         this.memberAuthService = memberAuthService;
         this.memberPasswordResetService = memberPasswordResetService;
+        this.memberSmsService = memberSmsService;
     }
 
     /**
@@ -54,6 +61,32 @@ public class MemberAuthController {
     @PostMapping("/login")
     public ApiResponse<MemberLoginResponse> login(@Valid @RequestBody MemberLoginRequest request) {
         return ApiResponse.success(memberAuthService.login(request), MDC.get("requestId"));
+    }
+
+    /**
+     * 发送会员短信验证码。
+     *
+     * @param request 手机号请求
+     * @return 验证码发送结果
+     * @author Henfon
+     * @date 2026-09-04
+     */
+    @PostMapping("/sms/send")
+    public ApiResponse<MemberSmsCodeResponse> sendSmsCode(@Valid @RequestBody MemberSmsCodeRequest request) {
+        return ApiResponse.success(memberSmsService.sendCode(request.phone()), MDC.get("requestId"));
+    }
+
+    /**
+     * 使用短信验证码登录会员。
+     *
+     * @param request 短信登录请求
+     * @return 登录令牌和会员摘要
+     * @author Henfon
+     * @date 2026-09-04
+     */
+    @PostMapping("/sms/login")
+    public ApiResponse<MemberLoginResponse> smsLogin(@Valid @RequestBody MemberSmsLoginRequest request) {
+        return ApiResponse.success(memberSmsService.login(request), MDC.get("requestId"));
     }
 
     /**
