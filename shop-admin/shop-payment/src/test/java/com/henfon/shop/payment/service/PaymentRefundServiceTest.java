@@ -125,6 +125,27 @@ class PaymentRefundServiceTest {
     }
 
     /**
+     * 校验渠道退款金额不一致时拒绝回调，防止错误金额推进退款状态。
+     *
+     * @author Henfon
+     * @date 2026-09-04
+     */
+    @Test
+    void shouldRejectRefundCallbackWhenAmountMismatches() {
+        PaymentRefundOrder refund = refundOrder(10L, "REF-10", 20L, "PAY-20", 30L);
+        when(refundOrderMapper.selectOne(any())).thenReturn(refund);
+
+        PaymentRefundService service = new PaymentRefundService(paymentOrderMapper, refundOrderMapper,
+                tradeOrderService, tradeAfterSaleService);
+        BusinessException exception = assertThrows(BusinessException.class,
+                () -> service.notifyRefund(new PaymentRefundNotifyRequest("REF-10", "WX-10", true, "{}",
+                        new BigDecimal("29.99"))));
+
+        assertEquals("PAYMENT_REFUND_AMOUNT_MISMATCH", exception.getCode());
+        verify(refundOrderMapper, never()).updateById(any(PaymentRefundOrder.class));
+    }
+
+    /**
      * 校验失败回调释放处理中售后目标，允许会员重新申请。
      *
      * @author Henfon

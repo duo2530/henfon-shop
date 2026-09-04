@@ -19,6 +19,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.Map;
+import java.math.BigDecimal;
 
 /**
  * 支付平台退款异步通知接口。
@@ -128,12 +129,30 @@ public class PaymentRefundNotifyController {
             if (refundNo == null || refundNo.isBlank() || transactionNo == null || transactionNo.isBlank()) {
                 throw new WechatPayException("微信退款回调缺少商户退款单号或退款交易号");
             }
-            return new PaymentRefundNotifyRequest(refundNo, transactionNo, success, rawPayload);
+            BigDecimal amount = parseRefundAmount(payload);
+            return new PaymentRefundNotifyRequest(refundNo, transactionNo, success, rawPayload, amount);
         } catch (WechatPayException exception) {
             throw exception;
         } catch (Exception exception) {
             throw new WechatPayException("微信退款通知解析失败", exception);
         }
+    }
+
+    /**
+     * 解析微信退款通知中的退款金额（分转人民币元）。
+     *
+     * @param payload 解密后的退款通知 JSON
+     * @return 退款金额，缺失时返回空值兼容历史联调报文
+     * @author Henfon
+     * @date 2026-09-04
+     */
+    private BigDecimal parseRefundAmount(JsonNode payload) {
+        JsonNode amountNode = payload == null ? null : payload.get("amount");
+        JsonNode refundNode = amountNode == null ? null : amountNode.get("refund");
+        if (refundNode == null || !refundNode.canConvertToLong() || refundNode.asLong() <= 0) {
+            return null;
+        }
+        return BigDecimal.valueOf(refundNode.asLong(), 2);
     }
 
     /**
