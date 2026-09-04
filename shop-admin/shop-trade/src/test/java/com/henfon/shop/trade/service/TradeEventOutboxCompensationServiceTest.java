@@ -115,6 +115,24 @@ class TradeEventOutboxCompensationServiceTest {
     }
 
     /**
+     * 校验人工重试会清洗事件标识首尾空格，避免运营复制参数时误判事件不存在。
+     *
+     * @author Henfon
+     * @date 2026-09-04
+     */
+    @Test
+    void shouldTrimEventIdBeforeRetryQuery() {
+        TradeEventOutbox event = deadEvent();
+        when(outboxMapper.selectOne(any(Wrapper.class))).thenReturn(event);
+        when(outboxMapper.updateById(event)).thenReturn(1);
+        TradeEventOutboxCompensationService service = new TradeEventOutboxCompensationService(outboxMapper);
+
+        service.retryDeadEvent("  evt-1  ");
+
+        verify(outboxMapper).selectOne(any(Wrapper.class));
+    }
+
+    /**
      * 构造测试使用的死信事件。
      *
      * @return 已达到重试上限的 Outbox 事件

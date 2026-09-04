@@ -110,6 +110,8 @@ export const ProductManagementView: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [productContent, setProductContent] = useState<ProductContentDraft>(emptyProductContent);
+  // 编辑时记录服务端已有媒体，保存成功后清理被移除的对象，避免存储孤儿文件。
+  const [originalMediaKeys, setOriginalMediaKeys] = useState<string[]>([]);
   const [contentLoading, setContentLoading] = useState(false);
   const [contentSaving, setContentSaving] = useState(false);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
@@ -235,6 +237,7 @@ export const ProductManagementView: React.FC = () => {
     if (!requirePermission('product:add', '新建商品')) return;
     setEditingProduct(null);
     setProductContent(emptyProductContent);
+    setOriginalMediaKeys([]);
     setFormData({
       name: '',
       category: 'electronics',
@@ -257,6 +260,7 @@ export const ProductManagementView: React.FC = () => {
     if (!requirePermission('product:edit', '编辑商品')) return;
     setEditingProduct(product);
     setProductContent(emptyProductContent);
+    setOriginalMediaKeys([]);
     setFormData({
       name: product.name,
       category: product.category,
@@ -277,7 +281,10 @@ export const ProductManagementView: React.FC = () => {
     setContentLoading(true);
     try {
       const content = await getCatalogProductContent(Number(product.id));
-      setProductContent(contentFromBackend(content));
+      const draft = contentFromBackend(content);
+      setProductContent(draft);
+      // 仅记录持久化媒体对象键，临时上传文件由删除按钮即时清理。
+      setOriginalMediaKeys(draft.media.filter((item) => item.persisted).map((item) => item.objectKey));
     } catch {
       showToast('商品内容加载失败，可先维护后重试保存', 'warning');
     } finally {
@@ -411,7 +418,15 @@ export const ProductManagementView: React.FC = () => {
             remark: media.remark
           }))
         });
-        showToast('商品卖点、参数和媒体已保存', 'success');
+        // 内容覆盖保存后，删除已从编辑器移除的旧媒体对象，释放 MinIO 空间。
+        const retainedKeys = new Set(productContent.media.map((media) => media.objectKey));
+        const removedKeys = originalMediaKeys.filter((key) => key && !retainedKeys.has(key));
+        const cleanupResults = await Promise.allSettled(removedKeys.map((key) => deleteStorageFile(key)));
+        if (cleanupResults.some((result) => result.status === 'rejected')) {
+          showToast('商品内容已保存，但部分旧媒体清理失败，请稍后重试', 'warning');
+        } else {
+          showToast('商品卖点、参数和媒体已保存', 'success');
+        }
       } catch {
         showToast('商品基础信息已保存，但内容媒体保存失败，请重新编辑重试', 'warning');
       } finally {
@@ -422,6 +437,7 @@ export const ProductManagementView: React.FC = () => {
       await Promise.allSettled(productContent.media.map((media) => deleteStorageFile(media.objectKey)));
     }
     setIsModalOpen(false);
+    setOriginalMediaKeys([]);
   };
 
   const handleExportData = () => {

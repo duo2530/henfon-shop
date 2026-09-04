@@ -54,11 +54,15 @@ public class TradeEventOutboxCompensationService {
         // 死信查询固定过滤状态，避免把正常重试中的事件误展示为人工补偿对象。
         long safeCurrent = Math.max(current, 1);
         long safeSize = Math.min(Math.max(size, 1), 200);
+        // 运营筛选条件统一去除首尾空格，避免复制粘贴参数导致查询结果为空。
+        String normalizedEventType = normalizeFilter(eventType);
+        String normalizedTopic = normalizeFilter(topic);
+        String normalizedAggregateId = normalizeFilter(aggregateId);
         LambdaQueryWrapper<TradeEventOutbox> wrapper = new LambdaQueryWrapper<TradeEventOutbox>()
                 .eq(TradeEventOutbox::getStatus, STATUS_DEAD)
-                .eq(StringUtils.hasText(eventType), TradeEventOutbox::getEventType, eventType)
-                .eq(StringUtils.hasText(topic), TradeEventOutbox::getTopic, topic)
-                .eq(StringUtils.hasText(aggregateId), TradeEventOutbox::getAggregateId, aggregateId)
+                .eq(StringUtils.hasText(normalizedEventType), TradeEventOutbox::getEventType, normalizedEventType)
+                .eq(StringUtils.hasText(normalizedTopic), TradeEventOutbox::getTopic, normalizedTopic)
+                .eq(StringUtils.hasText(normalizedAggregateId), TradeEventOutbox::getAggregateId, normalizedAggregateId)
                 .orderByDesc(TradeEventOutbox::getUpdatedAt)
                 .orderByDesc(TradeEventOutbox::getId);
         return outboxMapper.selectPage(new Page<>(safeCurrent, safeSize), wrapper);
@@ -75,11 +79,12 @@ public class TradeEventOutboxCompensationService {
      */
     @Transactional
     public TradeEventOutbox retryDeadEvent(String eventId) {
-        if (!StringUtils.hasText(eventId)) {
+        String normalizedEventId = normalizeFilter(eventId);
+        if (!StringUtils.hasText(normalizedEventId)) {
             throw new BusinessException("TRADE_OUTBOX_EVENT_ID_INVALID", "事件标识不能为空");
         }
         TradeEventOutbox event = outboxMapper.selectOne(new LambdaQueryWrapper<TradeEventOutbox>()
-                .eq(TradeEventOutbox::getEventId, eventId));
+                .eq(TradeEventOutbox::getEventId, normalizedEventId));
         if (event == null) {
             throw new BusinessException("TRADE_OUTBOX_NOT_FOUND", "Outbox 事件不存在");
         }
@@ -96,5 +101,21 @@ public class TradeEventOutboxCompensationService {
             throw new BusinessException("TRADE_OUTBOX_CONCURRENT_UPDATE", "Outbox 事件已被其他操作修改，请刷新后重试");
         }
         return event;
+    }
+
+    /**
+     * 规范化 Outbox 运维筛选参数。
+     *
+     * @param value 原始参数
+     * @return 去除首尾空格后的参数，空白参数返回 null
+     * @author Henfon
+     * @date 2026-09-04
+     */
+    private String normalizeFilter(String value) {
+        // 将空白值转换为 null，便于 MyBatis-Plus 条件安全跳过。
+        if (!StringUtils.hasText(value)) {
+            return null;
+        }
+        return value.trim();
     }
 }

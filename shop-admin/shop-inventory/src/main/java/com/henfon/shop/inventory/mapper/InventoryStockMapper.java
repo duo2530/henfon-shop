@@ -16,6 +16,19 @@ import org.apache.ibatis.annotations.Update;
 public interface InventoryStockMapper extends BaseMapper<InventoryStock> {
 
     /**
+     * 原子增加采购入库可用库存。
+     *
+     * @param stockId 台账ID
+     * @param quantity 入库数量
+     * @return 受影响行数
+     * @author Henfon
+     * @date 2026-09-04
+     */
+    @Update("UPDATE inventory_stock SET available_stock = COALESCE(available_stock, 0) + #{quantity}, version = version + 1 "
+            + "WHERE id = #{stockId} AND is_deleted = 0")
+    int inbound(@Param("stockId") Long stockId, @Param("quantity") int quantity);
+
+    /**
      * 原子锁定可用库存。
      *
      * @param stockId 台账ID
