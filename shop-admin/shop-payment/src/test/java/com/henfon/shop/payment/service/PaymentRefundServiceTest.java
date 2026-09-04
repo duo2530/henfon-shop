@@ -9,6 +9,8 @@ import com.henfon.shop.payment.mapper.PaymentRefundOrderMapper;
 import com.henfon.shop.payment.dto.PaymentRefundNotifyRequest;
 import com.henfon.shop.trade.service.TradeAfterSaleService;
 import com.henfon.shop.trade.service.TradeOrderService;
+import com.henfon.shop.integration.messaging.RocketMqEventPublisher;
+import com.henfon.shop.integration.messaging.RocketMqTopics;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -24,6 +26,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.argThat;
 
 /**
  * 退款单应用服务单元测试。
@@ -45,6 +48,9 @@ class PaymentRefundServiceTest {
 
     @Mock
     private TradeAfterSaleService tradeAfterSaleService;
+
+    @Mock
+    private RocketMqEventPublisher eventPublisher;
 
     /**
      * 校验部分退款成功时完成对应仅退款售后，但不提前结束订单。
@@ -68,6 +74,31 @@ class PaymentRefundServiceTest {
         verify(tradeAfterSaleService).markRefundSucceeded(eq(20L), eq(new BigDecimal("30.00")));
         verify(tradeOrderService, never()).markRefunded(any(), any());
         assertEquals(2, refund.getStatus());
+    }
+
+    /**
+     * 校验部分退款成功时发布累计金额事件，驱动营销优惠券分摊。
+     *
+     * @author Henfon
+     * @date 2026-09-04
+     */
+    @Test
+    void shouldPublishPartialRefundEventForMarketing() {
+        PaymentRefundOrder refund = refundOrder(10L, "REF-10", 20L, "PAY-20", 30L);
+        refund.setMemberId(7L);
+        PaymentOrder payment = paymentOrder("PAY-20", new BigDecimal("100.00"));
+        when(refundOrderMapper.selectOne(any())).thenReturn(refund);
+        when(refundOrderMapper.updateById(any(PaymentRefundOrder.class))).thenReturn(1);
+        when(paymentOrderMapper.selectOne(any())).thenReturn(payment);
+        when(refundOrderMapper.selectList(any())).thenReturn(List.of(refund));
+
+        PaymentRefundService service = new PaymentRefundService(paymentOrderMapper, refundOrderMapper,
+                tradeOrderService, tradeAfterSaleService, eventPublisher);
+        service.notifyRefund(new PaymentRefundNotifyRequest("REF-10", "WX-10", true, "{}"));
+
+        verify(eventPublisher).publish(eq(RocketMqTopics.PARTIAL_REFUND_SUCCEEDED), argThat(event ->
+                event.payload().toString().contains("\"refundAmount\":30.00")
+                        && event.payload().toString().contains("\"paidAmount\":100.00")));
     }
 
     /**

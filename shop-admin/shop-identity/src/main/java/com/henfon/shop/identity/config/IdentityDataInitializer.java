@@ -255,6 +255,19 @@ public class IdentityDataInitializer implements ApplicationRunner {
         SysMenu member = ensureMenu("商城会员", "MENU", "member:user:query", "/ecommerce/customers", 4,
                 ecommerce.getId(), "UserManagementView", "UserCheck");
         menus.add(member);
+        // 商品增删改、上下架和复制使用独立按钮权限，避免仅拥有查询权限即可修改目录数据。
+        String[][] productButtons = {
+                {"商品保存", "catalog:product:save"}, {"商品删除", "catalog:product:delete"},
+                {"商品上下架", "catalog:product:status"}
+        };
+        for (String[] button : productButtons) {
+            SysMenu menu = ensureMenu(button[0], "BUTTON", button[1], null, 100);
+            if (!ecommerce.getId().equals(menu.getParentId())) {
+                menu.setParentId(ecommerce.getId());
+                sysMenuMapper.updateById(menu);
+            }
+            menus.add(menu);
+        }
         menus.add(ensureMenu("优惠券中心", "MENU", "marketing:coupon:query", "/marketing/coupons", 1,
                 marketing.getId(), "CouponManagementView", "Ticket"));
         menus.add(ensureMenu("秒杀与拼团", "MENU", "marketing:flash:query", "/marketing/flash-sales", 2,
