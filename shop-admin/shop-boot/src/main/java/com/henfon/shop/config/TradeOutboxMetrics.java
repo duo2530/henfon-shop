@@ -60,6 +60,11 @@ public class TradeOutboxMetrics {
             pendingCount.set(countByStatus(STATUS_PENDING));
             deadCount.set(countByStatus(STATUS_DEAD));
             oldestDeadAgeSeconds.set(findOldestDeadAgeSeconds());
+            // 死信出现时主动输出结构化告警，供日志平台直接配置通知规则。
+            if (deadCount.get() > 0) {
+                log.error("交易 Outbox 存在死信事件，deadCount={}, oldestDeadAgeSeconds={}",
+                        deadCount.get(), oldestDeadAgeSeconds.get());
+            }
         } catch (Exception exception) {
             // 数据库短暂不可用时保留上一轮值，避免监控线程异常影响业务调度。
             log.warn("刷新交易 Outbox 监控指标失败", exception);
