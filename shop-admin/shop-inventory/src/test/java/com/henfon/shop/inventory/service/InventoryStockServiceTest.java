@@ -8,6 +8,8 @@ import com.henfon.shop.inventory.mapper.InventoryStockMapper;
 import com.henfon.shop.inventory.mapper.InventoryWarehouseMapper;
 import com.henfon.shop.inventory.entity.InventoryStock;
 import com.henfon.shop.inventory.entity.InventoryStockLog;
+import com.henfon.shop.inventory.entity.InventoryWarehouse;
+import com.henfon.shop.inventory.dto.InventoryStockSaveRequest;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -61,6 +63,36 @@ class InventoryStockServiceTest {
                 () -> service.reserve(1L, "AO1001", List.of()));
 
         assertEquals("INVENTORY_ITEMS_REQUIRED", exception.getCode());
+        verifyNoInteractions(warehouseMapper, stockMapper, lockMapper, logMapper);
+    }
+
+    /**
+     * 释放库存缺少订单上下文时必须拒绝，避免误释放其他订单库存。
+     *
+     * @author Henfon
+     * @date 2026-09-04
+     */
+    @Test
+    void shouldRejectReleaseWithoutOrderContext() {
+        BusinessException exception = assertThrows(BusinessException.class,
+                () -> service.release(null, "ORD-1"));
+
+        assertEquals("INVENTORY_ORDER_REQUIRED", exception.getCode());
+        verifyNoInteractions(warehouseMapper, stockMapper, lockMapper, logMapper);
+    }
+
+    /**
+     * 扣减库存缺少订单号时必须拒绝，确保库存流水具备可追溯业务单号。
+     *
+     * @author Henfon
+     * @date 2026-09-04
+     */
+    @Test
+    void shouldRejectDeductWithoutOrderNumber() {
+        BusinessException exception = assertThrows(BusinessException.class,
+                () -> service.deduct(10L, "  "));
+
+        assertEquals("INVENTORY_ORDER_NO_REQUIRED", exception.getCode());
         verifyNoInteractions(warehouseMapper, stockMapper, lockMapper, logMapper);
     }
 
@@ -126,5 +158,25 @@ class InventoryStockServiceTest {
         verify(stockMapper).updateById(stock);
         verify(logMapper).insert(org.mockito.ArgumentMatchers.<InventoryStockLog>argThat(log ->
                 "到货补货".equals(log.getRemark()) && log.getAfterAvailable() == 7));
+    }
+
+    /**
+     * 初始化库存指定停用仓库时必须拒绝，确保库存台账只落在可用仓库。
+     *
+     * @author Henfon
+     * @date 2026-09-04
+     */
+    @Test
+    void shouldRejectSaveForDisabledWarehouse() {
+        InventoryWarehouse warehouse = new InventoryWarehouse();
+        warehouse.setId(3L);
+        warehouse.setStatus(0);
+        when(warehouseMapper.selectById(3L)).thenReturn(warehouse);
+
+        BusinessException exception = assertThrows(BusinessException.class,
+                () -> service.save(new InventoryStockSaveRequest(3L, 1L, 2L, 10, 2, "")));
+
+        assertEquals("INVENTORY_WAREHOUSE_INVALID", exception.getCode());
+        verifyNoInteractions(stockMapper, logMapper);
     }
 }

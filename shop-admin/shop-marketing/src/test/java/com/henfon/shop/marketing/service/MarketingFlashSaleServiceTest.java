@@ -4,11 +4,13 @@ import com.henfon.shop.marketing.entity.MarketingFlashSaleReservation;
 import com.henfon.shop.marketing.mapper.MarketingFlashSaleItemMapper;
 import com.henfon.shop.marketing.mapper.MarketingFlashSaleMapper;
 import com.henfon.shop.marketing.mapper.MarketingFlashSaleReservationMapper;
+import com.henfon.shop.common.exception.BusinessException;
 import com.henfon.shop.common.marketing.FlashSaleReservationItem;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
@@ -70,8 +72,9 @@ class MarketingFlashSaleServiceTest {
         when(reservationMapper.selectList(any())).thenReturn(List.of(reservation));
 
         // 订单与当前请求上下文不一致时必须报错，防止跨会员篡改库存预占。
-        assertThrows(RuntimeException.class, () -> service.reserve(10L, 20L, 30L,
+        BusinessException exception = assertThrows(BusinessException.class, () -> service.reserve(10L, 20L, 30L,
                 List.of(new FlashSaleReservationItem(100L, null, 1, java.math.BigDecimal.TEN))));
+        assertEquals("MARKETING_FLASH_SALE_ORDER_CONFLICT", exception.getCode());
         verify(activityMapper, never()).selectById(any());
     }
 

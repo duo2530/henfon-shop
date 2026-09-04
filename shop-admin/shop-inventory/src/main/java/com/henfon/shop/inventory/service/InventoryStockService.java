@@ -204,6 +204,7 @@ public class InventoryStockService {
      */
     @Transactional
     public void release(Long orderId, String orderNo) {
+        validateOrderContext(orderId, orderNo);
         List<InventoryStockLock> locks = lockMapper.selectList(new LambdaQueryWrapper<InventoryStockLock>()
                 .eq(InventoryStockLock::getOrderId, orderId)
                 .eq(InventoryStockLock::getStatus, LOCKED));
@@ -216,8 +217,8 @@ public class InventoryStockService {
             if (stock == null) {
                 throw new BusinessException("INVENTORY_RELEASE_FAILED", "库存台账不存在，库存释放失败");
             }
-            int beforeAvailable = stock.getAvailableStock();
-            int beforeLocked = stock.getLockedStock();
+            int beforeAvailable = stock.getAvailableStock() == null ? 0 : stock.getAvailableStock();
+            int beforeLocked = stock.getLockedStock() == null ? 0 : stock.getLockedStock();
             if (stockMapper.release(stock.getId(), lock.getQuantity()) == 0) {
                 throw new BusinessException("INVENTORY_RELEASE_FAILED", "库存释放失败，请稍后重试");
             }
@@ -237,6 +238,7 @@ public class InventoryStockService {
      */
     @Transactional
     public void deduct(Long orderId, String orderNo) {
+        validateOrderContext(orderId, orderNo);
         List<InventoryStockLock> locks = lockMapper.selectList(new LambdaQueryWrapper<InventoryStockLock>()
                 .eq(InventoryStockLock::getOrderId, orderId)
                 .eq(InventoryStockLock::getStatus, LOCKED));
@@ -249,8 +251,8 @@ public class InventoryStockService {
             if (stock == null) {
                 throw new BusinessException("INVENTORY_DEDUCT_FAILED", "库存台账不存在，发货扣减失败");
             }
-            int beforeAvailable = stock.getAvailableStock();
-            int beforeLocked = stock.getLockedStock();
+            int beforeAvailable = stock.getAvailableStock() == null ? 0 : stock.getAvailableStock();
+            int beforeLocked = stock.getLockedStock() == null ? 0 : stock.getLockedStock();
             if (stockMapper.deduct(stock.getId(), lock.getQuantity()) == 0) {
                 throw new BusinessException("INVENTORY_DEDUCT_FAILED", "发货扣减库存失败，请刷新后重试");
             }
@@ -312,6 +314,12 @@ public class InventoryStockService {
         Long warehouseId = request.warehouseId();
         if (warehouseId == null) {
             warehouseId = defaultWarehouse().getId();
+        } else {
+            // 显式指定仓库时也必须校验启用状态，避免库存台账写入停用或不存在仓库。
+            InventoryWarehouse warehouse = warehouseMapper.selectById(warehouseId);
+            if (warehouse == null || !Integer.valueOf(1).equals(warehouse.getStatus())) {
+                throw new BusinessException("INVENTORY_WAREHOUSE_INVALID", "库存仓库不存在或已停用");
+            }
         }
         InventoryStock stock = stockMapper.selectOne(new LambdaQueryWrapper<InventoryStock>()
                 .eq(InventoryStock::getWarehouseId, warehouseId)
@@ -387,5 +395,23 @@ public class InventoryStockService {
         log.setAfterLocked(afterLocked);
         log.setRemark(remark);
         logMapper.insert(log);
+    }
+
+    /**
+     * 校验订单库存操作上下文，避免空订单参数误触发批量释放或扣减。
+     *
+     * @param orderId 订单ID
+     * @param orderNo 订单号
+     * @author Henfon
+     * @date 2026-09-04
+     */
+    private void validateOrderContext(Long orderId, String orderNo) {
+        // 释放和扣减都必须绑定明确订单，防止调用方传入空值造成审计信息缺失。
+        if (orderId == null) {
+            throw new BusinessException("INVENTORY_ORDER_REQUIRED", "订单ID不能为空");
+        }
+        if (!StringUtils.hasText(orderNo)) {
+            throw new BusinessException("INVENTORY_ORDER_NO_REQUIRED", "订单号不能为空");
+        }
     }
 }

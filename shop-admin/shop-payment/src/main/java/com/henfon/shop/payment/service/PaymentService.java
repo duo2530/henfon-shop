@@ -151,10 +151,12 @@ public class PaymentService {
      */
     @Transactional
     public PaymentOrderResponse notifyPayment(PaymentNotifyRequest request) {
+        // 服务层可能被消息消费者或联调代码直接调用，不能只依赖控制器参数校验。
+        validateNotifyRequest(request);
         PaymentOrder paymentOrder = requirePaymentForUpdate(request.paymentNo());
         validateNotifyAmount(paymentOrder, request.amount());
         if (paymentOrder.getStatus() == STATUS_SUCCEEDED) {
-            if (!request.transactionNo().equals(paymentOrder.getTransactionNo())) {
+            if (!request.transactionNo().trim().equals(paymentOrder.getTransactionNo())) {
                 throw new BusinessException("PAYMENT_TRANSACTION_CONFLICT", "支付单已绑定其他第三方交易号");
             }
             return PaymentOrderResponse.from(paymentOrder);
@@ -175,6 +177,20 @@ public class PaymentService {
                     paymentOrder.getAmount(), paymentOrder.getPaidAt());
         }
         return PaymentOrderResponse.from(paymentOrder);
+    }
+
+    /**
+     * 校验支付回调请求，统一处理服务层直接调用时的空值和空白字段。
+     *
+     * @param request 支付回调请求
+     * @author Henfon
+     * @date 2026-09-04
+     */
+    private void validateNotifyRequest(PaymentNotifyRequest request) {
+        if (request == null || !StringUtils.hasText(request.paymentNo())
+                || !StringUtils.hasText(request.transactionNo())) {
+            throw new BusinessException("PAYMENT_NOTIFY_INVALID", "支付回调参数不完整");
+        }
     }
 
     /**
