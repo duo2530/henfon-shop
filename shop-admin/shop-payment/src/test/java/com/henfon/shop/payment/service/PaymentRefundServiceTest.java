@@ -135,6 +135,26 @@ class PaymentRefundServiceTest {
     }
 
     /**
+     * 校验订单不存在时创建退款单返回明确业务错误。
+     *
+     * @author Henfon
+     * @date 2026-09-04
+     */
+    @Test
+    void shouldRejectRefundWhenOrderMissing() {
+        when(tradeOrderService.findById(99L)).thenReturn(null);
+
+        PaymentRefundService service = new PaymentRefundService(paymentOrderMapper, refundOrderMapper,
+                tradeOrderService, tradeAfterSaleService);
+        BusinessException exception = assertThrows(BusinessException.class,
+                () -> service.create(new PaymentRefundCreateRequest(
+                        99L, new BigDecimal("10.00"), "订单取消退款", null)));
+
+        assertEquals("TRADE_ORDER_NOT_FOUND", exception.getCode());
+        verify(paymentOrderMapper, never()).selectOne(any());
+    }
+
+    /**
      * 创建退款单测试夹具。
      *
      * @param id 退款单ID

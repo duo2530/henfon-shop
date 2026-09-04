@@ -107,6 +107,10 @@ public class PaymentRefundService {
             }
         }
         TradeOrder order = tradeOrderService.findById(request.orderId());
+        if (order == null) {
+            // 订单可能已被删除或归档，先返回明确业务错误，避免后续状态校验触发空指针。
+            throw new BusinessException("TRADE_ORDER_NOT_FOUND", "订单不存在或已删除");
+        }
         if (Integer.valueOf(TradeOrderStateMachine.STATUS_REFUNDED).equals(order.getOrderStatus())
                 || Integer.valueOf(2).equals(order.getPaymentStatus())) {
             throw new BusinessException("PAYMENT_REFUND_ALREADY_COMPLETED", "订单已完成退款，不能重复申请");

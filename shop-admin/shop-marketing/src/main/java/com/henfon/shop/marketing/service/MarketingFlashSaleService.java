@@ -71,6 +71,19 @@ public class MarketingFlashSaleService implements FlashSaleReservationService {
         if (activityId == null || memberId == null || orderId == null || items == null || items.isEmpty()) {
             throw new BusinessException("MARKETING_FLASH_SALE_REQUEST_INVALID", "秒杀活动和商品不能为空");
         }
+        // 订单创建可能因网络重试再次进入预占流程，已有有效预占时直接返回，避免重复扣减活动库存。
+        List<MarketingFlashSaleReservation> existingReservations = reservationMapper.selectList(
+                new LambdaQueryWrapper<MarketingFlashSaleReservation>()
+                        .eq(MarketingFlashSaleReservation::getOrderId, orderId)
+                        .eq(MarketingFlashSaleReservation::getStatus, 0)
+                        .last("LIMIT 1"));
+        if (existingReservations != null && !existingReservations.isEmpty()) {
+            MarketingFlashSaleReservation existing = existingReservations.get(0);
+            if (!activityId.equals(existing.getActivityId()) || !memberId.equals(existing.getMemberId())) {
+                throw new BusinessException("MARKETING_FLASH_SALE_ORDER_CONFLICT", "订单已关联其他秒杀预占");
+            }
+            return;
+        }
         MarketingFlashSale activity = activityMapper.selectById(activityId);
         LocalDateTime now = LocalDateTime.now();
         if (activity == null || !Integer.valueOf(1).equals(activity.getStatus())
@@ -141,6 +154,10 @@ public class MarketingFlashSaleService implements FlashSaleReservationService {
                         .eq(MarketingFlashSaleReservation::getOrderId, orderId)
                         .eq(MarketingFlashSaleReservation::getStatus, 0)
                         .last("FOR UPDATE"));
+        if (reservations == null || reservations.isEmpty()) {
+            // 没有活动预占时无需执行后续更新，兼容普通订单和历史脏数据。
+            return;
+        }
         for (MarketingFlashSaleReservation reservation : reservations) {
             itemMapper.update(null, new LambdaUpdateWrapper<MarketingFlashSaleItem>()
                     .setSql("sold_stock = GREATEST(sold_stock - " + reservation.getQuantity() + ", 0)")
