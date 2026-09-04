@@ -961,6 +961,19 @@ export async function fetchPortalFavorites(memberId: number): Promise<Array<{ pr
   return request<Array<{ productId: number }>>(`/api/portal/member/favorites?memberId=${memberId}`);
 }
 
+/** 查询当前会员的商品对比历史。 */
+export async function fetchPortalCompareHistory(memberId: number): Promise<Array<{ id: number; comparedAt: string; productIds: number[] }>> {
+  return request<Array<{ id: number; comparedAt: string; productIds: number[] }>>(`/api/portal/member/compare/history?memberId=${memberId}&limit=20`);
+}
+
+/** 保存当前会员的一次商品对比组合。 */
+export async function savePortalCompareHistory(memberId: number, productIds: number[]): Promise<number> {
+  return request<number>(`/api/portal/member/compare/history?memberId=${memberId}`, {
+    method: 'POST',
+    body: JSON.stringify(productIds),
+  });
+}
+
 export async function togglePortalFavorite(memberId: number, productId: number): Promise<boolean> {
   return request<boolean>(`/api/portal/member/favorites/${productId}/toggle?memberId=${memberId}`, { method: 'POST' });
 }

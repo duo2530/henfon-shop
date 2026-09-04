@@ -3,6 +3,7 @@ package com.henfon.shop.identity.controller;
 import com.henfon.shop.common.api.ApiResponse;
 import com.henfon.shop.identity.dto.MemberAddressRequest;
 import com.henfon.shop.identity.dto.MemberProfileUpdateRequest;
+import com.henfon.shop.identity.dto.MemberCompareHistoryResponse;
 import com.henfon.shop.identity.entity.MemberAddress;
 import com.henfon.shop.identity.entity.MemberCompareHistory;
 import com.henfon.shop.identity.entity.MemberFavorite;
@@ -219,9 +220,9 @@ public class MemberPortalController {
      * @date 2026-08-29
      */
     @GetMapping("/compare/history")
-    public ApiResponse<List<MemberCompareHistory>> compareHistory(@RequestParam(required = false) Long memberId,
-                                                                   @RequestParam(defaultValue = "20") int limit,
-                                                                   Authentication authentication) {
+    public ApiResponse<List<MemberCompareHistoryResponse>> compareHistory(@RequestParam(required = false) Long memberId,
+                                                                            @RequestParam(defaultValue = "20") int limit,
+                                                                            Authentication authentication) {
         memberId = MemberPrincipalResolver.requireMemberId(authentication, memberId);
         return ApiResponse.success(service.compareHistory(memberId, limit), MDC.get("requestId"));
     }

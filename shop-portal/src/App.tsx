@@ -37,6 +37,8 @@ import {
   fetchPortalCart,
   fetchPortalCoupons,
   fetchPortalFavorites,
+  fetchPortalCompareHistory,
+  savePortalCompareHistory,
   fetchPortalOrders,
   fetchPortalOrderDetail,
   fetchPortalOrderLogistics,
@@ -501,8 +503,9 @@ export default function App() {
       fetchPortalFavorites(memberId),
       fetchPortalOrders(memberId),
       fetchPortalAddresses(memberId),
+      fetchPortalCompareHistory(memberId),
     ])
-      .then(async ([initialRemoteCart, remoteFavorites, remoteOrders, remoteAddresses]) => {
+      .then(async ([initialRemoteCart, remoteFavorites, remoteOrders, remoteAddresses, remoteCompareHistory]) => {
         if (!active) return;
         let remoteCart = initialRemoteCart;
         const failedLocalItems: CartItem[] = [];
@@ -574,6 +577,15 @@ export default function App() {
         setCartItems([...mappedCart, ...failedLocalItems]);
         // 服务端收藏是登录会员的权威数据，即使为空也要覆盖本地旧收藏。
         setWishlist(remoteFavorites.map((item) => `prod-${item.productId}`));
+        const mappedCompareHistory = remoteCompareHistory.map((item) => ({
+          id: `server-${item.id}`,
+          timestamp: Date.parse(item.comparedAt) || Date.now(),
+          productIds: item.productIds.map((productId) => `prod-${productId}`),
+        }));
+        if (mappedCompareHistory.length > 0) {
+          setCompareHistory(mappedCompareHistory);
+          setLastComparedProductIds(mappedCompareHistory[0].productIds);
+        }
         if (remoteAddresses.length > 0) {
           setMemberAddresses(remoteAddresses.map((address) => ({
             id: String(address.id),
@@ -1265,6 +1277,14 @@ export default function App() {
     if (!productIds || productIds.length === 0) return;
 
     setLastComparedProductIds(productIds);
+    const memberId = resolveMemberId(currentUser);
+    const numericProductIds = productIds.map((productId) => Number(productId.replace(/^prod-/, '')))
+      .filter((productId) => Number.isFinite(productId) && productId > 0);
+    if (!DEMO_MODE && memberId && numericProductIds.length > 0) {
+      void savePortalCompareHistory(memberId, numericProductIds).catch((error) => {
+        console.warn('对比历史同步失败，已保留本地记录', error);
+      });
+    }
     try {
       localStorage.setItem('aurora_last_compare', JSON.stringify(productIds));
     } catch (e) {

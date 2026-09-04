@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.henfon.shop.common.exception.BusinessException;
 import com.henfon.shop.identity.dto.MemberAddressRequest;
 import com.henfon.shop.identity.dto.MemberProfileUpdateRequest;
+import com.henfon.shop.identity.dto.MemberCompareHistoryResponse;
 import com.henfon.shop.identity.entity.MemberAddress;
 import com.henfon.shop.identity.entity.MemberCompareHistory;
 import com.henfon.shop.identity.entity.MemberCompareItem;
@@ -291,10 +292,16 @@ public class MemberPortalService {
      * @author Henfon
      * @date 2026-08-29
      */
-    public List<MemberCompareHistory> compareHistory(Long memberId, int limit) {
+    public List<MemberCompareHistoryResponse> compareHistory(Long memberId, int limit) {
         int safeLimit = Math.min(Math.max(limit, 1), 50);
-        return historyMapper.selectList(new LambdaQueryWrapper<MemberCompareHistory>()
+        List<MemberCompareHistory> histories = historyMapper.selectList(new LambdaQueryWrapper<MemberCompareHistory>()
                 .eq(MemberCompareHistory::getMemberId, memberId).orderByDesc(MemberCompareHistory::getComparedAt)
                 .last("LIMIT " + safeLimit));
+        // 一次性按历史记录查询明细，确保门户恢复时保留用户原始排序。
+        return histories.stream().map(history -> new MemberCompareHistoryResponse(
+                history.getId(), history.getComparedAt(), itemMapper.selectList(new LambdaQueryWrapper<MemberCompareItem>()
+                        .eq(MemberCompareItem::getHistoryId, history.getId())
+                        .orderByAsc(MemberCompareItem::getSortNo))
+                        .stream().map(MemberCompareItem::getProductId).toList())).toList();
     }
 }
