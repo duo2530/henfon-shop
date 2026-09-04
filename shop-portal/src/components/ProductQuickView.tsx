@@ -216,6 +216,7 @@ const ProductQuickViewContent: React.FC<Omit<ProductQuickViewProps, 'product'> &
   const [duration, setDuration] = useState(0);
   const [mediaLoadError, setMediaLoadError] = useState(false);
   const [videoLoadError, setVideoLoadError] = useState(false);
+  const [mediaRetryKey, setMediaRetryKey] = useState(0);
 
   // Build unified carousel media list (First slide is Video Demo if product has videoUrl)
   const mediaList = useMemo(() => {
@@ -375,12 +376,49 @@ const ProductQuickViewContent: React.FC<Omit<ProductQuickViewProps, 'product'> &
   // Carousel navigation
   const handlePrevMedia = () => {
     if (mediaList.length === 0) return;
+    setMediaLoadError(false);
+    setVideoLoadError(false);
     setActiveMediaIndex((prev) => (prev > 0 ? prev - 1 : mediaList.length - 1));
   };
 
   const handleNextMedia = () => {
     if (mediaList.length === 0) return;
+    setMediaLoadError(false);
+    setVideoLoadError(false);
     setActiveMediaIndex((prev) => (prev < mediaList.length - 1 ? prev + 1 : 0));
+  };
+
+  // 支持键盘切换媒体和关闭弹窗，输入框聚焦时不拦截用户正常输入。
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      const tagName = target?.tagName?.toLowerCase();
+      if (tagName === 'input' || tagName === 'textarea' || tagName === 'select' || target?.isContentEditable) return;
+      if (event.key === 'ArrowLeft') {
+        event.preventDefault();
+        handlePrevMedia();
+      } else if (event.key === 'ArrowRight') {
+        event.preventDefault();
+        handleNextMedia();
+      } else if (event.key === 'Escape') {
+        event.preventDefault();
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [mediaList.length, onClose]);
+
+  const handleRetryMedia = () => {
+    // 通过递增查询参数强制浏览器重新请求失败的媒体地址。
+    setMediaRetryKey((current) => current + 1);
+    setMediaLoadError(false);
+    setVideoLoadError(false);
+  };
+
+  const withRetryKey = (url: string) => {
+    if (!url || mediaRetryKey === 0) return url;
+    return `${url}${url.includes('?') ? '&' : '?'}mediaRetry=${mediaRetryKey}`;
   };
 
   const formatTime = (secs: number) => {
@@ -490,7 +528,7 @@ const ProductQuickViewContent: React.FC<Omit<ProductQuickViewProps, 'product'> &
                   <div className="w-full h-full relative flex items-center justify-center bg-zinc-950">
                     <video
                       ref={videoRef}
-                      src={currentMedia.url}
+                      src={withRetryKey(currentMedia.url)}
                       poster={currentMedia.poster}
                       playsInline
                       muted={isMuted}
@@ -512,6 +550,9 @@ const ProductQuickViewContent: React.FC<Omit<ProductQuickViewProps, 'product'> &
                         <Film className="w-6 h-6 text-amber-400" />
                         <span>视频暂时无法播放</span>
                         <span className="text-xs text-zinc-400">请查看下方商品图片</span>
+                        <button type="button" onClick={handleRetryMedia} className="mt-1 rounded-lg border border-zinc-600 bg-zinc-800 px-3 py-1.5 text-xs font-semibold text-zinc-100 hover:bg-zinc-700">
+                          重新加载视频
+                        </button>
                       </div>
                     )}
 
@@ -633,10 +674,13 @@ const ProductQuickViewContent: React.FC<Omit<ProductQuickViewProps, 'product'> &
                         <span className="text-2xl" aria-hidden="true">▧</span>
                         <span>商品图片暂时无法加载</span>
                         <span className="text-xs text-zinc-400">请切换其他媒体或稍后重试</span>
+                        <button type="button" onClick={handleRetryMedia} className="mt-1 rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-xs font-semibold text-zinc-700 hover:bg-zinc-50">
+                          重新加载图片
+                        </button>
                       </div>
                     ) : (
                       <img
-                        src={currentMedia.url}
+                        src={withRetryKey(currentMedia.url)}
                         alt={product.title}
                         onError={() => setMediaLoadError(true)}
                         className="w-full h-full object-cover object-center"

@@ -152,23 +152,25 @@ public class MarketingPortalService {
         if (order.getMemberId() == null || !order.getMemberId().equals(memberId)) {
             throw new BusinessException("MARKETING_COUPON_ORDER_FORBIDDEN", "无权为该订单核销优惠券");
         }
+        // 多张同券场景必须先查询当前订单已核销记录，避免重复请求误用另一张未使用优惠券。
         MarketingMemberCoupon record = memberCouponMapper.selectOne(new LambdaQueryWrapper<MarketingMemberCoupon>()
+                .eq(MarketingMemberCoupon::getMemberId, memberId)
+                .eq(MarketingMemberCoupon::getCouponId, request.couponId())
+                .eq(MarketingMemberCoupon::getReceiveStatus, 1)
+                .eq(MarketingMemberCoupon::getOrderId, request.orderId())
+                .last("LIMIT 1"));
+        if (record != null && Integer.valueOf(1).equals(record.getReceiveStatus())
+                && request.orderId().equals(record.getOrderId())) {
+            return record;
+        }
+        // 当前订单没有核销记录时，再按领取时间选择最早的可用优惠券。
+        record = memberCouponMapper.selectOne(new LambdaQueryWrapper<MarketingMemberCoupon>()
                 .eq(MarketingMemberCoupon::getMemberId, memberId)
                 .eq(MarketingMemberCoupon::getCouponId, request.couponId())
                 .eq(MarketingMemberCoupon::getReceiveStatus, 0)
                 .orderByAsc(MarketingMemberCoupon::getReceivedAt)
                 .last("LIMIT 1"));
         if (record == null) {
-            // 多张同券场景优先寻找当前订单已核销记录，保证重复请求仍然幂等。
-            record = memberCouponMapper.selectOne(new LambdaQueryWrapper<MarketingMemberCoupon>()
-                    .eq(MarketingMemberCoupon::getMemberId, memberId)
-                    .eq(MarketingMemberCoupon::getCouponId, request.couponId())
-                    .eq(MarketingMemberCoupon::getReceiveStatus, 1)
-                    .eq(MarketingMemberCoupon::getOrderId, request.orderId())
-                    .last("LIMIT 1"));
-            if (record != null) {
-                return record;
-            }
             throw new BusinessException("MARKETING_MEMBER_COUPON_NOT_FOUND", "会员未领取可用的该优惠券");
         }
         MarketingCoupon coupon = couponMapper.selectById(record.getCouponId());

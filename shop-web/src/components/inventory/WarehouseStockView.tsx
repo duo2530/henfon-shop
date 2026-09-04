@@ -2,8 +2,11 @@ import React, { FormEvent, useCallback, useEffect, useState } from 'react';
 import { useAdmin } from '../../context/AdminContext';
 import {
   BackendInventoryWarehouse,
+  BackendInventoryStock,
   BackendInventoryStockLock,
+  adjustInventoryStock,
   deleteInventoryWarehouse,
+  listInventoryStocks,
   listInventoryStockLocks,
   listInventoryWarehouses,
   saveInventoryWarehouse,
@@ -31,8 +34,9 @@ import {
 
 export interface StockOrder {
   id: string;
+  stockId: number;
   orderNo: string;
-  type: 'inbound_purchase' | 'outbound_sale' | 'transfer' | 'loss_audit';
+  type: 'inbound_purchase' | 'outbound_sale' | 'transfer' | 'loss_audit' | 'stock';
   warehouseName: string;
   targetWarehouse?: string;
   productName: string;
@@ -66,7 +70,6 @@ const emptyWarehouseForm = (): WarehouseForm => ({
 
 export const WarehouseStockView: React.FC = () => {
   const { showToast, confirm } = useAdmin();
-  const [stockOrders] = useState<StockOrder[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [typeFilter, setTypeFilter] = useState('all');
   const [warehouses, setWarehouses] = useState<BackendInventoryWarehouse[]>([]);
@@ -78,6 +81,29 @@ export const WarehouseStockView: React.FC = () => {
   const [stockLocks, setStockLocks] = useState<BackendInventoryStockLock[]>([]);
   const [stockLocksLoading, setStockLocksLoading] = useState(true);
   const [stockLocksError, setStockLocksError] = useState<string | null>(null);
+  const [inventoryStocks, setInventoryStocks] = useState<BackendInventoryStock[]>([]);
+  const [inventoryStocksLoading, setInventoryStocksLoading] = useState(true);
+  const [inventoryStocksError, setInventoryStocksError] = useState<string | null>(null);
+  const [stockActionId, setStockActionId] = useState<number | null>(null);
+
+  const loadInventoryStocks = useCallback(async () => {
+    setInventoryStocksLoading(true);
+    setInventoryStocksError(null);
+    try {
+      const page = await listInventoryStocks({ current: 1, size: 200 });
+      setInventoryStocks(page.records || []);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '库存台账加载失败';
+      setInventoryStocksError(message);
+      showToast(`${message}，请稍后重试`, 'error');
+    } finally {
+      setInventoryStocksLoading(false);
+    }
+  }, [showToast]);
+
+  useEffect(() => {
+    void loadInventoryStocks();
+  }, [loadInventoryStocks]);
 
   const loadWarehouses = useCallback(async () => {
     setWarehouseLoading(true);
@@ -190,6 +216,37 @@ export const WarehouseStockView: React.FC = () => {
       setWarehouseActionId(null);
     }
   };
+
+  const adjustStock = async (stock: BackendInventoryStock, changeQuantity: number) => {
+    setStockActionId(stock.id);
+    try {
+      await adjustInventoryStock(stock.id, changeQuantity, '管理端库存快速调整');
+      await loadInventoryStocks();
+      showToast(`库存已${changeQuantity > 0 ? '增加' : '减少'} ${Math.abs(changeQuantity)} 件`, 'success');
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : '库存调整失败', 'error');
+    } finally {
+      setStockActionId(null);
+    }
+  };
+
+  const stockOrders: StockOrder[] = inventoryStocks.map((stock) => {
+    const warehouse = warehouses.find((item) => item.id === stock.warehouseId);
+    return {
+      id: `stock-${stock.id}`,
+      stockId: stock.id,
+      orderNo: `STOCK-${stock.id}`,
+      type: 'stock',
+      warehouseName: warehouse?.warehouseName || `仓库 #${stock.warehouseId}`,
+      productName: stock.productId ? `商品 #${stock.productId}` : '未关联商品',
+      sku: `SKU #${stock.skuId}`,
+      quantity: stock.availableStock,
+      operator: '—',
+      status: 'completed',
+      createdAt: stock.updatedAt || '—',
+      remarks: stock.remark
+    };
+  });
 
   const filtered = stockOrders.filter((o) => {
     const matchSearch =
@@ -398,8 +455,10 @@ export const WarehouseStockView: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100 text-sm">
-              {filtered.length === 0 && <tr><td colSpan={7} className="py-12 text-center text-sm text-gray-400">暂无进销存单据流水，库存预占记录请查看上方“库存锁定流水”。</td></tr>}
-              {filtered.map((item) => (
+              {inventoryStocksLoading && <tr><td colSpan={7} className="py-12 text-center text-sm text-gray-500"><Loader2 className="w-4 h-4 mr-2 inline animate-spin" />正在加载库存台账…</td></tr>}
+              {!inventoryStocksLoading && inventoryStocksError && <tr><td colSpan={7} className="py-12 text-center text-sm text-red-600"><p>{inventoryStocksError}</p><button type="button" onClick={() => void loadInventoryStocks()} className="mt-3 text-blue-600 hover:underline">重新加载</button></td></tr>}
+              {!inventoryStocksLoading && !inventoryStocksError && filtered.length === 0 && <tr><td colSpan={7} className="py-12 text-center text-sm text-gray-400">暂无库存台账记录，请先维护 SKU 库存。</td></tr>}
+              {!inventoryStocksLoading && !inventoryStocksError && filtered.map((item) => (
                 <tr key={item.id} className="hover:bg-[#F8FAFC]">
                   <td className="py-3 px-4 font-mono font-bold text-gray-900 text-xs">
                     {item.orderNo}
@@ -424,6 +483,11 @@ export const WarehouseStockView: React.FC = () => {
                     {item.type === 'loss_audit' && (
                       <span className="inline-flex items-center gap-1 text-xs font-semibold text-amber-700 bg-amber-50 px-2 py-0.5 rounded">
                         <AlertTriangle className="w-3 h-3" /> 盘点报损
+                      </span>
+                    )}
+                    {item.type === 'stock' && (
+                      <span className="inline-flex items-center gap-1 text-xs font-semibold text-cyan-700 bg-cyan-50 px-2 py-0.5 rounded">
+                        <Boxes className="w-3 h-3" /> 库存台账
                       </span>
                     )}
                   </td>
@@ -458,8 +522,32 @@ export const WarehouseStockView: React.FC = () => {
                   </td>
 
                   <td className="py-3 px-4 text-right text-xs font-mono text-gray-500">
-                    <div>{item.operator}</div>
-                    <div className="text-gray-400">{item.createdAt}</div>
+                    {item.type === 'stock' ? (
+                      <div className="inline-flex items-center gap-1">
+                        <button
+                          type="button"
+                          disabled={stockActionId === item.stockId}
+                          onClick={() => {
+                            const stock = inventoryStocks.find((entry) => entry.id === item.stockId);
+                            if (stock) void adjustStock(stock, -1);
+                          }}
+                          className="w-7 h-7 rounded border border-red-200 text-red-600 hover:bg-red-50 disabled:opacity-50"
+                          aria-label="减少库存"
+                        >−</button>
+                        <button
+                          type="button"
+                          disabled={stockActionId === item.stockId}
+                          onClick={() => {
+                            const stock = inventoryStocks.find((entry) => entry.id === item.stockId);
+                            if (stock) void adjustStock(stock, 1);
+                          }}
+                          className="w-7 h-7 rounded border border-emerald-200 text-emerald-600 hover:bg-emerald-50 disabled:opacity-50"
+                          aria-label="增加库存"
+                        >+</button>
+                      </div>
+                    ) : (
+                      <><div>{item.operator}</div><div className="text-gray-400">{item.createdAt}</div></>
+                    )}
                   </td>
                 </tr>
               ))}

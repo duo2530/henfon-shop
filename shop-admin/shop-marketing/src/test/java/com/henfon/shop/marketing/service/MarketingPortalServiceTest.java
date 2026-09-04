@@ -177,6 +177,33 @@ class MarketingPortalServiceTest {
     }
 
     /**
+     * 验证重复核销同一订单时优先返回已使用的原优惠券，避免再次抵扣。
+     *
+     * @author Henfon
+     * @date 2026-09-04
+     */
+    @Test
+    void shouldReturnExistingRedeemedCouponForSameOrder() {
+        long memberId = 7L;
+        long couponId = 11L;
+        long orderId = 19L;
+        MarketingMemberCoupon redeemed = memberCoupon(couponId, memberId);
+        redeemed.setReceiveStatus(1);
+        redeemed.setOrderId(orderId);
+        // 模拟当前订单已存在核销记录，重复请求不应再查询可用券或修改订单金额。
+        when(tradeOrderService.findById(orderId)).thenReturn(pendingOrder(orderId, memberId, "100.00"));
+        when(memberCouponMapper.selectOne(any())).thenReturn(redeemed);
+
+        MarketingMemberCoupon result = service.redeem(memberId,
+                new MarketingCouponRedeemRequest(couponId, orderId));
+
+        assertEquals(redeemed, result);
+        verify(tradeOrderService, never()).applyCouponDiscount(any(), any());
+        verify(couponMapper, never()).selectById(any());
+        verify(memberCouponMapper, never()).updateById(org.mockito.ArgumentMatchers.any(MarketingMemberCoupon.class));
+    }
+
+    /**
      * 创建一张有效的类目优惠券测试数据。
      *
      * @param id 优惠券ID
