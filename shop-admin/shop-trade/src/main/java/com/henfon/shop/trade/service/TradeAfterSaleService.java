@@ -15,6 +15,7 @@ import com.henfon.shop.trade.mapper.TradeAfterSaleMapper;
 import com.henfon.shop.trade.mapper.TradeOrderItemMapper;
 import com.henfon.shop.trade.mapper.TradeOrderMapper;
 import com.henfon.shop.integration.messaging.RocketMqTopics;
+import com.henfon.shop.inventory.service.InventoryStockService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -48,6 +49,7 @@ public class TradeAfterSaleService {
     private final TradeOrderItemMapper orderItemMapper;
     private final TradeOrderService tradeOrderService;
     private final TradeEventOutboxService tradeEventOutboxService;
+    private final InventoryStockService inventoryStockService;
 
     /**
      * 创建售后服务。
@@ -62,12 +64,14 @@ public class TradeAfterSaleService {
     @Autowired
     public TradeAfterSaleService(TradeAfterSaleMapper afterSaleMapper, TradeOrderMapper orderMapper,
                                  TradeOrderItemMapper orderItemMapper, TradeOrderService tradeOrderService,
-                                 TradeEventOutboxService tradeEventOutboxService) {
+                                 TradeEventOutboxService tradeEventOutboxService,
+                                 InventoryStockService inventoryStockService) {
         this.afterSaleMapper = afterSaleMapper;
         this.orderMapper = orderMapper;
         this.orderItemMapper = orderItemMapper;
         this.tradeOrderService = tradeOrderService;
         this.tradeEventOutboxService = tradeEventOutboxService;
+        this.inventoryStockService = inventoryStockService;
     }
 
     /**
@@ -82,7 +86,7 @@ public class TradeAfterSaleService {
      */
     public TradeAfterSaleService(TradeAfterSaleMapper afterSaleMapper, TradeOrderMapper orderMapper,
                                  TradeOrderItemMapper orderItemMapper, TradeOrderService tradeOrderService) {
-        this(afterSaleMapper, orderMapper, orderItemMapper, tradeOrderService, null);
+        this(afterSaleMapper, orderMapper, orderItemMapper, tradeOrderService, null, null);
     }
 
     /**
@@ -206,6 +210,26 @@ public class TradeAfterSaleService {
             throw new BusinessException("TRADE_AFTER_SALE_STATUS_INVALID", "仅处理中退货退款售后单允许确认入库");
         }
         // 入库确认后复用订单退款状态机；重复点击时订单已处于退款中/已退款则安全跳过。
+        if (inventoryStockService != null) {
+            // 先回补库存并记录流水，再发起退款，确保仓库实物已确认后才允许资金流转。
+            List<TradeOrderItem> returnItems;
+            if (afterSale.getOrderItemId() == null) {
+                // 整单退货需要将订单中的每个 SKU 分别回补，保证库存流水可按 SKU 对账。
+                returnItems = orderItemMapper.selectList(new LambdaQueryWrapper<TradeOrderItem>()
+                        .eq(TradeOrderItem::getOrderId, afterSale.getOrderId()));
+            } else {
+                returnItems = List.of(requireOrderItem(afterSale.getOrderId(), afterSale.getOrderItemId()));
+            }
+            if (returnItems.isEmpty()) {
+                throw new BusinessException("TRADE_AFTER_SALE_ITEM_NOT_FOUND", "退货订单明细不存在，无法入库");
+            }
+            for (TradeOrderItem returnItem : returnItems) {
+                if (returnItem.getSkuId() == null || returnItem.getQuantity() == null || returnItem.getQuantity() <= 0) {
+                    throw new BusinessException("TRADE_AFTER_SALE_ITEM_INVALID", "退货订单明细缺少有效SKU或数量");
+                }
+                inventoryStockService.inboundReturn(returnItem.getSkuId(), returnItem.getQuantity(), afterSale.getAfterSaleNo());
+            }
+        }
         TradeOrder order = tradeOrderService.findById(afterSale.getOrderId());
         if (!Integer.valueOf(TradeOrderStateMachine.STATUS_REFUNDING).equals(order.getOrderStatus())
                 && !Integer.valueOf(TradeOrderStateMachine.STATUS_REFUNDED).equals(order.getOrderStatus())) {

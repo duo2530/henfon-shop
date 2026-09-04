@@ -302,6 +302,44 @@ public class InventoryStockService {
     }
 
     /**
+     * 确认售后退货入库并回补可用库存。
+     *
+     * @param skuId SKU ID
+     * @param quantity 入库数量
+     * @param bizNo 业务单号
+     * @return 入库后的库存台账
+     * @author Henfon
+     * @date 2026-09-04
+     */
+    @Transactional
+    public InventoryStock inboundReturn(Long skuId, int quantity, String bizNo) {
+        if (skuId == null) {
+            throw new BusinessException("INVENTORY_SKU_REQUIRED", "退货入库必须指定SKU");
+        }
+        if (quantity <= 0) {
+            throw new BusinessException("INVENTORY_QUANTITY_INVALID", "退货入库数量必须大于0");
+        }
+        InventoryWarehouse warehouse = defaultWarehouse();
+        InventoryStock stock = stockMapper.selectOne(new LambdaQueryWrapper<InventoryStock>()
+                .eq(InventoryStock::getWarehouseId, warehouse.getId())
+                .eq(InventoryStock::getSkuId, skuId));
+        if (stock == null) {
+            throw new BusinessException("INVENTORY_STOCK_NOT_FOUND", "退货SKU库存台账不存在");
+        }
+        int beforeAvailable = stock.getAvailableStock() == null ? 0 : stock.getAvailableStock();
+        int beforeLocked = stock.getLockedStock() == null ? 0 : stock.getLockedStock();
+        // 原子增加库存，避免与订单预占并发时覆盖其他线程更新。
+        if (stockMapper.inbound(stock.getId(), quantity) == 0) {
+            throw new BusinessException("INVENTORY_INBOUND_FAILED", "退货入库失败，请稍后重试");
+        }
+        InventoryStock afterStock = stockMapper.selectById(stock.getId());
+        saveLog(stock, "RETURN_INBOUND", StringUtils.hasText(bizNo) ? bizNo.trim() : "RETURN-INBOUND-" + skuId,
+                quantity, beforeAvailable, afterStock.getAvailableStock(), beforeLocked,
+                afterStock.getLockedStock(), "售后退货入库回补库存");
+        return afterStock;
+    }
+
+    /**
      * 初始化或更新指定仓库的 SKU 库存台账。
      *
      * @param request 台账请求

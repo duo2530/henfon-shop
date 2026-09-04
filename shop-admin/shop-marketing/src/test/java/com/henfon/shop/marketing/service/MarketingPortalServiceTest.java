@@ -233,6 +233,56 @@ class MarketingPortalServiceTest {
     }
 
     /**
+     * 验证部分退款按退款占比计算优惠券分摊金额，并写入分摊流水。
+     *
+     * @author Henfon
+     * @date 2026-09-04
+     */
+    @Test
+    void shouldAllocateCouponDiscountForPartialRefund() {
+        MarketingCouponUsage redeem = new MarketingCouponUsage();
+        redeem.setCouponId(11L);
+        redeem.setMemberCouponId(22L);
+        redeem.setMemberId(7L);
+        redeem.setOrderId(19L);
+        redeem.setDiscountAmount(new BigDecimal("30.00"));
+        redeem.setAction(1);
+        when(usageMapper.selectOne(any())).thenReturn(redeem, null);
+
+        BigDecimal allocated = service.allocatePartialRefund(7L, 19L,
+                new BigDecimal("50.00"), new BigDecimal("100.00"));
+
+        assertEquals(new BigDecimal("15.00"), allocated);
+        verify(usageMapper).insert(any(MarketingCouponUsage.class));
+    }
+
+    /**
+     * 验证重复部分退款通知不会重复插入流水，并返回已记录的分摊金额。
+     *
+     * @author Henfon
+     * @date 2026-09-04
+     */
+    @Test
+    void shouldKeepPartialRefundAllocationIdempotent() {
+        MarketingCouponUsage redeem = new MarketingCouponUsage();
+        redeem.setCouponId(11L);
+        redeem.setMemberCouponId(22L);
+        redeem.setMemberId(7L);
+        redeem.setOrderId(19L);
+        redeem.setDiscountAmount(new BigDecimal("30.00"));
+        MarketingCouponUsage partial = new MarketingCouponUsage();
+        partial.setDiscountAmount(new BigDecimal("15.00"));
+        when(usageMapper.selectOne(any())).thenReturn(redeem, partial);
+
+        BigDecimal allocated = service.allocatePartialRefund(7L, 19L,
+                new BigDecimal("50.00"), new BigDecimal("100.00"));
+
+        assertEquals(new BigDecimal("15.00"), allocated);
+        verify(usageMapper, never()).insert(any(MarketingCouponUsage.class));
+        verify(usageMapper, never()).updateById(any(MarketingCouponUsage.class));
+    }
+
+    /**
      * 创建一张有效的类目优惠券测试数据。
      *
      * @param id 优惠券ID

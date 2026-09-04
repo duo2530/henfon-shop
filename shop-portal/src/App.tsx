@@ -1309,6 +1309,40 @@ export default function App() {
     showToast('购物车已清空', 'info');
   };
 
+  /**
+   * 清理购物车中已下架或无库存的商品。
+   *
+   * @author Henfon
+   * @date 2026-09-04
+   * @description 删除服务端失效条目并同步移除本地条目，保留失败项以便稍后重试。
+   */
+  const handleClearInvalidCartItems = async (): Promise<{ removed: number; failed: number }> => {
+    const invalidItems = cartItems.filter((item) => {
+      const sku = item.skuId !== undefined
+        ? item.product.skus?.find((candidate) => candidate.id === item.skuId)
+        : undefined;
+      return (sku?.stock ?? item.product.stock ?? 0) <= 0;
+    });
+    if (invalidItems.length === 0) return { removed: 0, failed: 0 };
+
+    const serverItems = invalidItems
+      .map((item) => ({ item, id: item.id.match(/^server-(\d+)$/)?.[1] }))
+      .filter((entry): entry is { item: CartItem; id: string } => Boolean(entry.id));
+    const localItems = invalidItems.filter((item) => !item.id.startsWith('server-'));
+    const results = await Promise.allSettled(
+      serverItems.map(({ id }) => deletePortalCartItem(Number(id)))
+    );
+    const removedServerIds = new Set(
+      results.flatMap((result, index) => result.status === 'fulfilled' ? [serverItems[index].item.id] : [])
+    );
+    const removedIds = new Set([...localItems.map((item) => item.id), ...removedServerIds]);
+    setCartItems((prev) => prev.filter((item) => !removedIds.has(item.id)));
+    const failed = results.filter((result) => result.status === 'rejected').length;
+    if (removedIds.size > 0) showToast(`已清理 ${removedIds.size} 件失效商品`, 'info');
+    if (failed > 0) showToast(`${failed} 件失效商品清理失败，请稍后重试`, 'error');
+    return { removed: removedIds.size, failed };
+  };
+
   // Wishlist Handlers
   const handleToggleWishlist = (productId: string) => {
     if (wishlist.includes(productId)) {
@@ -2561,6 +2595,7 @@ export default function App() {
         onRemoveCoupon={handleRemoveCoupon}
         onOpenCheckout={handleOpenCheckoutFromCart}
         onOpenCouponCenter={handleOpenCouponCenter}
+        onClearInvalidItems={handleClearInvalidCartItems}
       />
 
       <CheckoutModal

@@ -31,6 +31,10 @@ import java.util.List;
  */
 @Service
 public class MarketingPortalService {
+    /** 部分退款优惠券分摊流水动作。 */
+    private static final int ACTION_REDEEM = 1;
+    private static final int ACTION_ROLLBACK = 2;
+    private static final int ACTION_PARTIAL_REFUND = 3;
     private final MarketingCouponMapper couponMapper;
     private final MarketingMemberCouponMapper memberCouponMapper;
     private final MarketingCouponUsageMapper usageMapper;
@@ -156,7 +160,7 @@ public class MarketingPortalService {
         MarketingCouponUsage existingUsage = usageMapper.selectOne(new LambdaQueryWrapper<MarketingCouponUsage>()
                 .eq(MarketingCouponUsage::getMemberId, memberId)
                 .eq(MarketingCouponUsage::getOrderId, request.orderId())
-                .eq(MarketingCouponUsage::getAction, 1)
+                .eq(MarketingCouponUsage::getAction, ACTION_REDEEM)
                 .last("LIMIT 1"));
         if (existingUsage != null && !request.couponId().equals(existingUsage.getCouponId())) {
             throw new BusinessException("MARKETING_COUPON_STACK_NOT_SUPPORTED", "同一订单不支持叠加使用多张优惠券");
@@ -215,7 +219,7 @@ public class MarketingPortalService {
         usage.setMemberId(memberId);
         usage.setOrderId(request.orderId());
         usage.setDiscountAmount(appliedDiscount);
-        usage.setAction(1);
+        usage.setAction(ACTION_REDEEM);
         usageMapper.insert(usage);
         return record;
     }
@@ -280,7 +284,7 @@ public class MarketingPortalService {
         MarketingCouponUsage usage = usageMapper.selectOne(new LambdaQueryWrapper<MarketingCouponUsage>()
                 .eq(MarketingCouponUsage::getMemberId, memberId)
                 .eq(MarketingCouponUsage::getOrderId, orderId)
-                .eq(MarketingCouponUsage::getAction, 1)
+                .eq(MarketingCouponUsage::getAction, ACTION_REDEEM)
                 .last("LIMIT 1"));
         if (usage == null) {
             return null;
@@ -295,7 +299,7 @@ public class MarketingPortalService {
         MarketingCouponUsage rollback = usageMapper.selectOne(new LambdaQueryWrapper<MarketingCouponUsage>()
                 .eq(MarketingCouponUsage::getMemberCouponId, record.getId())
                 .eq(MarketingCouponUsage::getOrderId, orderId)
-                .eq(MarketingCouponUsage::getAction, 2)
+                .eq(MarketingCouponUsage::getAction, ACTION_ROLLBACK)
                 .last("LIMIT 1"));
         if (rollback != null) {
             return record;
@@ -314,8 +318,70 @@ public class MarketingPortalService {
         rollbackUsage.setMemberId(memberId);
         rollbackUsage.setOrderId(orderId);
         rollbackUsage.setDiscountAmount(usage.getDiscountAmount());
-        rollbackUsage.setAction(2);
+        rollbackUsage.setAction(ACTION_ROLLBACK);
         usageMapper.insert(rollbackUsage);
         return record;
+    }
+
+    /**
+     * 按部分退款金额分摊优惠券优惠额，重复通知保持幂等且不提前返还优惠券。
+     *
+     * @param memberId 会员ID
+     * @param orderId 订单ID
+     * @param refundAmount 本次累计退款金额
+     * @param paidAmount 订单实付金额
+     * @return 本次累计分摊的优惠金额
+     * @author Henfon
+     * @date 2026-09-04
+     */
+    @org.springframework.transaction.annotation.Transactional
+    public BigDecimal allocatePartialRefund(Long memberId, Long orderId,
+                                            BigDecimal refundAmount, BigDecimal paidAmount) {
+        if (memberId == null || orderId == null || refundAmount == null || paidAmount == null
+                || refundAmount.signum() <= 0 || paidAmount.signum() <= 0
+                || refundAmount.compareTo(paidAmount) > 0) {
+            throw new BusinessException("MARKETING_REFUND_AMOUNT_INVALID", "部分退款金额参数无效");
+        }
+        MarketingCouponUsage redeem = usageMapper.selectOne(new LambdaQueryWrapper<MarketingCouponUsage>()
+                .eq(MarketingCouponUsage::getMemberId, memberId)
+                .eq(MarketingCouponUsage::getOrderId, orderId)
+                .eq(MarketingCouponUsage::getAction, ACTION_REDEEM)
+                .last("LIMIT 1"));
+        if (redeem == null) {
+            return BigDecimal.ZERO.setScale(2);
+        }
+        BigDecimal originalDiscount = redeem.getDiscountAmount() == null
+                ? BigDecimal.ZERO : redeem.getDiscountAmount().setScale(2, java.math.RoundingMode.HALF_UP);
+        BigDecimal allocated = originalDiscount.multiply(refundAmount)
+                .divide(paidAmount, 2, java.math.RoundingMode.HALF_UP)
+                .min(originalDiscount);
+        MarketingCouponUsage partial = usageMapper.selectOne(new LambdaQueryWrapper<MarketingCouponUsage>()
+                .eq(MarketingCouponUsage::getMemberCouponId, redeem.getMemberCouponId())
+                .eq(MarketingCouponUsage::getOrderId, orderId)
+                .eq(MarketingCouponUsage::getAction, ACTION_PARTIAL_REFUND)
+                .last("LIMIT 1"));
+        if (partial == null) {
+            if (allocated.signum() > 0) {
+                MarketingCouponUsage created = new MarketingCouponUsage();
+                created.setCouponId(redeem.getCouponId());
+                created.setMemberCouponId(redeem.getMemberCouponId());
+                created.setMemberId(memberId);
+                created.setOrderId(orderId);
+                created.setDiscountAmount(allocated);
+                created.setAction(ACTION_PARTIAL_REFUND);
+                usageMapper.insert(created);
+            }
+            return allocated;
+        }
+        BigDecimal previous = partial.getDiscountAmount() == null ? BigDecimal.ZERO : partial.getDiscountAmount();
+        if (allocated.compareTo(previous) > 0) {
+            partial.setDiscountAmount(allocated);
+            if (usageMapper.updateById(partial) == 0) {
+                throw new BusinessException("MARKETING_REFUND_CONCURRENT", "退款分摊记录已被其他操作修改");
+            }
+            return allocated;
+        }
+        // 重复通知携带较小金额时仍返回历史累计值，避免调用方误扣减已确认分摊。
+        return previous;
     }
 }
