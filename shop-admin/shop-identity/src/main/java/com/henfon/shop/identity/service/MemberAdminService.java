@@ -16,6 +16,8 @@ import com.henfon.shop.identity.mapper.MemberConsumptionStatMapper;
 import com.henfon.shop.identity.entity.MemberTag;
 import com.henfon.shop.identity.entity.MemberUserTag;
 import com.henfon.shop.identity.entity.MemberConsumptionStat;
+import com.henfon.shop.identity.entity.MemberAssetAudit;
+import com.henfon.shop.identity.mapper.MemberAssetAuditMapper;
 import com.henfon.shop.identity.dto.MemberTagSaveRequest;
 import com.henfon.shop.identity.dto.MemberUserTagsRequest;
 import org.springframework.stereotype.Service;
@@ -46,6 +48,7 @@ public class MemberAdminService {
     private final MemberTagMapper memberTagMapper;
     private final MemberUserTagMapper memberUserTagMapper;
     private final MemberConsumptionStatMapper memberConsumptionStatMapper;
+    private final MemberAssetAuditMapper memberAssetAuditMapper;
 
     /**
      * 创建后台会员管理服务。
@@ -59,11 +62,13 @@ public class MemberAdminService {
      */
     public MemberAdminService(MemberUserMapper memberUserMapper, MemberTagMapper memberTagMapper,
                               MemberUserTagMapper memberUserTagMapper,
-                              MemberConsumptionStatMapper memberConsumptionStatMapper) {
+                              MemberConsumptionStatMapper memberConsumptionStatMapper,
+                              MemberAssetAuditMapper memberAssetAuditMapper) {
         this.memberUserMapper = memberUserMapper;
         this.memberTagMapper = memberTagMapper;
         this.memberUserTagMapper = memberUserTagMapper;
         this.memberConsumptionStatMapper = memberConsumptionStatMapper;
+        this.memberAssetAuditMapper = memberAssetAuditMapper;
     }
 
     /**
@@ -200,6 +205,26 @@ public class MemberAdminService {
     }
 
     /**
+     * 分页查询会员资产审计流水。
+     *
+     * @param memberId 会员ID
+     * @param current 当前页
+     * @param size 页大小
+     * @return 资产审计流水分页数据
+     * @author Henfon
+     * @date 2026-09-04
+     */
+    public IPage<MemberAssetAudit> pageAssetAudits(Long memberId, long current, long size) {
+        // 先校验会员归属，再读取流水，避免通过会员ID越权查看其他账户资产。
+        requireMember(memberId);
+        return memberAssetAuditMapper.selectPage(new Page<>(Math.max(current, 1), Math.min(Math.max(size, 1), 200)),
+                new LambdaQueryWrapper<MemberAssetAudit>()
+                        .eq(MemberAssetAudit::getMemberId, memberId)
+                        .orderByDesc(MemberAssetAudit::getCreatedAt)
+                        .orderByDesc(MemberAssetAudit::getId));
+    }
+
+    /**
      * 调整会员余额和积分，并阻止余额或积分出现负数。
      *
      * @param id 会员ID
@@ -229,6 +254,18 @@ public class MemberAdminService {
             member.setRemark("调账：" + request.remark().trim());
         }
         updateMember(member);
+        // 会员资产更新成功后记录不可变审计流水，便于核对每次余额和积分变动。
+        MemberAssetAudit audit = new MemberAssetAudit();
+        audit.setMemberId(member.getId());
+        audit.setPointsDelta(request.pointsDelta());
+        audit.setPointsBefore(currentPoints);
+        audit.setPointsAfter(nextPoints);
+        audit.setBalanceDelta(request.balanceDelta().setScale(2, RoundingMode.HALF_UP));
+        audit.setBalanceBefore(currentBalance);
+        audit.setBalanceAfter(nextBalance);
+        audit.setOperation("ADMIN_ADJUST");
+        audit.setRemark(StringUtils.hasText(request.remark()) ? request.remark().trim() : null);
+        memberAssetAuditMapper.insert(audit);
         return enrichMember(member);
     }
 

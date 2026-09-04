@@ -276,8 +276,15 @@ public class InventoryStockService {
         if (stock == null) {
             throw new BusinessException("INVENTORY_STOCK_NOT_FOUND", "库存台账不存在");
         }
-        int before = stock.getAvailableStock();
-        int after = before + changeQuantity;
+        // 历史数据可能存在可用库存为空的情况，按零处理后再执行边界校验。
+        int before = stock.getAvailableStock() == null ? 0 : stock.getAvailableStock();
+        final int after;
+        try {
+            after = Math.addExact(before, changeQuantity);
+        } catch (ArithmeticException exception) {
+            // 防止极端调整数量发生整数溢出，导致库存回绕为负数或异常正数。
+            throw new BusinessException("INVENTORY_QUANTITY_INVALID", "库存调整数量超出可处理范围");
+        }
         if (after < 0) {
             throw new BusinessException("INVENTORY_STOCK_NOT_ENOUGH", "可用库存不足，不能出库");
         }
@@ -285,8 +292,10 @@ public class InventoryStockService {
         if (stockMapper.updateById(stock) == 0) {
             throw new BusinessException("INVENTORY_CONCURRENT_UPDATE", "库存已被其他操作修改，请刷新后重试");
         }
+        // 调整原因统一去除首尾空格，便于后台流水检索和审计展示。
+        String normalizedRemark = StringUtils.hasText(remark) ? remark.trim() : null;
         saveLog(stock, "ADJUST", "ADJUST-" + stockId, changeQuantity, before, after,
-                stock.getLockedStock(), stock.getLockedStock(), remark);
+                stock.getLockedStock(), stock.getLockedStock(), normalizedRemark);
         return stock;
     }
 

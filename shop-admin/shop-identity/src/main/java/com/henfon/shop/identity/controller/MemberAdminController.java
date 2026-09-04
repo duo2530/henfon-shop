@@ -9,6 +9,7 @@ import com.henfon.shop.identity.dto.MemberAdminUpdateRequest;
 import com.henfon.shop.identity.dto.MemberTagSaveRequest;
 import com.henfon.shop.identity.dto.MemberUserTagsRequest;
 import com.henfon.shop.identity.entity.MemberTag;
+import com.henfon.shop.identity.entity.MemberAssetAudit;
 import com.henfon.shop.identity.service.MemberAdminService;
 import org.slf4j.MDC;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -131,6 +132,25 @@ public class MemberAdminController {
     public ApiResponse<MemberUser> adjust(@PathVariable Long id,
                                           @Valid @RequestBody MemberAdminAdjustRequest request) {
         return ApiResponse.success(memberAdminService.adjust(id, request), MDC.get("requestId"));
+    }
+
+    /**
+     * 分页查询会员资产调账审计流水。
+     *
+     * @param id 会员ID
+     * @param current 当前页
+     * @param size 页大小
+     * @return 资产审计流水
+     * @author Henfon
+     * @date 2026-09-04
+     */
+    @GetMapping("/users/{id}/assets/audits")
+    @PreAuthorize("hasAuthority('member:user:query')")
+    public ApiResponse<IPage<MemberAssetAudit>> pageAssetAudits(@PathVariable Long id,
+                                                                 @RequestParam(defaultValue = "1") long current,
+                                                                 @RequestParam(defaultValue = "20") long size) {
+        // 审计流水只读展示，分页参数由服务层统一限制范围。
+        return ApiResponse.success(memberAdminService.pageAssetAudits(id, current, size), MDC.get("requestId"));
     }
 
     /**
