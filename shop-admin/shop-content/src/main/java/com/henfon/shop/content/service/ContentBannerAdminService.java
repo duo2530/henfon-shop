@@ -10,8 +10,10 @@ import com.henfon.shop.content.mapper.ContentBannerMapper;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
+import org.springframework.scheduling.annotation.Scheduled;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 /**
  * Banner 后台管理应用服务，负责内容校验、定时发布和逻辑删除。
@@ -131,6 +133,34 @@ public class ContentBannerAdminService {
         // 删除只影响后台可见性，不物理清理图片对象，避免误删仍被其他环境引用的媒体。
         ensureExists(id);
         bannerMapper.deleteById(id);
+    }
+
+    /**
+     * 根据发布时间窗口自动启停 Banner。
+     *
+     * @author Henfon
+     * @date 2026-09-04
+     */
+    @Scheduled(fixedDelayString = "${shop.content.banner-schedule-scan-ms:30000}")
+    @Transactional
+    public void syncScheduledStatus() {
+        LocalDateTime now = LocalDateTime.now();
+        // 仅处理配置了时间窗口的 Banner，保留运营手工停用无时间窗口内容的能力。
+        List<ContentBanner> scheduledBanners = bannerMapper.selectList(new LambdaQueryWrapper<ContentBanner>()
+                .isNotNull(ContentBanner::getStartAt).or().isNotNull(ContentBanner::getEndAt));
+        for (ContentBanner banner : scheduledBanners) {
+            boolean withinWindow = (banner.getStartAt() == null || !now.isBefore(banner.getStartAt()))
+                    && (banner.getEndAt() == null || !now.isAfter(banner.getEndAt()));
+            int targetStatus = withinWindow ? ENABLED : DISABLED;
+            if (Integer.valueOf(targetStatus).equals(banner.getStatus())) {
+                continue;
+            }
+            banner.setStatus(targetStatus);
+            if (bannerMapper.updateById(banner) == 0) {
+                // 并发编辑时跳过当前记录，等待下一轮调度再次收敛状态。
+                continue;
+            }
+        }
     }
 
     /**
