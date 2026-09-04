@@ -3,10 +3,14 @@ package com.henfon.shop.payment.controller;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.henfon.shop.common.api.ApiResponse;
 import com.henfon.shop.payment.dto.PaymentReconciliationRecord;
+import com.henfon.shop.payment.dto.PaymentReconciliationActionRequest;
 import com.henfon.shop.payment.service.PaymentReconciliationService;
 import org.slf4j.MDC;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -56,5 +60,21 @@ public class PaymentReconciliationAdminController {
             @RequestParam(defaultValue = "20") long size) {
         return ApiResponse.success(reconciliationService.page(keyword, type, status, current, size),
                 MDC.get("requestId"));
+    }
+
+    /**
+     * 人工处理对账差异。
+     *
+     * @param recordId 对账记录ID
+     * @param request 处理动作及备注
+     * @return 更新后的对账记录
+     * @author Henfon
+     * @date 2026-09-04
+     */
+    @PutMapping("/{recordId}/action")
+    @PreAuthorize("hasAuthority('payment:transaction:manage')")
+    public ApiResponse<PaymentReconciliationRecord> action(@PathVariable String recordId,
+                                                            @RequestBody PaymentReconciliationActionRequest request) {
+        return ApiResponse.success(reconciliationService.action(recordId, request), MDC.get("requestId"));
     }
 }

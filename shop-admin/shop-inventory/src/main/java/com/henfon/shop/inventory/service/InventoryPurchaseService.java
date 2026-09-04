@@ -10,11 +10,13 @@ import com.henfon.shop.inventory.entity.InventoryPurchaseItem;
 import com.henfon.shop.inventory.entity.InventoryPurchaseOrder;
 import com.henfon.shop.inventory.entity.InventoryStock;
 import com.henfon.shop.inventory.entity.InventorySupplier;
+import com.henfon.shop.inventory.entity.InventorySupplierStock;
 import com.henfon.shop.inventory.entity.InventoryWarehouse;
 import com.henfon.shop.inventory.mapper.InventoryPurchaseItemMapper;
 import com.henfon.shop.inventory.mapper.InventoryPurchaseOrderMapper;
 import com.henfon.shop.inventory.mapper.InventoryStockMapper;
 import com.henfon.shop.inventory.mapper.InventorySupplierMapper;
+import com.henfon.shop.inventory.mapper.InventorySupplierStockMapper;
 import com.henfon.shop.inventory.mapper.InventoryWarehouseMapper;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -33,13 +35,15 @@ public class InventoryPurchaseService {
     private final InventorySupplierMapper supplierMapper;
     private final InventoryWarehouseMapper warehouseMapper;
     private final InventoryStockMapper stockMapper;
+    private final InventorySupplierStockMapper supplierStockMapper;
 
     /** 创建采购服务。 @author Henfon @date 2026-09-04 */
     public InventoryPurchaseService(InventoryPurchaseOrderMapper orderMapper, InventoryPurchaseItemMapper itemMapper,
                                     InventorySupplierMapper supplierMapper, InventoryWarehouseMapper warehouseMapper,
-                                    InventoryStockMapper stockMapper) {
+                                    InventoryStockMapper stockMapper, InventorySupplierStockMapper supplierStockMapper) {
         this.orderMapper = orderMapper; this.itemMapper = itemMapper; this.supplierMapper = supplierMapper;
         this.warehouseMapper = warehouseMapper; this.stockMapper = stockMapper;
+        this.supplierStockMapper = supplierStockMapper;
     }
 
     /** 分页查询采购单。 @author Henfon @date 2026-09-04 */
@@ -60,7 +64,16 @@ public class InventoryPurchaseService {
         InventoryPurchaseOrder order = new InventoryPurchaseOrder(); order.setPurchaseNo("PO" + IdWorker.getIdStr()); order.setSupplierId(request.supplierId()); order.setWarehouseId(request.warehouseId()); order.setStatus(STATUS_CREATED); order.setRemark(trim(request.remark()));
         BigDecimal total = BigDecimal.ZERO;
         orderMapper.insert(order);
+        java.util.Set<Long> skuSet = new java.util.HashSet<>();
         for (InventoryPurchaseCreateRequest.Item input : request.items()) {
+            if (!skuSet.add(input.skuId())) {
+                throw new BusinessException("INVENTORY_PURCHASE_SKU_DUPLICATE", "采购单不能重复添加同一SKU");
+            }
+            InventorySupplierStock binding = supplierStockMapper.selectOne(new LambdaQueryWrapper<InventorySupplierStock>()
+                    .eq(InventorySupplierStock::getSupplierId, request.supplierId())
+                    .eq(InventorySupplierStock::getSkuId, input.skuId())
+                    .eq(InventorySupplierStock::getStatus, 1));
+            if (binding == null) throw new BusinessException("INVENTORY_PURCHASE_SUPPLIER_SKU_INVALID", "采购SKU未绑定该供应商或供货关系已停用");
             if (input.unitPrice().signum() < 0) throw new BusinessException("INVENTORY_PURCHASE_PRICE_INVALID", "采购单价不能为负数");
             InventoryPurchaseItem item = new InventoryPurchaseItem(); item.setPurchaseOrderId(order.getId()); item.setProductId(input.productId()); item.setSkuId(input.skuId()); item.setQuantity(input.quantity()); item.setReceivedQuantity(0); item.setUnitPrice(input.unitPrice()); item.setRemark(trim(input.remark())); itemMapper.insert(item);
             total = total.add(input.unitPrice().multiply(BigDecimal.valueOf(input.quantity())));

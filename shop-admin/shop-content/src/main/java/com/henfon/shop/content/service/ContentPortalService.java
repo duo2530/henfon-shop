@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.henfon.shop.common.exception.BusinessException;
 import com.henfon.shop.content.dto.ContentReviewSubmitRequest;
+import com.henfon.shop.content.dto.ContentReviewFollowupRequest;
 import com.henfon.shop.content.entity.ContentBanner;
 import com.henfon.shop.content.entity.ContentReview;
 import com.henfon.shop.content.mapper.ContentBannerMapper;
@@ -141,6 +142,42 @@ public class ContentPortalService {
         review.setStatus(0);
         reviewMapper.insert(review);
         return review.getId();
+    }
+
+    /**
+     * 提交已审核评价的会员追评。
+     *
+     * @param reviewId 评价ID
+     * @param memberId 当前会员ID
+     * @param request 追评请求
+     * @return 追评后的评价
+     * @author Henfon
+     * @date 2026-09-04
+     */
+    @Transactional
+    public ContentReview followup(Long reviewId, Long memberId, ContentReviewFollowupRequest request) {
+        if (reviewId == null || memberId == null || request == null || !StringUtils.hasText(request.content())) {
+            throw new BusinessException("CONTENT_REVIEW_FOLLOWUP_INVALID", "追评信息不能为空");
+        }
+        ContentReview review = reviewMapper.selectOne(new LambdaQueryWrapper<ContentReview>()
+                .eq(ContentReview::getId, reviewId)
+                .eq(ContentReview::getMemberId, memberId)
+                .last("LIMIT 1 FOR UPDATE"));
+        if (review == null) {
+            throw new BusinessException("CONTENT_REVIEW_NOT_FOUND", "评价不存在或无权操作");
+        }
+        if (!Integer.valueOf(1).equals(review.getStatus())) {
+            throw new BusinessException("CONTENT_REVIEW_FOLLOWUP_FORBIDDEN", "仅审核通过的评价可追评");
+        }
+        if (StringUtils.hasText(review.getFollowupContent())) {
+            throw new BusinessException("CONTENT_REVIEW_FOLLOWUP_EXISTS", "该评价已提交过追评");
+        }
+        review.setFollowupContent(request.content().trim());
+        review.setFollowupAt(LocalDateTime.now());
+        if (reviewMapper.updateById(review) == 0) {
+            throw new BusinessException("CONTENT_REVIEW_CONCURRENT_UPDATE", "评价已被其他操作修改，请刷新后重试");
+        }
+        return review;
     }
 
     /**

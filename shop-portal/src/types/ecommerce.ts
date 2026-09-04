@@ -25,6 +25,7 @@ export interface ProductVariant {
 export interface ProductSku {
   id: number;
   skuCode: string;
+  barcode?: string;
   skuName: string;
   attributes: Record<string, string>;
   price: number;

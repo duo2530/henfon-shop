@@ -5,6 +5,8 @@ import com.henfon.shop.catalog.dto.CatalogProductSaveRequest;
 import com.henfon.shop.catalog.dto.CatalogProductContentSaveRequest;
 import com.henfon.shop.catalog.dto.CatalogCategorySaveRequest;
 import com.henfon.shop.catalog.dto.CatalogSkuSaveRequest;
+import com.henfon.shop.catalog.dto.CatalogProductAuditRequest;
+import com.henfon.shop.catalog.dto.CatalogProductBatchStatusRequest;
 import com.henfon.shop.catalog.entity.CatalogCategory;
 import com.henfon.shop.catalog.entity.CatalogProduct;
 import com.henfon.shop.catalog.entity.CatalogSku;
@@ -113,6 +115,40 @@ public class CatalogAdminController {
     @PreAuthorize("hasAuthority('catalog:product:status')")
     public ApiResponse<Void> updateProductStatus(@PathVariable Long id, @RequestParam Integer status) {
         catalogProductService.updateStatus(id, status);
+        return ApiResponse.success(requestId());
+    }
+
+    /**
+     * 审核商品并在通过后自动上架。
+     *
+     * @param id 商品ID
+     * @param request 审核请求
+     * @return 空响应
+     * @author Henfon
+     * @date 2026-09-04
+     */
+    @PostMapping("/products/{id}/audit")
+    @PreAuthorize("hasAuthority('catalog:product:audit')")
+    public ApiResponse<Void> auditProduct(@PathVariable Long id,
+                                          @Valid @RequestBody CatalogProductAuditRequest request) {
+        // 审核接口统一记录审核结果与备注，便于后台追踪。
+        catalogProductService.audit(id, request.approved(), request.remark());
+        return ApiResponse.success(requestId());
+    }
+
+    /**
+     * 批量修改商品上下架状态。
+     *
+     * @param request 批量状态请求
+     * @return 空响应
+     * @author Henfon
+     * @date 2026-09-04
+     */
+    @PostMapping("/products/batch-status")
+    @PreAuthorize("hasAuthority('catalog:product:status')")
+    public ApiResponse<Void> batchUpdateProductStatus(
+            @Valid @RequestBody CatalogProductBatchStatusRequest request) {
+        catalogProductService.batchUpdateStatus(request.ids(), request.status());
         return ApiResponse.success(requestId());
     }
 

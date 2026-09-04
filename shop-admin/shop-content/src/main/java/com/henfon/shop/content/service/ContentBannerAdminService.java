@@ -144,11 +144,31 @@ public class ContentBannerAdminService {
     @Scheduled(fixedDelayString = "${shop.content.banner-schedule-scan-ms:30000}")
     @Transactional
     public void syncScheduledStatus() {
-        LocalDateTime now = LocalDateTime.now();
+        syncScheduledStatusAt(LocalDateTime.now());
+    }
+
+    /**
+     * 按指定时间同步 Banner 状态，供定时任务和补偿任务复用。
+     *
+     * @param now 当前时间
+     * @author Henfon
+     * @date 2026-09-04
+     */
+    public void syncScheduledStatusAt(LocalDateTime now) {
+        if (now == null) {
+            now = LocalDateTime.now();
+        }
         // 仅处理配置了时间窗口的 Banner，保留运营手工停用无时间窗口内容的能力。
         List<ContentBanner> scheduledBanners = bannerMapper.selectList(new LambdaQueryWrapper<ContentBanner>()
                 .isNotNull(ContentBanner::getStartAt).or().isNotNull(ContentBanner::getEndAt));
+        if (scheduledBanners == null || scheduledBanners.isEmpty()) {
+            return;
+        }
         for (ContentBanner banner : scheduledBanners) {
+            if (banner == null) {
+                // 防御异常数据，避免单条脏记录阻塞后续 Banner 状态收敛。
+                continue;
+            }
             boolean withinWindow = (banner.getStartAt() == null || !now.isBefore(banner.getStartAt()))
                     && (banner.getEndAt() == null || !now.isAfter(banner.getEndAt()));
             int targetStatus = withinWindow ? ENABLED : DISABLED;

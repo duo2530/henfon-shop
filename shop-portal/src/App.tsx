@@ -2061,6 +2061,7 @@ export default function App() {
             const attributes = Object.entries(sku.attributes || {}).map(([name, value]) => `${name}:${value}`).join(' ');
             return sku.skuCode.toLowerCase().includes(query)
               || sku.skuName.toLowerCase().includes(query)
+              || (sku.barcode || '').toLowerCase().includes(query)
               || attributes.toLowerCase().includes(query);
           });
           if (!matchSku) return false;

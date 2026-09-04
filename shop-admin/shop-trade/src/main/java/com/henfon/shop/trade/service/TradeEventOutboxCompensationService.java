@@ -5,7 +5,10 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.henfon.shop.common.exception.BusinessException;
 import com.henfon.shop.trade.entity.TradeEventOutbox;
+import com.henfon.shop.trade.entity.TradeEventOutboxRetryAudit;
 import com.henfon.shop.trade.mapper.TradeEventOutboxMapper;
+import com.henfon.shop.trade.mapper.TradeEventOutboxRetryAuditMapper;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -25,6 +28,7 @@ public class TradeEventOutboxCompensationService {
     private static final int STATUS_DEAD = 2;
 
     private final TradeEventOutboxMapper outboxMapper;
+    private final TradeEventOutboxRetryAuditMapper retryAuditMapper;
 
     /**
      * 创建 Outbox 死信补偿服务。
@@ -34,7 +38,22 @@ public class TradeEventOutboxCompensationService {
      * @date 2026-08-31
      */
     public TradeEventOutboxCompensationService(TradeEventOutboxMapper outboxMapper) {
+        this(outboxMapper, null);
+    }
+
+    /**
+     * 创建带审计记录能力的 Outbox 死信补偿服务。
+     *
+     * @param outboxMapper Outbox 数据访问对象
+     * @param retryAuditMapper 人工补偿审计数据访问对象
+     * @author Henfon
+     * @date 2026-09-04
+     */
+    @Autowired
+    public TradeEventOutboxCompensationService(TradeEventOutboxMapper outboxMapper,
+                                                TradeEventOutboxRetryAuditMapper retryAuditMapper) {
         this.outboxMapper = outboxMapper;
+        this.retryAuditMapper = retryAuditMapper;
     }
 
     /**
@@ -96,14 +115,17 @@ public class TradeEventOutboxCompensationService {
     public TradeEventOutbox retryDeadEvent(String eventId, String operator) {
         String normalizedEventId = normalizeFilter(eventId);
         if (!StringUtils.hasText(normalizedEventId)) {
+            recordRetryAudit(null, normalizedEventId, operator, "FAILED", "事件标识不能为空");
             throw new BusinessException("TRADE_OUTBOX_EVENT_ID_INVALID", "事件标识不能为空");
         }
         TradeEventOutbox event = outboxMapper.selectOne(new LambdaQueryWrapper<TradeEventOutbox>()
                 .eq(TradeEventOutbox::getEventId, normalizedEventId));
         if (event == null) {
+            recordRetryAudit(null, normalizedEventId, operator, "FAILED", "Outbox 事件不存在");
             throw new BusinessException("TRADE_OUTBOX_NOT_FOUND", "Outbox 事件不存在");
         }
         if (!Integer.valueOf(STATUS_DEAD).equals(event.getStatus())) {
+            recordRetryAudit(event, normalizedEventId, operator, "FAILED", "仅死信事件允许人工重试");
             throw new BusinessException("TRADE_OUTBOX_STATUS_INVALID", "仅死信事件允许人工重试");
         }
 
@@ -117,9 +139,42 @@ public class TradeEventOutboxCompensationService {
         event.setManualRetryAt(LocalDateTime.now());
         event.setManualRetryResult("SUCCESS");
         if (outboxMapper.updateById(event) != 1) {
+            recordRetryAudit(event, normalizedEventId, operator, "FAILED", "Outbox 事件已被其他操作修改，请刷新后重试");
             throw new BusinessException("TRADE_OUTBOX_CONCURRENT_UPDATE", "Outbox 事件已被其他操作修改，请刷新后重试");
         }
+        recordRetryAudit(event, normalizedEventId, operator, "SUCCESS", null);
         return event;
+    }
+
+    /**
+     * 记录一次人工补偿操作，审计失败不影响原始补偿结果。
+     *
+     * @param event Outbox 事件
+     * @param eventId 事件标识
+     * @param operator 操作人
+     * @param result 操作结果
+     * @param errorMessage 失败原因
+     * @author Henfon
+     * @date 2026-09-04
+     */
+    private void recordRetryAudit(TradeEventOutbox event, String eventId, String operator,
+                                  String result, String errorMessage) {
+        if (retryAuditMapper == null) {
+            return;
+        }
+        try {
+            // 审计写入采用独立对象，避免后续事件状态更新覆盖历史操作记录。
+            TradeEventOutboxRetryAudit audit = new TradeEventOutboxRetryAudit();
+            audit.setEventId(event != null && event.getEventId() != null ? event.getEventId() : eventId);
+            audit.setEventType(event == null ? null : event.getEventType());
+            audit.setOperator(normalizeFilter(operator));
+            audit.setResult(result);
+            audit.setErrorMessage(errorMessage);
+            retryAuditMapper.insert(audit);
+        } catch (Exception exception) {
+            // 审计表异常时记录日志即可，不能阻断运营补偿主流程。
+            org.slf4j.LoggerFactory.getLogger(getClass()).warn("写入 Outbox 人工补偿审计失败，eventId={}", eventId, exception);
+        }
     }
 
     /**

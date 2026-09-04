@@ -158,6 +158,7 @@ public class CatalogPortalService {
                         .eq(CatalogSku::getStatus, 1)
                         .and(query -> query.like(CatalogSku::getSkuCode, skuKeyword)
                                 .or().like(CatalogSku::getSkuName, skuKeyword)
+                                .or().like(CatalogSku::getBarcode, skuKeyword)
                                 .or().like(CatalogSku::getAttributesJson, skuKeyword)))
                 .forEach(sku -> {
                     if (sku.getProductId() != null) {

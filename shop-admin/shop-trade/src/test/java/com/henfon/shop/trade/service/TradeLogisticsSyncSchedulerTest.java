@@ -1,6 +1,7 @@
 package com.henfon.shop.trade.service;
 
 import com.henfon.shop.integration.logistics.LogisticsProvider;
+import com.henfon.shop.integration.logistics.LogisticsSyncAlertNotifier;
 import com.henfon.shop.trade.dto.TradeOrderLogisticsSyncResult;
 import com.henfon.shop.trade.entity.TradeOrder;
 import com.henfon.shop.trade.mapper.TradeOrderMapper;
@@ -30,6 +31,7 @@ class TradeLogisticsSyncSchedulerTest {
         TradeOrderMapper mapper = mock(TradeOrderMapper.class);
         TradeOrderService service = mock(TradeOrderService.class);
         LogisticsProvider provider = mock(LogisticsProvider.class);
+        LogisticsSyncAlertNotifier notifier = mock(LogisticsSyncAlertNotifier.class);
         when(provider.enabled()).thenReturn(true);
         TradeOrder order = new TradeOrder();
         order.setId(9L);
@@ -39,10 +41,11 @@ class TradeLogisticsSyncSchedulerTest {
         when(service.syncLogistics(9L)).thenReturn(
                 new TradeOrderLogisticsSyncResult(true, "mock", "IN_TRANSIT", 0, "暂无物流轨迹"));
 
-        TradeLogisticsSyncScheduler scheduler = new TradeLogisticsSyncScheduler(mapper, service, provider);
+        TradeLogisticsSyncScheduler scheduler = new TradeLogisticsSyncScheduler(mapper, service, provider, notifier);
         scheduler.syncActiveOrders();
 
         verify(service, times(3)).syncLogistics(9L);
+        verify(notifier).notifyMaxRetry(eq(9L), any(), eq("顺丰速运"), any(), eq(3), any());
     }
 
     /**
@@ -56,6 +59,7 @@ class TradeLogisticsSyncSchedulerTest {
         TradeOrderMapper mapper = mock(TradeOrderMapper.class);
         TradeOrderService service = mock(TradeOrderService.class);
         LogisticsProvider provider = mock(LogisticsProvider.class);
+        LogisticsSyncAlertNotifier notifier = mock(LogisticsSyncAlertNotifier.class);
         when(provider.enabled()).thenReturn(true);
         TradeOrder order = new TradeOrder();
         order.setId(10L);
@@ -64,7 +68,7 @@ class TradeLogisticsSyncSchedulerTest {
         when(mapper.selectList(any())).thenReturn(List.of(order));
         when(service.syncLogistics(10L)).thenThrow(new RuntimeException("timeout"));
 
-        TradeLogisticsSyncScheduler scheduler = new TradeLogisticsSyncScheduler(mapper, service, provider);
+        TradeLogisticsSyncScheduler scheduler = new TradeLogisticsSyncScheduler(mapper, service, provider, notifier);
         scheduler.syncActiveOrders();
 
         verify(service, times(3)).syncLogistics(10L);

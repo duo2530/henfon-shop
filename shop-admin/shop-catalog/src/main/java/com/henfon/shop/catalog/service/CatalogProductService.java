@@ -107,6 +107,10 @@ public class CatalogProductService {
         product.setMainImageUrl(minioStorageService.normalizeReference(request.mainImageUrl()));
         product.setTagsCsv(request.tagsCsv());
         product.setStatus(request.status() == null ? 1 : request.status());
+        // 新建商品若直接上架，视为已通过审核；草稿商品保持待审核状态。
+        if (product.getId() == null) {
+            product.setAuditStatus(product.getStatus() == 1 ? 1 : 0);
+        }
         product.setRemark(request.remark());
         if (product.getId() == null) {
             // 新商品默认作为上架商品写入，后续可由审核流程改为草稿状态。
@@ -166,6 +170,7 @@ public class CatalogProductService {
         target.setMainImageUrl(source.getMainImageUrl());
         target.setTagsCsv(source.getTagsCsv());
         target.setStatus(0);
+        target.setAuditStatus(0);
         target.setRemark(source.getRemark());
         catalogProductMapper.insert(target);
 
@@ -177,6 +182,7 @@ public class CatalogProductService {
             targetSku.setProductId(target.getId());
             targetSku.setSkuCode(nextSkuCode(sourceSku.getSkuCode()));
             targetSku.setSkuName(sourceSku.getSkuName());
+            targetSku.setBarcode(sourceSku.getBarcode());
             targetSku.setAttributesJson(sourceSku.getAttributesJson());
             targetSku.setPrice(sourceSku.getPrice());
             targetSku.setMarketPrice(sourceSku.getMarketPrice());
@@ -281,6 +287,54 @@ public class CatalogProductService {
         if (catalogProductMapper.updateById(product) == 0) {
             throw new BusinessException("CATALOG_PRODUCT_CONCURRENT", "商品已被其他操作修改，请刷新后重试");
         }
+    }
+
+    /**
+     * 审核商品并在通过时自动上架。
+     *
+     * @param id 商品ID
+     * @param approved 是否通过
+     * @param remark 审核备注
+     * @author Henfon
+     * @date 2026-09-04
+     */
+    @Transactional
+    public void audit(Long id, boolean approved, String remark) {
+        CatalogProduct product = catalogProductMapper.selectById(id);
+        if (product == null) {
+            throw new BusinessException("CATALOG_PRODUCT_NOT_FOUND", "商品不存在");
+        }
+        // 审核通过复用上架校验，确保商品具备可销售 SKU 和库存。
+        if (approved) {
+            updateStatus(id, 1);
+            product = catalogProductMapper.selectById(id);
+            product.setAuditStatus(1);
+        } else {
+            product.setAuditStatus(2);
+            product.setStatus(2);
+        }
+        product.setAuditRemark(remark);
+        catalogProductMapper.updateById(product);
+    }
+
+    /**
+     * 批量修改商品上下架状态。
+     *
+     * @param ids 商品ID列表
+     * @param status 目标状态
+     * @author Henfon
+     * @date 2026-09-04
+     */
+    @Transactional
+    public void batchUpdateStatus(List<Long> ids, Integer status) {
+        if (ids == null || ids.isEmpty()) {
+            throw new BusinessException("CATALOG_PRODUCT_IDS_REQUIRED", "商品ID列表不能为空");
+        }
+        if (ids.size() > 100) {
+            throw new BusinessException("CATALOG_PRODUCT_IDS_TOO_MANY", "单次最多处理100件商品");
+        }
+        // 逐个执行状态校验，任一失败则事务整体回滚，避免出现部分成功。
+        ids.stream().distinct().forEach(id -> updateStatus(id, status));
     }
 
     /**

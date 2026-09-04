@@ -2,6 +2,7 @@ package com.henfon.shop.trade.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.henfon.shop.integration.logistics.LogisticsProvider;
+import com.henfon.shop.integration.logistics.LogisticsSyncAlertNotifier;
 import com.henfon.shop.trade.entity.TradeOrder;
 import com.henfon.shop.trade.mapper.TradeOrderMapper;
 import org.slf4j.Logger;
@@ -26,6 +27,7 @@ public class TradeLogisticsSyncScheduler {
     private final TradeOrderMapper tradeOrderMapper;
     private final TradeOrderService tradeOrderService;
     private final LogisticsProvider logisticsProvider;
+    private final LogisticsSyncAlertNotifier alertNotifier;
 
     /**
      * 创建物流同步任务。
@@ -38,10 +40,12 @@ public class TradeLogisticsSyncScheduler {
      */
     public TradeLogisticsSyncScheduler(TradeOrderMapper tradeOrderMapper,
                                        TradeOrderService tradeOrderService,
-                                       LogisticsProvider logisticsProvider) {
+                                       LogisticsProvider logisticsProvider,
+                                       LogisticsSyncAlertNotifier alertNotifier) {
         this.tradeOrderMapper = tradeOrderMapper;
         this.tradeOrderService = tradeOrderService;
         this.logisticsProvider = logisticsProvider;
+        this.alertNotifier = alertNotifier;
     }
 
     /**
@@ -98,6 +102,9 @@ public class TradeLogisticsSyncScheduler {
         // 达到重试上限后输出结构化错误日志，供日志平台配置告警通知。
         LOGGER.error("订单物流同步告警，已达到重试上限，orderId={}, trackingNo={}",
                 order.getId(), maskTrackingNo(order.getTrackingNo()), lastException);
+        alertNotifier.notifyMaxRetry(order.getId(), order.getOrderNo(), order.getLogisticsCompany(),
+                maskTrackingNo(order.getTrackingNo()), maxAttempts,
+                lastException == null ? "暂无物流轨迹" : lastException.getMessage());
     }
 
     /**

@@ -47,7 +47,8 @@ public class SecurityConfiguration {
                                 "/actuator/health", "/error",
                                 // 微信支付 V3 回调由平台直接调用，不携带商城 JWT，必须放行验签入口。
                                 "/api/wx/pay/notify", "/api/wx/pay/notify/v3",
-                                "/api/wx/pay/refund/notify", "/api/wx/pay/refund/notify/v3").permitAll()
+                                "/api/wx/pay/refund/notify", "/api/wx/pay/refund/notify/v3",
+                                "/api/payment/invoices/callback").permitAll()
                         // 商品、内容、可领取优惠券和秒杀活动查询面向访客开放；会员数据和交易接口必须携带会员 JWT。
                         // 同时放行带尾斜杠的 GET 请求，兼容浏览器或网关规范化后的门户地址。
                         .requestMatchers("/api/portal/auth/**", "/api/portal/catalog/**", "/api/portal/content/**")

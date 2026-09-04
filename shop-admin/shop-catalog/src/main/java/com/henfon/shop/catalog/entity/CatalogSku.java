@@ -23,6 +23,8 @@ public class CatalogSku {
     private Long id;
     private Long productId;
     private String skuCode;
+    /** 商品条码，支持仓库扫码和后台检索。 */
+    private String barcode;
     private String skuName;
     private String attributesJson;
     private BigDecimal price;

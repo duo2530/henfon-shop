@@ -4,11 +4,14 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.henfon.shop.payment.dto.PaymentReconciliationRecord;
+import com.henfon.shop.payment.dto.PaymentReconciliationActionRequest;
+import com.henfon.shop.common.exception.BusinessException;
 import com.henfon.shop.payment.entity.PaymentOrder;
 import com.henfon.shop.payment.entity.PaymentRefundOrder;
 import com.henfon.shop.payment.mapper.PaymentOrderMapper;
 import com.henfon.shop.payment.mapper.PaymentRefundOrderMapper;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
@@ -129,6 +132,109 @@ public class PaymentReconciliationService {
     }
 
     /**
+     * 处理对账差异记录，支持确认、忽略、备注和退款重新匹配。
+     *
+     * @param recordId 对账记录ID，格式为pay-主键或refund-主键
+     * @param request 人工处理请求
+     * @return 更新后的对账记录
+     * @author Henfon
+     * @date 2026-09-04
+     */
+    @Transactional
+    public PaymentReconciliationRecord action(String recordId, PaymentReconciliationActionRequest request) {
+        if (!StringUtils.hasText(recordId) || request == null || !StringUtils.hasText(request.action())) {
+            throw new BusinessException("PAYMENT_RECONCILIATION_ACTION_INVALID", "对账处理参数不完整");
+        }
+        String[] parts = recordId.trim().split("-", 2);
+        if (parts.length != 2) {
+            throw new BusinessException("PAYMENT_RECONCILIATION_RECORD_NOT_FOUND", "对账记录不存在");
+        }
+        Long id;
+        try {
+            id = Long.valueOf(parts[1]);
+        } catch (NumberFormatException ex) {
+            throw new BusinessException("PAYMENT_RECONCILIATION_RECORD_NOT_FOUND", "对账记录不存在");
+        }
+        String action = request.action().trim().toLowerCase(Locale.ROOT);
+        if ("pay".equals(parts[0])) {
+            PaymentOrder payment = paymentOrderMapper.selectById(id);
+            if (payment == null) {
+                throw new BusinessException("PAYMENT_RECONCILIATION_RECORD_NOT_FOUND", "对账记录不存在");
+            }
+            applyAction(payment, action, request.remark());
+            paymentOrderMapper.updateById(payment);
+            return toPaymentRecord(payment);
+        }
+        if (!"refund".equals(parts[0])) {
+            throw new BusinessException("PAYMENT_RECONCILIATION_RECORD_NOT_FOUND", "对账记录不存在");
+        }
+        PaymentRefundOrder refund = refundOrderMapper.selectById(id);
+        if (refund == null) {
+            throw new BusinessException("PAYMENT_RECONCILIATION_RECORD_NOT_FOUND", "对账记录不存在");
+        }
+        if ("rematch".equals(action)) {
+            if (!StringUtils.hasText(request.matchPaymentNo())) {
+                throw new BusinessException("PAYMENT_RECONCILIATION_MATCH_INVALID", "重新匹配必须填写支付单号");
+            }
+            PaymentOrder payment = paymentOrderMapper.selectOne(new LambdaQueryWrapper<PaymentOrder>()
+                    .eq(PaymentOrder::getPaymentNo, request.matchPaymentNo().trim()).last("LIMIT 1"));
+            if (payment == null || !Integer.valueOf(PAYMENT_SUCCEEDED).equals(payment.getStatus())) {
+                throw new BusinessException("PAYMENT_RECONCILIATION_MATCH_INVALID", "支付单不存在或未支付成功");
+            }
+            // 重新匹配后保留原退款金额及流水，仅修正资金事实关联关系。
+            refund.setPaymentNo(payment.getPaymentNo());
+            refund.setReconciliationStatus("reconciled");
+        } else {
+            applyAction(refund, action, request.remark());
+        }
+        if (StringUtils.hasText(request.remark())) {
+            refund.setReconciliationRemark(request.remark().trim());
+        }
+        refundOrderMapper.updateById(refund);
+        return toRefundRecord(refund, Map.of(), Set.of());
+    }
+
+    /**
+     * 应用支付单人工对账状态。
+     *
+     * @param payment 支付单
+     * @param action 处理动作
+     * @param remark 处理备注
+     * @author Henfon
+     * @date 2026-09-04
+     */
+    private void applyAction(PaymentOrder payment, String action, String remark) {
+        if ("confirm".equals(action) || "reconcile".equals(action)) {
+            payment.setReconciliationStatus("reconciled");
+        } else if ("ignore".equals(action)) {
+            payment.setReconciliationStatus("ignored");
+        } else if (!"remark".equals(action)) {
+            throw new BusinessException("PAYMENT_RECONCILIATION_ACTION_INVALID", "不支持的对账处理动作");
+        }
+        if (StringUtils.hasText(remark)) payment.setReconciliationRemark(remark.trim());
+    }
+
+    /**
+     * 应用退款单人工对账状态。
+     *
+     * @param refund 退款单
+     * @param action 处理动作
+     * @param remark 处理备注
+     * @author Henfon
+     * @date 2026-09-04
+     */
+    private void applyAction(PaymentRefundOrder refund, String action, String remark) {
+        if ("confirm".equals(action) || "reconcile".equals(action)) {
+            refund.setReconciliationStatus("reconciled");
+        } else if ("ignore".equals(action)) {
+            refund.setReconciliationStatus("ignored");
+        } else if (!"remark".equals(action)) {
+            throw new BusinessException("PAYMENT_RECONCILIATION_ACTION_INVALID", "不支持的对账处理动作");
+        }
+        if (StringUtils.hasText(remark)) refund.setReconciliationRemark(remark.trim());
+    }
+
+    /**
      * 将支付单映射为统一对账记录。
      *
      * @param payment 支付单实体
@@ -139,6 +245,9 @@ public class PaymentReconciliationService {
     private PaymentReconciliationRecord toPaymentRecord(PaymentOrder payment) {
         String status = payment.getStatus() != null && payment.getStatus() == PAYMENT_SUCCEEDED
                 ? "reconciled" : "pending_settle";
+        if (StringUtils.hasText(payment.getReconciliationStatus())) {
+            status = payment.getReconciliationStatus();
+        }
         BigDecimal amount = safeAmount(payment.getAmount());
         String settledAt = formatTime(payment.getPaidAt() != null ? payment.getPaidAt() : payment.getCreatedAt());
         String transNo = StringUtils.hasText(payment.getTransactionNo())
@@ -146,7 +255,8 @@ public class PaymentReconciliationService {
         return new PaymentReconciliationRecord(
                 "pay-" + payment.getId(), transNo, payment.getOrderNo(), "order_income",
                 normalizeChannel(payment.getChannel()), amount, BigDecimal.ZERO, amount, status,
-                settledAt, payment.getChannel(), "支付单 " + payment.getPaymentNo());
+                settledAt, payment.getChannel(), StringUtils.hasText(payment.getReconciliationRemark())
+                        ? payment.getReconciliationRemark() : "支付单 " + payment.getPaymentNo());
     }
 
     /**
@@ -174,6 +284,9 @@ public class PaymentReconciliationService {
         } else {
             status = "discrepancy";
         }
+        if (StringUtils.hasText(refund.getReconciliationStatus())) {
+            status = refund.getReconciliationStatus();
+        }
         BigDecimal amount = safeAmount(refund.getAmount()).negate();
         String settledAt = formatTime(refund.getRefundedAt() != null ? refund.getRefundedAt() : refund.getRequestedAt());
         String transNo = StringUtils.hasText(refund.getTransactionNo())
@@ -181,7 +294,9 @@ public class PaymentReconciliationService {
         return new PaymentReconciliationRecord(
                 "refund-" + refund.getId(), transNo, refund.getOrderNo(), "refund_payout",
                 "wechat_pay", amount, BigDecimal.ZERO, amount, status, settledAt,
-                "退款原路渠道", StringUtils.hasText(refund.getReason()) ? refund.getReason() : "退款单 " + refund.getRefundNo());
+                "退款原路渠道", StringUtils.hasText(refund.getReconciliationRemark())
+                        ? refund.getReconciliationRemark()
+                        : (StringUtils.hasText(refund.getReason()) ? refund.getReason() : "退款单 " + refund.getRefundNo()));
     }
 
     /**

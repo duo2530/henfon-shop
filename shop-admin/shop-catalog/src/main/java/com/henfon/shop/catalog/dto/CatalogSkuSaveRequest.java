@@ -18,6 +18,7 @@ public record CatalogSkuSaveRequest(
         Long id,
         @NotBlank @Size(max = 64) String skuCode,
         @NotBlank @Size(max = 200) String skuName,
+        @Size(max = 64) String barcode,
         @Size(max = 2000) String attributesJson,
         @NotNull @DecimalMin("0.00") BigDecimal price,
         @DecimalMin("0.00") BigDecimal marketPrice,

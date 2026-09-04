@@ -71,6 +71,9 @@ shop:
         connect-timeout-ms: ${SHOP_KUAIDI100_CONNECT_TIMEOUT_MS:3000}
         read-timeout-ms: ${SHOP_KUAIDI100_READ_TIMEOUT_MS:10000}
   payment:
+    invoice:
+      # 开票平台异步回调鉴权令牌，由部署平台注入，禁止写入代码仓库。
+      callback-token: ${SHOP_INVOICE_CALLBACK_TOKEN:}
     wechat:
       # ==================== 微信支付 V3 生产环境配置 ====================
       # 生产环境不提供敏感信息默认值，建议通过容器、系统服务或部署平台注入以下环境变量。

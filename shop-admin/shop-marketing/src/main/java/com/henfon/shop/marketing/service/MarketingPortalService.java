@@ -156,14 +156,37 @@ public class MarketingPortalService {
         if (order.getMemberId() == null || !order.getMemberId().equals(memberId)) {
             throw new BusinessException("MARKETING_COUPON_ORDER_FORBIDDEN", "无权为该订单核销优惠券");
         }
-        // 当前订单暂不支持叠加多张优惠券，避免后一次核销覆盖折扣却遗留多条核销流水。
-        MarketingCouponUsage existingUsage = usageMapper.selectOne(new LambdaQueryWrapper<MarketingCouponUsage>()
+        // 查询当前订单已经核销的优惠券，叠加规则按最多两张且累计优惠不超过商品小计控制。
+        List<MarketingCouponUsage> existingUsages = usageMapper.selectList(new LambdaQueryWrapper<MarketingCouponUsage>()
                 .eq(MarketingCouponUsage::getMemberId, memberId)
                 .eq(MarketingCouponUsage::getOrderId, request.orderId())
-                .eq(MarketingCouponUsage::getAction, ACTION_REDEEM)
-                .last("LIMIT 1"));
-        if (existingUsage != null && !request.couponId().equals(existingUsage.getCouponId())) {
-            throw new BusinessException("MARKETING_COUPON_STACK_NOT_SUPPORTED", "同一订单不支持叠加使用多张优惠券");
+                .eq(MarketingCouponUsage::getAction, ACTION_REDEEM));
+        if (existingUsages == null || existingUsages.isEmpty()) {
+            existingUsages = new java.util.ArrayList<>();
+            // 兼容旧版数据访问实现，并读取单条历史核销记录。
+            MarketingCouponUsage legacyUsage = usageMapper.selectOne(new LambdaQueryWrapper<MarketingCouponUsage>()
+                    .eq(MarketingCouponUsage::getMemberId, memberId)
+                    .eq(MarketingCouponUsage::getOrderId, request.orderId())
+                    .eq(MarketingCouponUsage::getAction, ACTION_REDEEM)
+                    .last("LIMIT 1"));
+            if (legacyUsage != null) {
+                existingUsages.add(legacyUsage);
+            }
+        }
+        // 同一优惠券重复请求直接走幂等分支，不重复占用优惠券库存。
+        MarketingCouponUsage existingUsage = existingUsages.stream()
+                .filter(item -> request.couponId().equals(item.getCouponId()))
+                .findFirst().orElse(null);
+        if (existingUsage == null && !existingUsages.isEmpty()) {
+            // 默认仍保持单券规则，仅当新旧优惠券均显式标记 STACKABLE 时允许叠加。
+            MarketingCoupon requestedCoupon = couponMapper.selectById(request.couponId());
+            MarketingCoupon previousCoupon = couponMapper.selectById(existingUsages.get(0).getCouponId());
+            if (!isStackableCoupon(requestedCoupon) || !isStackableCoupon(previousCoupon)) {
+                throw new BusinessException("MARKETING_COUPON_STACK_NOT_SUPPORTED", "当前优惠券不支持与其他优惠券叠加");
+            }
+        }
+        if (existingUsages.size() >= 2 && existingUsage == null) {
+            throw new BusinessException("MARKETING_COUPON_STACK_LIMIT", "同一订单最多叠加使用两张优惠券");
         }
         // 多张同券场景必须先查询当前订单已核销记录，避免重复请求误用另一张未使用优惠券。
         MarketingMemberCoupon record = memberCouponMapper.selectOne(new LambdaQueryWrapper<MarketingMemberCoupon>()
@@ -206,7 +229,18 @@ public class MarketingPortalService {
         }
         // 现金券最高只能抵扣商品金额，避免错误配置导致订单应付金额为负数。
         BigDecimal appliedDiscount = configuredDiscount.min(subtotal).setScale(2, java.math.RoundingMode.HALF_UP);
-        tradeOrderService.applyCouponDiscount(order.getId(), appliedDiscount);
+        BigDecimal existingDiscount = existingUsages.stream()
+                .map(MarketingCouponUsage::getDiscountAmount)
+                .filter(java.util.Objects::nonNull)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal cumulativeDiscount = existingDiscount.add(appliedDiscount)
+                .min(order.getSubtotalAmount() == null ? BigDecimal.ZERO : order.getSubtotalAmount())
+                .setScale(2, java.math.RoundingMode.HALF_UP);
+        // 仅将本次新增优惠应用到订单，累计金额由订单服务统一重算。
+        BigDecimal incrementalDiscount = cumulativeDiscount.subtract(existingDiscount).max(BigDecimal.ZERO);
+        if (incrementalDiscount.signum() > 0) {
+            tradeOrderService.applyCouponDiscount(order.getId(), cumulativeDiscount);
+        }
         record.setReceiveStatus(1);
         record.setUsedAt(now);
         record.setOrderId(request.orderId());
@@ -268,6 +302,22 @@ public class MarketingPortalService {
             throw new BusinessException("MARKETING_COUPON_CATEGORY_MISMATCH", "订单商品不适用该优惠券");
         }
         return applicableSubtotal;
+    }
+
+    /**
+     * 判断优惠券是否允许参与叠加。
+     *
+     * @param coupon 优惠券
+     * @return 是否允许叠加
+     * @author Henfon
+     * @date 2026-09-04
+     */
+    private boolean isStackableCoupon(MarketingCoupon coupon) {
+        // 使用现有 tag 字段承载轻量配置，避免立即扩展数据库结构。
+        return coupon != null && StringUtils.hasText(coupon.getTag())
+                && java.util.Arrays.stream(coupon.getTag().split(","))
+                .map(String::trim)
+                .anyMatch("STACKABLE"::equalsIgnoreCase);
     }
 
     /**

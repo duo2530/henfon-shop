@@ -18,6 +18,7 @@ import java.time.LocalDate;
 import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * MinIO 统一文件服务，负责上传、临时访问和删除。
@@ -37,6 +38,13 @@ public class MinioStorageService {
     private final MinioClient minioClient;
     private final MinioProperties properties;
     private final Logger logger = LoggerFactory.getLogger(MinioStorageService.class);
+    private final AtomicLong operationSuccessCount = new AtomicLong();
+    private final AtomicLong operationFailureCount = new AtomicLong();
+    private final AtomicLong consecutiveFailureCount = new AtomicLong();
+    private volatile String lastFailureMessage;
+    private volatile long lastFailureAt;
+
+    private static final long FAILURE_ALERT_THRESHOLD = 3;
 
     /**
      * 创建 MinIO 文件服务。
@@ -83,8 +91,10 @@ public class MinioStorageService {
                         .stream(file.getInputStream(), file.getSize(), -1)
                         .contentType(contentType)
                         .build());
+                recordSuccess();
                 return new UploadResult(objectKey, presign(objectKey), file.getSize(), contentType);
             } catch (Exception exception) {
+                recordFailure("文件上传失败: " + exception.getMessage(), exception);
                 logger.warn("MinIO 文件上传失败，第{}次尝试，共{}次，对象键={}", attempt, MAX_UPLOAD_ATTEMPTS, objectKey,
                         exception);
             }
@@ -114,6 +124,7 @@ public class MinioStorageService {
                     .expiry((int) PRESIGN_DURATION.toSeconds())
                     .build());
         } catch (Exception exception) {
+            recordFailure("生成文件访问地址失败: " + exception.getMessage(), exception);
             throw new BusinessException("STORAGE_PRESIGN_FAILED", "生成文件访问地址失败");
         }
     }
@@ -214,6 +225,7 @@ public class MinioStorageService {
             minioClient.removeObject(RemoveObjectArgs.builder()
                     .bucket(properties.bucket()).object(objectKey).build());
         } catch (Exception exception) {
+            recordFailure("文件删除失败: " + exception.getMessage(), exception);
             throw new BusinessException("STORAGE_DELETE_FAILED", "文件删除失败，请稍后重试");
         }
     }
@@ -239,6 +251,136 @@ public class MinioStorageService {
     private void ensureConfigured() {
         if (properties == null || !properties.isConfigured() || minioClient == null) {
             throw new BusinessException("STORAGE_NOT_CONFIGURED", "文件存储服务未配置，请联系管理员");
+        }
+    }
+
+    /**
+     * 记录一次成功的存储操作并清零连续失败次数。
+     *
+     * @author Henfon
+     * @date 2026-09-04
+     * @描述 更新 MinIO 运行指标，供健康检查和监控端点读取
+     */
+    void recordSuccess() {
+        operationSuccessCount.incrementAndGet();
+        consecutiveFailureCount.set(0);
+    }
+
+    /**
+     * 判断 MinIO 服务配置是否完整。
+     *
+     * @return 配置是否完整且客户端可用
+     * @author Henfon
+     * @date 2026-09-04
+     * @描述 供健康检查端点区分配置缺失和服务不可用
+     */
+    public boolean isConfigured() {
+        return properties != null && properties.isConfigured() && minioClient != null;
+    }
+
+    /**
+     * 记录一次失败的存储操作，并在连续失败达到阈值时输出结构化告警。
+     *
+     * @param message 失败摘要
+     * @param exception 原始异常
+     * @author Henfon
+     * @date 2026-09-04
+     * @描述 维护失败计数和告警状态，便于日志平台接入通知
+     */
+    void recordFailure(String message, Exception exception) {
+        operationFailureCount.incrementAndGet();
+        long consecutive = consecutiveFailureCount.incrementAndGet();
+        lastFailureMessage = message;
+        lastFailureAt = System.currentTimeMillis();
+        if (consecutive >= FAILURE_ALERT_THRESHOLD) {
+            logger.error("MinIO 存储连续失败告警，consecutiveFailures={}, lastFailure={}", consecutive, message,
+                    exception);
+        }
+    }
+
+    /**
+     * 获取存储操作成功次数。
+     *
+     * @return 成功次数
+     * @author Henfon
+     * @date 2026-09-04
+     * @描述 为 Actuator 健康指标提供成功计数
+     */
+    public long getOperationSuccessCount() {
+        return operationSuccessCount.get();
+    }
+
+    /**
+     * 获取存储操作失败次数。
+     *
+     * @return 失败次数
+     * @author Henfon
+     * @date 2026-09-04
+     * @描述 为 Actuator 健康指标提供失败计数
+     */
+    public long getOperationFailureCount() {
+        return operationFailureCount.get();
+    }
+
+    /**
+     * 获取当前连续失败次数。
+     *
+     * @return 连续失败次数
+     * @author Henfon
+     * @date 2026-09-04
+     * @描述 判断是否达到存储告警阈值
+     */
+    public long getConsecutiveFailureCount() {
+        return consecutiveFailureCount.get();
+    }
+
+    /**
+     * 获取最近一次失败时间戳。
+     *
+     * @return Unix 毫秒时间戳，未失败时为 0
+     * @author Henfon
+     * @date 2026-09-04
+     * @描述 提供故障发生时间用于监控定位
+     */
+    public long getLastFailureAt() {
+        return lastFailureAt;
+    }
+
+    /**
+     * 获取最近一次失败摘要。
+     *
+     * @return 失败摘要
+     * @author Henfon
+     * @date 2026-09-04
+     * @描述 提供健康端点展示的安全错误信息
+     */
+    public String getLastFailureMessage() {
+        return lastFailureMessage;
+    }
+
+    /**
+     * 检查 MinIO 默认存储桶是否可访问。
+     *
+     * @return 检查结果
+     * @author Henfon
+     * @date 2026-09-04
+     * @描述 执行轻量级连通性探测，不进行写入操作
+     */
+    public boolean checkHealth() {
+        if (properties == null || !properties.isConfigured() || minioClient == null) {
+            return false;
+        }
+        try {
+            boolean exists = minioClient.bucketExists(io.minio.BucketExistsArgs.builder().bucket(properties.bucket()).build());
+            if (exists) {
+                recordSuccess();
+            } else {
+                recordFailure("MinIO 存储桶不存在: " + properties.bucket(), new IllegalStateException("bucket missing"));
+            }
+            return exists;
+        } catch (Exception exception) {
+            recordFailure("MinIO 健康检查失败: " + exception.getMessage(), exception);
+            return false;
         }
     }
 

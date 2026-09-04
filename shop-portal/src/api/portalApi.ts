@@ -50,6 +50,7 @@ interface CatalogSkuRecord {
   id: number;
   skuCode: string;
   skuName: string;
+  barcode?: string;
   attributesJson?: string | Record<string, string | number>;
   price: number;
   marketPrice?: number;
@@ -298,6 +299,7 @@ function mapSku(record: CatalogSkuRecord): ProductSku {
     id: record.id,
     skuCode: record.skuCode,
     skuName: record.skuName,
+    barcode: record.barcode,
     attributes: parseSkuAttributes(record.attributesJson),
     price: Number(record.price || 0),
     marketPrice: Number(record.marketPrice || record.price || 0),
@@ -730,6 +732,13 @@ export interface PortalPaymentOrderRecord {
 
 export async function fetchPortalCart(memberId: number): Promise<PortalCartRecord[]> {
   return request<PortalCartRecord[]>(`/api/portal/trade/cart?memberId=${memberId}`);
+}
+
+/** 主动清理当前会员购物车中的失效商品。 */
+export async function cleanPortalInvalidCart(memberId: number): Promise<number> {
+  return request<number>('/api/portal/trade/cart/clean-invalid', {
+    method: 'POST',
+  });
 }
 
 export async function addPortalCartItem(memberId: number, productId: number, quantity: number, skuId?: number) {

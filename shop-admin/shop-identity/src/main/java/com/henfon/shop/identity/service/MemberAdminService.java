@@ -85,10 +85,29 @@ public class MemberAdminService {
      */
     public IPage<MemberUser> page(String keyword, String memberLevel, Integer status,
                                   long current, long size) {
-        // 门户会员统一属于默认租户，后台查询不允许跨租户读取数据。
+        return page(keyword, memberLevel, status, current, size, 0L);
+    }
+
+    /**
+     * 按租户数据权限分页查询会员资料。
+     *
+     * @param keyword 会员编号、用户名、昵称、手机号或邮箱关键字
+     * @param memberLevel 会员等级
+     * @param status 账户状态
+     * @param current 当前页
+     * @param size 页大小
+     * @param tenantId 当前数据权限租户
+     * @return 会员分页数据（包含 total 总数）
+     * @author Henfon
+     * @date 2026-09-04
+     */
+    public IPage<MemberUser> page(String keyword, String memberLevel, Integer status,
+                                  long current, long size, Long tenantId) {
+        // 租户条件由认证主体传入，避免固定默认租户导致跨租户数据泄露。
+        long scopedTenantId = tenantId == null ? 0L : tenantId;
         String normalizedLevel = StringUtils.hasText(memberLevel) ? memberLevel.trim().toUpperCase() : null;
         LambdaQueryWrapper<MemberUser> wrapper = new LambdaQueryWrapper<MemberUser>()
-                .eq(MemberUser::getTenantId, 0L)
+                .eq(MemberUser::getTenantId, scopedTenantId)
                 .eq(normalizedLevel != null, MemberUser::getMemberLevel, normalizedLevel)
                 .eq(status != null, MemberUser::getStatus, status)
                 .and(StringUtils.hasText(keyword), query -> query

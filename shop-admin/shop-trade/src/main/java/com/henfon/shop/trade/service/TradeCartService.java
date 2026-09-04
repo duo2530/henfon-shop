@@ -66,6 +66,30 @@ public class TradeCartService {
     }
 
     /**
+     * 清理会员购物车中的失效明细。
+     *
+     * @param memberId 会员ID
+     * @return 实际清理数量
+     * @author Henfon
+     * @date 2026-09-04
+     */
+    @Transactional
+    public int cleanInvalid(Long memberId) {
+        List<TradeCartItem> items = mapper.selectList(new LambdaQueryWrapper<TradeCartItem>()
+                .eq(TradeCartItem::getMemberId, memberId));
+        int removed = 0;
+        // 显式清理接口与查询时清理规则保持一致，保证客户端可主动刷新购物车状态。
+        for (TradeCartItem item : items) {
+            if (!isAvailable(item)) {
+                removed += mapper.deleteById(item.getId());
+            } else {
+                normalizeQuantityToStock(item);
+            }
+        }
+        return removed;
+    }
+
+    /**
      * 将购物车数量收敛到当前可售库存，避免库存下降后用户继续持有超量明细。
      *
      * @param item 购物车明细

@@ -5,7 +5,9 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.henfon.shop.common.exception.BusinessException;
 import com.henfon.shop.trade.entity.TradeEventOutbox;
+import com.henfon.shop.trade.entity.TradeEventOutboxRetryAudit;
 import com.henfon.shop.trade.mapper.TradeEventOutboxMapper;
+import com.henfon.shop.trade.mapper.TradeEventOutboxRetryAuditMapper;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -33,6 +35,9 @@ class TradeEventOutboxCompensationServiceTest {
 
     @Mock
     private TradeEventOutboxMapper outboxMapper;
+
+    @Mock
+    private TradeEventOutboxRetryAuditMapper retryAuditMapper;
 
     /**
      * 校验死信分页会限制页码大小并委托 Mapper 查询。
@@ -92,12 +97,13 @@ class TradeEventOutboxCompensationServiceTest {
         when(outboxMapper.selectOne(any(Wrapper.class))).thenReturn(event);
         when(outboxMapper.updateById(event)).thenReturn(1);
 
-        TradeEventOutboxCompensationService service = new TradeEventOutboxCompensationService(outboxMapper);
+        TradeEventOutboxCompensationService service = new TradeEventOutboxCompensationService(outboxMapper, retryAuditMapper);
         TradeEventOutbox actual = service.retryDeadEvent("evt-1", " admin ");
 
         assertEquals("admin", actual.getManualRetryBy());
         assertNotNull(actual.getManualRetryAt());
         assertEquals("SUCCESS", actual.getManualRetryResult());
+        verify(retryAuditMapper).insert(any(TradeEventOutboxRetryAudit.class));
     }
 
     /**

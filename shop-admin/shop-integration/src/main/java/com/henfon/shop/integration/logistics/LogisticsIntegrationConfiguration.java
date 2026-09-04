@@ -10,6 +10,6 @@ import org.springframework.context.annotation.Configuration;
  * @date 2026-09-01
  */
 @Configuration
-@EnableConfigurationProperties(Kuaidi100Properties.class)
+@EnableConfigurationProperties({Kuaidi100Properties.class, LogisticsSyncAlertProperties.class})
 public class LogisticsIntegrationConfiguration {
 }

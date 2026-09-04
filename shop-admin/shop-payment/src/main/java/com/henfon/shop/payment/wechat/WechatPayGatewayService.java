@@ -4,6 +4,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.time.Duration;
 
 /**
  * 微信支付网关应用服务，提供渠道调用和进程内幂等保护。
@@ -18,6 +19,8 @@ import java.util.concurrent.ConcurrentHashMap;
 public class WechatPayGatewayService {
 
     private final WechatPayClient client;
+    private final int maxAttempts;
+    private final Duration backoff;
     private final Map<String, NativeCall> nativeCalls = new ConcurrentHashMap<>();
     private final Map<String, RefundCall> refundCalls = new ConcurrentHashMap<>();
 
@@ -29,7 +32,22 @@ public class WechatPayGatewayService {
      * @date 2026-08-31
      */
     public WechatPayGatewayService(WechatPayClient client) {
+        this(client, 3, Duration.ofMillis(200));
+    }
+
+    /**
+     * 创建带失败重试策略的微信网关服务。
+     *
+     * @param client 可注入的微信渠道客户端
+     * @param maxAttempts 最大尝试次数
+     * @param backoff 重试间隔
+     * @author Henfon
+     * @date 2026-09-04
+     */
+    public WechatPayGatewayService(WechatPayClient client, int maxAttempts, Duration backoff) {
         this.client = client;
+        this.maxAttempts = Math.max(1, maxAttempts);
+        this.backoff = backoff == null ? Duration.ZERO : backoff;
     }
 
     /**
@@ -48,7 +66,7 @@ public class WechatPayGatewayService {
                 ensureSame(existing.request(), request, "支付单号已使用不同参数下单");
                 return existing.response();
             }
-            WechatNativeOrderResponse response = client.createNativeOrder(request);
+            WechatNativeOrderResponse response = executeWithRetry(() -> client.createNativeOrder(request));
             if (response == null || response.codeUrl() == null || response.codeUrl().isBlank()) {
                 throw new WechatPayException("微信 Native 下单未返回二维码链接");
             }
@@ -72,13 +90,42 @@ public class WechatPayGatewayService {
                 ensureSame(existing.request(), request, "退款单号已使用不同参数退款");
                 return existing.response();
             }
-            WechatRefundResponse response = client.refund(request);
+            WechatRefundResponse response = executeWithRetry(() -> client.refund(request));
             if (response == null || response.refundId() == null || response.refundId().isBlank()) {
                 throw new WechatPayException("微信退款未返回退款单号");
             }
             refundCalls.put(request.outRefundNo(), new RefundCall(request, response));
             return response;
         }
+    }
+
+    /**
+     * 对微信渠道瞬时失败执行有限次数重试，避免网络抖动导致支付单永久悬挂。
+     *
+     * @param action 渠道调用动作
+     * @return 渠道响应
+     * @author Henfon
+     * @date 2026-09-04
+     */
+    private <T> T executeWithRetry(java.util.function.Supplier<T> action) {
+        WechatPayException last = null;
+        for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+            try {
+                return action.get();
+            } catch (WechatPayException exception) {
+                last = exception;
+                if (attempt >= maxAttempts) break;
+                try {
+                    // 线性退避，控制重试流量并给渠道短暂恢复时间。
+                    long millis = Math.max(0L, backoff.toMillis()) * attempt;
+                    if (millis > 0) Thread.sleep(millis);
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    throw new WechatPayException("微信支付重试被中断", interrupted);
+                }
+            }
+        }
+        throw last == null ? new WechatPayException("微信支付调用失败") : last;
     }
 
     /**

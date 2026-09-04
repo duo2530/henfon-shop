@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState, useMemo } from 'react';
 import { useAdmin } from '../../context/AdminContext';
-import { listPaymentReconciliation, BackendPaymentReconciliationRecord } from '../../api/adminApi';
+import { listPaymentReconciliation, actionPaymentReconciliation, BackendPaymentReconciliationRecord } from '../../api/adminApi';
 import { 
   DollarSign, 
   ArrowUpRight, 
@@ -129,6 +129,22 @@ export const TransactionReconciliationView: React.FC = () => {
     link.click();
     document.body.removeChild(link);
     showToast('财务日结对账单已成功导出', 'success');
+  };
+
+  const handleReconciliationAction = async (transaction: FinanceTransaction) => {
+    const action = window.prompt('请输入处理动作：confirm=确认平账，ignore=忽略，remark=仅备注，rematch=重新匹配退款');
+    if (!action) return;
+    const remark = window.prompt('处理备注（可选）') || undefined;
+    const matchPaymentNo = action.trim().toLowerCase() === 'rematch'
+      ? window.prompt('请输入目标支付单号') || undefined
+      : undefined;
+    try {
+      await actionPaymentReconciliation(transaction.id, { action: action.trim().toLowerCase() as 'confirm' | 'ignore' | 'remark' | 'rematch', remark, matchPaymentNo });
+      showToast('对账处理已保存', 'success');
+      await loadTransactions();
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : '对账处理失败', 'error');
+    }
   };
 
   return (
@@ -273,6 +289,7 @@ export const TransactionReconciliationView: React.FC = () => {
                 <th className="py-3 px-4 text-right">净结算 (¥)</th>
                 <th className="py-3 px-4 text-center">对账状态</th>
                 <th className="py-3 px-4 text-right">结算入账时间</th>
+                <th className="py-3 px-4 text-right">操作</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100 text-sm text-gray-800">
@@ -340,6 +357,12 @@ export const TransactionReconciliationView: React.FC = () => {
                       <span className="inline-flex items-center gap-1 text-xs font-semibold text-red-800 bg-red-100 px-2 py-0.5 rounded-full">
                         <AlertCircle className="w-3 h-3" /> 待核实
                       </span>
+                    )}
+                  </td>
+
+                  <td className="py-3 px-4 text-right">
+                    {t.status === 'discrepancy' && (
+                      <button onClick={() => void handleReconciliationAction(t)} className="text-xs text-blue-600 hover:text-blue-800">处理</button>
                     )}
                   </td>
 

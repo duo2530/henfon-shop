@@ -3,6 +3,7 @@ package com.henfon.shop.payment.service;
 import com.baomidou.mybatisplus.core.conditions.Wrapper;
 import com.henfon.shop.payment.entity.PaymentOrder;
 import com.henfon.shop.payment.entity.PaymentRefundOrder;
+import com.henfon.shop.payment.dto.PaymentReconciliationActionRequest;
 import com.henfon.shop.payment.mapper.PaymentOrderMapper;
 import com.henfon.shop.payment.mapper.PaymentRefundOrderMapper;
 import org.junit.jupiter.api.Test;
@@ -15,6 +16,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verify;
 
 /**
  * 财务对账流水聚合测试。
@@ -115,6 +117,24 @@ class PaymentReconciliationServiceTest {
         // 累计退款超过收款金额时，不能将任一笔退款显示为已平账。
         assertEquals(2, page.getTotal());
         assertEquals(2, page.getRecords().stream().filter(record -> "discrepancy".equals(record.status())).count());
+    }
+
+    /**
+     * 验证差异退款可以人工确认并保留处理备注。
+     *
+     * @author Henfon
+     * @date 2026-09-04
+     */
+    @Test
+    void shouldConfirmDiscrepancyRefundWithRemark() {
+        PaymentRefundOrder refund = refund("REF-ACTION", "PAY-ACTION", "10.00");
+        when(refundOrderMapper.selectById(refund.getId())).thenReturn(refund);
+        var result = service.action("refund-" + refund.getId(),
+                new PaymentReconciliationActionRequest("confirm", "人工核对渠道流水", null));
+
+        assertEquals("reconciled", result.status());
+        assertEquals("人工核对渠道流水", result.notes());
+        verify(refundOrderMapper).updateById(refund);
     }
 
     /**

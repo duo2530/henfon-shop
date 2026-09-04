@@ -41,6 +41,10 @@ public class CatalogProduct {
     private String mainImageUrl;
     private String tagsCsv;
     private Integer status;
+    /** 审核状态：0待审核，1已通过，2已驳回。 */
+    private Integer auditStatus;
+    /** 审核备注。 */
+    private String auditRemark;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
     @TableLogic

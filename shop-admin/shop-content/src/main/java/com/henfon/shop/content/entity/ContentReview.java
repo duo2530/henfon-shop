@@ -35,6 +35,10 @@ public class ContentReview {
     private String replyContent;
     private LocalDateTime repliedAt;
     private String repliedBy;
+    /** 会员追评内容。 */
+    private String followupContent;
+    /** 会员追评时间。 */
+    private LocalDateTime followupAt;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
     @TableLogic

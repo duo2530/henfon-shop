@@ -258,7 +258,7 @@ public class IdentityDataInitializer implements ApplicationRunner {
         // 商品增删改、上下架和复制使用独立按钮权限，避免仅拥有查询权限即可修改目录数据。
         String[][] productButtons = {
                 {"商品保存", "catalog:product:save"}, {"商品删除", "catalog:product:delete"},
-                {"商品上下架", "catalog:product:status"}
+                {"商品上下架", "catalog:product:status"}, {"商品审核", "catalog:product:audit"}
         };
         for (String[] button : productButtons) {
             SysMenu menu = ensureMenu(button[0], "BUTTON", button[1], null, 100);
@@ -380,6 +380,19 @@ public class IdentityDataInitializer implements ApplicationRunner {
             }
             menus.add(menu);
         }
+        // 采购单和供应商供货关系权限挂在库存目录下，保证采购入库操作可审计控制。
+        String[][] purchaseButtons = {
+                {"采购单查询", "inventory:purchase:query"}, {"采购单创建", "inventory:purchase:create"},
+                {"采购单验收", "inventory:purchase:receive"}
+        };
+        for (String[] button : purchaseButtons) {
+            SysMenu menu = ensureMenu(button[0], "BUTTON", button[1], null, 104);
+            if (!inventory.getId().equals(menu.getParentId())) {
+                menu.setParentId(inventory.getId());
+                sysMenuMapper.updateById(menu);
+            }
+            menus.add(menu);
+        }
         // 秒杀活动权限挂在营销目录下，控制活动保存、启停和删除操作。
         String[][] flashSaleButtons = {
                 {"秒杀活动保存", "marketing:flash:save"}, {"秒杀活动启停", "marketing:flash:status"},
@@ -422,6 +435,16 @@ public class IdentityDataInitializer implements ApplicationRunner {
         };
         for (String[] button : invoiceButtons) {
             SysMenu menu = ensureMenu(button[0], "BUTTON", button[1], null, 102);
+            if (!finance.getId().equals(menu.getParentId())) {
+                menu.setParentId(finance.getId());
+                sysMenuMapper.updateById(menu);
+            }
+            menus.add(menu);
+        }
+        // 对账差异处理权限挂在财务目录下，控制确认、忽略和重新匹配等人工操作。
+        String[][] reconciliationButtons = {{"对账差异处理", "payment:transaction:manage"}};
+        for (String[] button : reconciliationButtons) {
+            SysMenu menu = ensureMenu(button[0], "BUTTON", button[1], null, 103);
             if (!finance.getId().equals(menu.getParentId())) {
                 menu.setParentId(finance.getId());
                 sysMenuMapper.updateById(menu);

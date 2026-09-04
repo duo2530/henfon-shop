@@ -75,6 +75,7 @@ public class CatalogSkuService {
         sku.setProductId(productId);
         sku.setSkuCode(request.skuCode().trim());
         sku.setSkuName(request.skuName().trim());
+        sku.setBarcode(trimToNull(request.barcode()));
         sku.setAttributesJson(trimToNull(request.attributesJson()));
         sku.setPrice(request.price());
         sku.setMarketPrice(request.marketPrice() == null ? request.price() : request.marketPrice());

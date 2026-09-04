@@ -20,6 +20,8 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.security.core.Authentication;
+import com.henfon.shop.identity.security.AuthenticatedUser;
 import jakarta.validation.Valid;
 import java.util.List;
 
@@ -64,9 +66,12 @@ public class MemberAdminController {
                                                @RequestParam(required = false) String memberLevel,
                                                @RequestParam(required = false) Integer status,
                                                @RequestParam(defaultValue = "1") long current,
-                                               @RequestParam(defaultValue = "20") long size) {
+                                               @RequestParam(defaultValue = "20") long size,
+                                               Authentication authentication) {
         // 分页和筛选逻辑集中在服务层，控制器只负责参数接收和权限校验。
-        return ApiResponse.success(memberAdminService.page(keyword, memberLevel, status, current, size),
+        Long tenantId = authentication != null && authentication.getPrincipal() instanceof AuthenticatedUser user
+                ? user.tenantId() : 0L;
+        return ApiResponse.success(memberAdminService.page(keyword, memberLevel, status, current, size, tenantId),
                 MDC.get("requestId"));
     }
 

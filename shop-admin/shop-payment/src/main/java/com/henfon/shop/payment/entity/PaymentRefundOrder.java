@@ -42,4 +42,8 @@ public class PaymentRefundOrder {
     @Version
     private Integer version;
     private String remark;
+    /** 人工对账状态覆盖值：reconciled/ignored，空值表示按系统规则计算。 */
+    private String reconciliationStatus;
+    /** 人工对账处理备注。 */
+    private String reconciliationRemark;
 }

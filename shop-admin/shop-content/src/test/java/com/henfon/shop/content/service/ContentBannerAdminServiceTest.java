@@ -39,21 +39,41 @@ class ContentBannerAdminServiceTest {
      */
     @Test
     void shouldSyncBannerStatusByPublishWindow() {
+        LocalDateTime now = LocalDateTime.of(2026, 9, 4, 12, 0);
         ContentBanner notStarted = banner(1L, 0,
-                LocalDateTime.now().plusMinutes(10), null);
+                now.plusMinutes(10), null);
         ContentBanner expired = banner(2L, 1,
-                null, LocalDateTime.now().minusMinutes(10));
+                null, now.minusMinutes(10));
         ContentBanner active = banner(3L, 1,
-                LocalDateTime.now().minusMinutes(10), LocalDateTime.now().plusMinutes(10));
+                now.minusMinutes(10), now.plusMinutes(10));
         when(bannerMapper.selectList(any())).thenReturn(List.of(notStarted, expired, active));
         when(bannerMapper.updateById(any(ContentBanner.class))).thenReturn(1);
 
-        new ContentBannerAdminService(bannerMapper).syncScheduledStatus();
+        new ContentBannerAdminService(bannerMapper).syncScheduledStatusAt(now);
 
         assertEquals(0, notStarted.getStatus());
         assertEquals(0, expired.getStatus());
         assertEquals(1, active.getStatus());
         verify(bannerMapper, times(1)).updateById(any(ContentBanner.class));
+    }
+
+    /**
+     * 校验发布时间边界包含开始和结束时刻，避免边界瞬间出现展示抖动。
+     *
+     * @author Henfon
+     * @date 2026-09-04
+     */
+    @Test
+    void shouldIncludePublishWindowBoundaries() {
+        LocalDateTime now = LocalDateTime.of(2026, 9, 4, 12, 0);
+        ContentBanner banner = banner(4L, 0, now, now);
+        when(bannerMapper.selectList(any())).thenReturn(List.of(banner));
+        when(bannerMapper.updateById(any(ContentBanner.class))).thenReturn(1);
+
+        new ContentBannerAdminService(bannerMapper).syncScheduledStatusAt(now);
+
+        assertEquals(1, banner.getStatus());
+        verify(bannerMapper).updateById(banner);
     }
 
     /**

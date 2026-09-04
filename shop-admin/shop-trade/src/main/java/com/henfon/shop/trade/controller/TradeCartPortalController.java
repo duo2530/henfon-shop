@@ -59,6 +59,21 @@ public class TradeCartPortalController {
     }
 
     /**
+     * 主动清理当前会员购物车失效商品。
+     *
+     * @param authentication 当前认证信息
+     * @return 清理数量
+     * @author Henfon
+     * @date 2026-09-04
+     */
+    @PostMapping("/clean-invalid")
+    public ApiResponse<Integer> cleanInvalid(Authentication authentication) {
+        Long memberId = MemberPrincipalResolver.requireMemberId(authentication, null);
+        // 返回清理数量，前端可据此提示用户并重新拉取购物车。
+        return ApiResponse.success(service.cleanInvalid(memberId), MDC.get("requestId"));
+    }
+
+    /**
      * 添加购物车商品。
      *
      * @param request 购物车请求

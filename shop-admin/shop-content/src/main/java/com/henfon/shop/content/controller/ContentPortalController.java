@@ -3,6 +3,7 @@ package com.henfon.shop.content.controller;
 import com.henfon.shop.common.api.ApiResponse;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.henfon.shop.content.dto.ContentReviewSubmitRequest;
+import com.henfon.shop.content.dto.ContentReviewFollowupRequest;
 import com.henfon.shop.content.entity.ContentBanner;
 import com.henfon.shop.content.entity.ContentReview;
 import com.henfon.shop.content.service.ContentPortalService;
@@ -108,5 +109,24 @@ public class ContentPortalController {
                 ? user.username() : "会员";
         return ApiResponse.success(service.submitReview(productId, memberId, memberName, request),
                 MDC.get("requestId"));
+    }
+
+    /**
+     * 提交会员评价追评。
+     *
+     * @param reviewId 评价ID
+     * @param request 追评内容
+     * @param authentication 当前会员认证信息
+     * @return 更新后的评价
+     * @author Henfon
+     * @date 2026-09-04
+     */
+    @PostMapping("/reviews/{reviewId}/followup")
+    @PreAuthorize("isAuthenticated()")
+    public ApiResponse<ContentReview> followup(@PathVariable Long reviewId,
+                                               @Valid @RequestBody ContentReviewFollowupRequest request,
+                                               Authentication authentication) {
+        Long memberId = MemberPrincipalResolver.requireMemberId(authentication);
+        return ApiResponse.success(service.followup(reviewId, memberId, request), MDC.get("requestId"));
     }
 }

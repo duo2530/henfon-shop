@@ -3,6 +3,7 @@ package com.henfon.shop.payment.wechat;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
+import java.time.Duration;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -84,6 +85,21 @@ class WechatPayGatewayServiceTest {
     }
 
     /**
+     * 校验渠道瞬时异常会按配置重试并最终成功。
+     *
+     * @author Henfon
+     * @date 2026-09-04
+     */
+    @Test
+    void shouldRetryTransientNativeFailure() {
+        FakeClient client = new FakeClient();
+        client.failNativeTimes = 2;
+        WechatPayGatewayService service = new WechatPayGatewayService(client, 3, Duration.ZERO);
+        assertEquals("weixin://qr/PAY-1", service.createNativeOrder(nativeRequest()).codeUrl());
+        assertEquals(3, client.nativeCalls);
+    }
+
+    /**
      * 创建 Native 测试请求。
      *
      * @return Native 请求
@@ -105,6 +121,7 @@ class WechatPayGatewayServiceTest {
 
         private int nativeCalls;
         private int refundCalls;
+        private int failNativeTimes;
 
         /**
          * 返回固定测试二维码。
@@ -117,6 +134,10 @@ class WechatPayGatewayServiceTest {
         @Override
         public WechatNativeOrderResponse createNativeOrder(WechatNativeOrderRequest request) {
             nativeCalls++;
+            if (failNativeTimes > 0) {
+                failNativeTimes--;
+                throw new WechatPayException("临时网络异常");
+            }
             return new WechatNativeOrderResponse("weixin://qr/PAY-1", "{\"code_url\":\"test\"}");
         }
 

@@ -1156,6 +1156,17 @@ export function listPaymentReconciliation(params: {
   return request<BackendPage<BackendPaymentReconciliationRecord>>(`/api/admin/payment/reconciliation?${query.toString()}`);
 }
 
+export function actionPaymentReconciliation(recordId: string, payload: {
+  action: 'confirm' | 'reconcile' | 'ignore' | 'remark' | 'rematch';
+  remark?: string;
+  matchPaymentNo?: string;
+}): Promise<BackendPaymentReconciliationRecord> {
+  return request<BackendPaymentReconciliationRecord>(
+    `/api/admin/payment/reconciliation/${encodeURIComponent(recordId)}/action`,
+    { method: 'PUT', body: JSON.stringify(payload) },
+  );
+}
+
 export function saveMarketingCoupon(payload: {
   id?: number;
   couponCode: string;

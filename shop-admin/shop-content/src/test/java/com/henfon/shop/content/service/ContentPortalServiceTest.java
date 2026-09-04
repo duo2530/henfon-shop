@@ -2,6 +2,7 @@ package com.henfon.shop.content.service;
 
 import com.henfon.shop.common.exception.BusinessException;
 import com.henfon.shop.content.entity.ContentReview;
+import com.henfon.shop.content.dto.ContentReviewFollowupRequest;
 import com.henfon.shop.content.mapper.ContentBannerMapper;
 import com.henfon.shop.content.mapper.ContentReviewMapper;
 import com.henfon.shop.trade.service.TradeOrderService;
@@ -17,6 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verify;
 
 /**
  * 门户内容服务单元测试。
@@ -67,5 +69,49 @@ class ContentPortalServiceTest {
         var result = service.reviews(100L, 0);
 
         assertEquals(Collections.emptyList(), result);
+    }
+
+    /**
+     * 验证会员可为本人已审核评价提交一次追评。
+     *
+     * @author Henfon
+     * @date 2026-09-04
+     */
+    @Test
+    void shouldSubmitReviewFollowupOnce() {
+        ContentReview review = new ContentReview();
+        review.setId(9L);
+        review.setMemberId(7L);
+        review.setStatus(1);
+        when(reviewMapper.selectOne(any())).thenReturn(review);
+        when(reviewMapper.updateById(any(ContentReview.class))).thenReturn(1);
+        ContentPortalService service = new ContentPortalService(bannerMapper, reviewMapper, tradeOrderService);
+
+        ContentReview result = service.followup(9L, 7L, new ContentReviewFollowupRequest("使用一周后体验很好"));
+
+        assertEquals("使用一周后体验很好", result.getFollowupContent());
+        verify(reviewMapper).updateById(review);
+    }
+
+    /**
+     * 验证已存在追评时拒绝重复提交。
+     *
+     * @author Henfon
+     * @date 2026-09-04
+     */
+    @Test
+    void shouldRejectDuplicateFollowup() {
+        ContentReview review = new ContentReview();
+        review.setId(9L);
+        review.setMemberId(7L);
+        review.setStatus(1);
+        review.setFollowupContent("已有追评");
+        when(reviewMapper.selectOne(any())).thenReturn(review);
+        ContentPortalService service = new ContentPortalService(bannerMapper, reviewMapper, tradeOrderService);
+
+        BusinessException exception = assertThrows(BusinessException.class,
+                () -> service.followup(9L, 7L, new ContentReviewFollowupRequest("再次提交")));
+
+        assertEquals("CONTENT_REVIEW_FOLLOWUP_EXISTS", exception.getCode());
     }
 }
