@@ -31,6 +31,19 @@ import {
 
 export type AuthMode = 'login-pwd' | 'login-sms' | 'register' | 'forgot-pwd' | 'reset-pwd';
 
+/**
+ * 规范化短信登录手机号。
+ * @author Henfon
+ * @date 2026-09-04
+ * @description 清理用户输入中的空格和非数字字符，并校验国际手机号长度。
+ */
+export function normalizeSmsPhone(countryCode: string, phone: string): string | null {
+  const digits = phone.replace(/\D/g, '');
+  // E.164 号码主体长度为 7~15 位，避免将明显错误的输入提交给后端。
+  if (digits.length < 7 || digits.length > 15) return null;
+  return `${countryCode}${digits}`;
+}
+
 // 短信登录已接入验证码接口；社交授权仍保留演示开关。
 const ENABLE_SMS_LOGIN = true;
 const ENABLE_SOCIAL_LOGIN = false;
@@ -149,8 +162,21 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       const queryToken = typeof window === 'undefined'
         ? ''
         : new URLSearchParams(window.location.search).get('resetToken') || '';
+
+      // 每次重新打开认证窗口都清理上次输入，避免残留验证码、密码或倒计时造成错误登录。
+      setAccountInput('');
+      setPasswordInput('');
+      setPhoneInput('');
+      setSmsCodeInput('');
+      setNicknameInput('');
+      setConfirmPasswordInput('');
+      setCountdown(0);
+      setIsLoading(false);
+      setShowPassword(false);
+      setAgreedTerms(true);
+      setRememberMe(true);
       setMode(queryToken ? 'reset-pwd' : initialMode);
-      if (queryToken) setResetTokenInput(queryToken);
+      setResetTokenInput(queryToken);
       setErrorMsg(null);
       setSuccessMsg(null);
     }
@@ -171,13 +197,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
   // 发送短信验证码并在开发环境自动填入服务端返回的验证码。
   const handleSendSms = async () => {
-    if (!phoneInput || phoneInput.length < 7) {
+    const normalizedPhone = normalizeSmsPhone(countryCode, phoneInput);
+    if (!normalizedPhone) {
       setErrorMsg('请输入正确的手机号码');
       return;
     }
     setErrorMsg(null);
     try {
-      const result = await sendPortalSmsCode(`${countryCode}${phoneInput}`);
+      const result = await sendPortalSmsCode(normalizedPhone);
       setCountdown(Math.min(60, result.expiresInSeconds || 60));
       if (result.verificationCode) setSmsCodeInput(result.verificationCode);
       setSuccessMsg(result.verificationCode ? `验证码已发送（测试环境已自动填入）` : '验证码已发送，请查收短信');
@@ -599,7 +626,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                         type="tel"
                         required
                         value={phoneInput}
-                        onChange={(e) => setPhoneInput(e.target.value)}
+                        onChange={(e) => setPhoneInput(e.target.value.replace(/\D/g, '').slice(0, 15))}
                         placeholder="请输入11位手机号码"
                         className="w-full py-2.5 pl-10 pr-3.5 bg-zinc-50 border border-zinc-200 rounded-xl text-xs text-zinc-900 placeholder:text-zinc-400 focus:bg-white focus:border-zinc-900 focus:ring-2 focus:ring-zinc-900/10 focus:outline-none transition"
                       />

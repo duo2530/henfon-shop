@@ -12,6 +12,7 @@ import com.henfon.shop.identity.mapper.MemberUserMapper;
 import com.henfon.shop.identity.security.JwtTokenService;
 import com.henfon.shop.identity.security.AuthenticatedUser;
 import com.henfon.shop.identity.security.MemberTokenStore;
+import com.henfon.shop.identity.security.MemberLoginFailureTracker;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -33,6 +34,7 @@ public class MemberAuthService {
     private final PasswordEncoder passwordEncoder;
     private final JwtTokenService jwtTokenService;
     private final MemberTokenStore memberTokenStore;
+    private final MemberLoginFailureTracker loginFailureTracker;
 
     /**
      * 创建会员认证服务。
@@ -44,11 +46,13 @@ public class MemberAuthService {
      * @date 2026-08-30
      */
     public MemberAuthService(MemberUserMapper memberUserMapper, PasswordEncoder passwordEncoder,
-                             JwtTokenService jwtTokenService, MemberTokenStore memberTokenStore) {
+                             JwtTokenService jwtTokenService, MemberTokenStore memberTokenStore,
+                             MemberLoginFailureTracker loginFailureTracker) {
         this.memberUserMapper = memberUserMapper;
         this.passwordEncoder = passwordEncoder;
         this.jwtTokenService = jwtTokenService;
         this.memberTokenStore = memberTokenStore;
+        this.loginFailureTracker = loginFailureTracker;
     }
 
     /**
@@ -62,6 +66,9 @@ public class MemberAuthService {
     @Transactional
     public MemberLoginResponse login(MemberLoginRequest request) {
         String account = request.account().trim();
+        if (loginFailureTracker.isLocked(account)) {
+            throw new BusinessException("MEMBER_AUTH_LOCKED", "登录失败次数过多，请15分钟后再试");
+        }
         // 登录账号统一匹配用户名、手机号和邮箱，避免前端区分登录入口。
         MemberUser member = memberUserMapper.selectOne(new LambdaQueryWrapper<MemberUser>()
                 .eq(MemberUser::getTenantId, 0L)
@@ -71,11 +78,16 @@ public class MemberAuthService {
                 .last("LIMIT 1"));
         if (member == null || !StringUtils.hasText(member.getPasswordHash())
                 || !passwordEncoder.matches(request.password(), member.getPasswordHash())) {
+            long failureCount = loginFailureTracker.recordFailure(account);
+            if (failureCount >= 5) {
+                throw new BusinessException("MEMBER_AUTH_LOCKED", "登录失败次数过多，请15分钟后再试");
+            }
             throw new BusinessException("MEMBER_AUTH_INVALID", "账号或密码错误");
         }
         if (!Integer.valueOf(1).equals(member.getStatus())) {
             throw new BusinessException("MEMBER_AUTH_DISABLED", "会员账号已被冻结");
         }
+        loginFailureTracker.reset(account);
         return loginByMember(member);
     }
 

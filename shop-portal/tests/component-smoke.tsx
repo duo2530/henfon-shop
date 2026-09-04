@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { ProductCard } from '../src/components/ProductCard';
 import { HeroBanner } from '../src/components/HeroBanner';
+import { normalizeSmsPhone } from '../src/components/AuthModal';
 import type { Product } from '../src/types/ecommerce';
 
 const baseProduct: Product = {
@@ -71,5 +72,10 @@ const remoteBannerMarkup = renderToStaticMarkup(
 assert.match(remoteBannerMarkup, /夏日清凉专题/);
 assert.match(remoteBannerMarkup, /限时活动/);
 assert.match(remoteBannerMarkup, /立即查看/);
+
+// 认证手机号输入应统一清理格式并拒绝超出 E.164 长度范围的异常号码。
+assert.equal(normalizeSmsPhone('+86', ' 138-0013-8000 '), '+8613800138000');
+assert.equal(normalizeSmsPhone('+86', '123'), null);
+assert.equal(normalizeSmsPhone('+86', '1234567890123456'), null);
 
 console.log('shop-portal 组件冒烟测试通过：商品卡片、库存禁购、Banner 跳转数据和键盘语义正常');
