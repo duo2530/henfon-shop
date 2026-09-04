@@ -6,6 +6,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.henfon.shop.common.exception.BusinessException;
 import com.henfon.shop.inventory.dto.InventoryStocktakeCompleteRequest;
+import com.henfon.shop.inventory.dto.InventoryStocktakeCancelRequest;
 import com.henfon.shop.inventory.dto.InventoryStocktakeCreateRequest;
 import com.henfon.shop.inventory.dto.InventoryStocktakeImportRequest;
 import com.henfon.shop.inventory.entity.InventoryStock;
@@ -39,6 +40,7 @@ public class InventoryStocktakeService {
 
     private static final int STATUS_OPEN = 0;
     private static final int STATUS_COMPLETED = 1;
+    private static final int STATUS_CANCELLED = 2;
 
     private final InventoryStocktakeMapper stocktakeMapper;
     private final InventoryStocktakeItemMapper itemMapper;

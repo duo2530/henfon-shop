@@ -52,6 +52,12 @@ function mapPortalReview(review: Awaited<ReturnType<typeof fetchPortalProductRev
 
 interface ProductQuickViewProps {
   product: Product | null;
+  /** 详情接口加载状态。 */
+  detailLoading?: boolean;
+  /** 详情接口最近一次错误信息。 */
+  detailError?: string | null;
+  /** 重新加载详情。 */
+  onRetryDetail?: () => void;
   isWishlisted: boolean;
   onClose: () => void;
   onAddToCart: (product: Product, variants: Record<string, string>, quantity: number) => void;
@@ -61,6 +67,9 @@ interface ProductQuickViewProps {
 
 const ProductQuickViewContent: React.FC<Omit<ProductQuickViewProps, 'product'> & { product: Product }> = ({
   product,
+  detailLoading = false,
+  detailError,
+  onRetryDetail,
   isWishlisted,
   onClose,
   onAddToCart,
@@ -507,6 +516,16 @@ const ProductQuickViewContent: React.FC<Omit<ProductQuickViewProps, 'product'> &
 
         {/* Modal Main Scrollable Content */}
         <div className="overflow-y-auto p-6 sm:p-8 custom-scrollbar">
+          {(detailLoading || detailError) && (
+            <div className={`mb-5 flex items-center justify-between gap-3 rounded-xl border px-3 py-2 text-xs ${detailError ? 'border-rose-200 bg-rose-50 text-rose-700' : 'border-sky-200 bg-sky-50 text-sky-700'}`} role={detailError ? 'alert' : 'status'} aria-live="polite">
+              <span>{detailError || '正在加载商品详情…'}</span>
+              {detailError && onRetryDetail && (
+                <button type="button" onClick={onRetryDetail} className="shrink-0 rounded-lg border border-current px-2.5 py-1 font-semibold hover:bg-white/70">
+                  重新加载
+                </button>
+              )}
+            </div>
+          )}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-start mb-8">
             {/* Gallery Column */}
             <div className="space-y-4">

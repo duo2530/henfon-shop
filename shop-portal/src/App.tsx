@@ -868,6 +868,9 @@ export default function App() {
 
   // Modals & Drawers
   const [quickViewProduct, setQuickViewProduct] = useState<Product | null>(null);
+  const [productDetailLoading, setProductDetailLoading] = useState(false);
+  const [productDetailError, setProductDetailError] = useState<string | null>(null);
+  const productDetailRequestRef = useRef(0);
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
   const [checkoutItems, setCheckoutItems] = useState<CartItem[]>([]);
@@ -1012,12 +1015,25 @@ export default function App() {
 
   // 打开商品详情时补充后端的卖点、参数和媒体数据。
   const openProduct = async (product: Product) => {
+    const requestId = productDetailRequestRef.current + 1;
+    productDetailRequestRef.current = requestId;
     setQuickViewProduct(product);
+    setProductDetailLoading(true);
+    setProductDetailError(null);
     try {
       const detail = await fetchPortalProductDetail(product.id);
-      if (detail) setQuickViewProduct((current) => (current?.id === product.id ? { ...current, ...detail } : current));
+      if (requestId !== productDetailRequestRef.current) return;
+      if (detail) {
+        setQuickViewProduct((current) => (current?.id === product.id ? { ...current, ...detail } : current));
+      } else {
+        setProductDetailError('商品详情不存在或已下架');
+      }
     } catch (error) {
-      console.warn('商品详情接口暂不可用，继续使用列表数据', error);
+      if (requestId !== productDetailRequestRef.current) return;
+      console.warn('商品详情接口暂不可用', error);
+      setProductDetailError(error instanceof Error ? error.message : '商品详情加载失败，请稍后重试');
+    } finally {
+      if (requestId === productDetailRequestRef.current) setProductDetailLoading(false);
     }
   };
 
@@ -2613,6 +2629,9 @@ export default function App() {
       {/* Modals & Slide-Overs */}
       <ProductQuickView
         product={quickViewProduct}
+        detailLoading={productDetailLoading}
+        detailError={productDetailError}
+        onRetryDetail={() => { if (quickViewProduct) void openProduct(quickViewProduct); }}
         isWishlisted={quickViewProduct ? wishlist.includes(quickViewProduct.id) : false}
         onClose={() => setQuickViewProduct(null)}
         onAddToCart={(p, variants, qty) => {
