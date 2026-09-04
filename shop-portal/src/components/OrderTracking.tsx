@@ -47,6 +47,8 @@ export interface OrderTrackingProps {
   showDetails?: boolean;
   showCarrierCard?: boolean;
   interactiveSimulator?: boolean;
+  onRetryLogistics?: () => Promise<void> | void;
+  logisticsRetrying?: boolean;
   className?: string;
 }
 
@@ -251,6 +253,8 @@ export const OrderTracking: React.FC<OrderTrackingProps> = ({
   showDetails = true,
   showCarrierCard = true,
   interactiveSimulator = false,
+  onRetryLogistics,
+  logisticsRetrying = false,
   className = '',
 }) => {
   // Derive effective status
@@ -345,6 +349,16 @@ export const OrderTracking: React.FC<OrderTrackingProps> = ({
                   {activeMilestone.label} ({activeMilestone.labelEn})
                 </span>
               </div>
+              {onRetryLogistics && trackingNumber && (
+                <button
+                  type="button"
+                  disabled={logisticsRetrying}
+                  onClick={() => void onRetryLogistics()}
+                  className="mt-2 rounded-md border border-zinc-700 px-2 py-1 text-[11px] font-semibold text-zinc-200 hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {logisticsRetrying ? '同步中…' : '刷新物流轨迹'}
+                </button>
+              )}
             </div>
 
             <div className="text-left sm:text-right border-t sm:border-t-0 pt-2 sm:pt-0 border-zinc-800">

@@ -17,6 +17,7 @@ interface OrdersModalProps {
   onApplyAfterSale?: (order: Order, payload: PortalAfterSaleCreatePayload) => Promise<void> | void;
   onCancelAfterSale?: (afterSale: PortalAfterSaleRecord) => Promise<void> | void;
   onApplyInvoice?: (order: Order) => Promise<void> | void;
+  onRetryLogistics?: (order: Order) => Promise<Order['trackingSteps']>;
 }
 
 export const OrdersModal: React.FC<OrdersModalProps> = ({
@@ -32,6 +33,7 @@ export const OrdersModal: React.FC<OrdersModalProps> = ({
   onApplyAfterSale,
   onCancelAfterSale,
   onApplyInvoice,
+  onRetryLogistics,
 }) => {
   const [expandedOrderId, setExpandedOrderId] = useState<string | null>(
     orders[0]?.id || null
@@ -46,6 +48,8 @@ export const OrdersModal: React.FC<OrdersModalProps> = ({
   const [afterSaleUploading, setAfterSaleUploading] = useState(false);
   const [afterSaleSubmitting, setAfterSaleSubmitting] = useState(false);
   const [afterSaleError, setAfterSaleError] = useState<string | null>(null);
+  const [logisticsRetryingOrderId, setLogisticsRetryingOrderId] = useState<string | null>(null);
+  const [logisticsOverrides, setLogisticsOverrides] = useState<Record<string, Order['trackingSteps']>>({});
 
   useEffect(() => {
     setExpandedOrderId((current) => {
@@ -76,6 +80,21 @@ export const OrdersModal: React.FC<OrdersModalProps> = ({
       await action(afterSale);
     } finally {
       setActioningAfterSaleId(null);
+    }
+  };
+
+  /** 重试加载指定订单物流轨迹，并仅更新当前弹窗展示，避免刷新页面丢失操作上下文。 */
+  const retryOrderLogistics = async (order: Order) => {
+    if (!onRetryLogistics) return;
+    setLogisticsRetryingOrderId(order.id);
+    try {
+      const steps = await onRetryLogistics(order);
+      setLogisticsOverrides((current) => ({ ...current, [order.id]: steps }));
+    } catch (error) {
+      // 父组件负责提示具体失败原因，弹窗只结束加载状态，避免产生未处理 Promise。
+      console.warn('刷新订单物流失败', error);
+    } finally {
+      setLogisticsRetryingOrderId(null);
     }
   };
 
@@ -409,7 +428,12 @@ export const OrdersModal: React.FC<OrdersModalProps> = ({
 
                       {/* Visual Shipment Timeline and Tracking */}
                       <div className="pt-2 border-t border-zinc-200/80">
-                        <OrderTracking order={ord} interactiveSimulator={false} />
+                        <OrderTracking
+                          order={logisticsOverrides[ord.id] ? { ...ord, trackingSteps: logisticsOverrides[ord.id] } : ord}
+                          interactiveSimulator={false}
+                          onRetryLogistics={onRetryLogistics ? () => retryOrderLogistics(ord) : undefined}
+                          logisticsRetrying={logisticsRetryingOrderId === ord.id}
+                        />
                       </div>
                     </div>
                   )}

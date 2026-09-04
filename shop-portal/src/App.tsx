@@ -1734,6 +1734,32 @@ export default function App() {
     }
   };
 
+  /** 重新查询订单物流轨迹，供门户订单弹窗在第三方服务恢复后主动重试。 */
+  const handleRetryLogistics = async (order: Order): Promise<Order['trackingSteps']> => {
+    const orderId = Number(order.id);
+    if (!Number.isFinite(orderId)) {
+      throw new Error('当前订单尚未同步到服务端，暂不能刷新物流');
+    }
+    try {
+      const logistics = await fetchPortalOrderLogistics(orderId);
+      if (logistics.length === 0) {
+        const emptySteps: Order['trackingSteps'] = [{
+          title: '暂无物流轨迹',
+          time: '待同步',
+          completed: false,
+          description: '物流服务尚未返回新的轨迹节点，请稍后重试。',
+        }];
+        showToast('物流服务暂未返回轨迹，请稍后重试', 'info');
+        return emptySteps;
+      }
+      showToast('物流轨迹已刷新', 'success');
+      return mapPortalLogistics(logistics);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : '物流轨迹刷新失败，请稍后重试', 'error');
+      throw error;
+    }
+  };
+
   const handleApplyAfterSale = async (order: Order, payload: PortalAfterSaleCreatePayload) => {
     const memberId = resolveMemberId(currentUser);
     const orderId = Number(order.id);
@@ -2533,6 +2559,7 @@ export default function App() {
         onApplyAfterSale={handleApplyAfterSale}
         onCancelAfterSale={handleCancelAfterSale}
         onApplyInvoice={handleApplyInvoice}
+        onRetryLogistics={handleRetryLogistics}
       />
 
       <WishlistModal

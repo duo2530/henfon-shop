@@ -122,6 +122,7 @@ public class MemberPortalService {
     @Transactional
     public Long saveAddress(MemberAddressRequest request) {
         MemberAddress address = new MemberAddress();
+        boolean creating = request.id() == null;
         if (request.id() != null) {
             // 编辑时校验地址归属，避免客户端借助 memberId 修改其他会员地址。
             address = requireAddress(request.memberId(), request.id());
@@ -135,6 +136,15 @@ public class MemberPortalService {
         address.setDetailAddress(request.detailAddress());
         address.setAddressTag(request.addressTag());
         address.setIsDefault(request.isDefault() == null ? 0 : request.isDefault());
+        // 首个地址必须成为默认地址，避免会员存在地址但结算时没有可选默认地址。
+        if (creating && addressMapper.selectCount(new LambdaQueryWrapper<MemberAddress>()
+                .eq(MemberAddress::getMemberId, request.memberId())) == 0) {
+            address.setIsDefault(1);
+        }
+        // 编辑默认地址时不允许把唯一默认地址取消，保证默认地址约束始终成立。
+        if (!creating && address.getIsDefault() == 0 && request.id().equals(findDefaultAddressId(request.memberId()))) {
+            address.setIsDefault(1);
+        }
         if (address.getIsDefault() == 1) {
             addressMapper.update(null, new UpdateWrapper<MemberAddress>()
                     .eq("member_id", request.memberId()).set("is_default", 0));
@@ -181,6 +191,10 @@ public class MemberPortalService {
         if (addressMapper.deleteById(address.getId()) == 0) {
             throw new BusinessException("MEMBER_ADDRESS_DELETE_FAILED", "地址删除失败，请刷新后重试");
         }
+        // 删除默认地址后自动提升最近更新的地址，避免剩余地址全部变成非默认。
+        if (address.getIsDefault() == 1) {
+            promoteLatestAddress(memberId);
+        }
     }
 
     /**
@@ -219,6 +233,47 @@ public class MemberPortalService {
             throw new BusinessException("MEMBER_ADDRESS_NOT_FOUND", "地址不存在或不属于当前会员");
         }
         return address;
+    }
+
+    /**
+     * 查询会员当前默认地址ID。
+     *
+     * @param memberId 会员ID
+     * @return 默认地址ID，不存在时返回null
+     * @author Henfon
+     * @date 2026-09-04
+     */
+    private Long findDefaultAddressId(Long memberId) {
+        MemberAddress defaultAddress = addressMapper.selectOne(new LambdaQueryWrapper<MemberAddress>()
+                .eq(MemberAddress::getMemberId, memberId)
+                .eq(MemberAddress::getIsDefault, 1)
+                .last("LIMIT 1"));
+        return defaultAddress == null ? null : defaultAddress.getId();
+    }
+
+    /**
+     * 将会员最近更新的有效地址设置为默认地址。
+     *
+     * @param memberId 会员ID
+     * @author Henfon
+     * @date 2026-09-04
+     */
+    private void promoteLatestAddress(Long memberId) {
+        MemberAddress candidate = addressMapper.selectOne(new LambdaQueryWrapper<MemberAddress>()
+                .eq(MemberAddress::getMemberId, memberId)
+                .eq(MemberAddress::getIsDefault, 0)
+                .orderByDesc(MemberAddress::getUpdatedAt)
+                .orderByDesc(MemberAddress::getId)
+                .last("LIMIT 1"));
+        if (candidate == null) {
+            return;
+        }
+        addressMapper.update(null, new UpdateWrapper<MemberAddress>()
+                .eq("member_id", memberId).set("is_default", 0));
+        candidate.setIsDefault(1);
+        if (addressMapper.updateById(candidate) == 0) {
+            throw new BusinessException("MEMBER_ADDRESS_CONCURRENT_UPDATE", "默认地址已被其他操作修改，请刷新后重试");
+        }
     }
 
     /**
