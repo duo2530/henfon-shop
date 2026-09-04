@@ -1,5 +1,6 @@
 package com.henfon.shop.payment.wechat;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.Map;
@@ -31,6 +32,7 @@ public class WechatPayGatewayService {
      * @author Henfon
      * @date 2026-08-31
      */
+    @Autowired
     public WechatPayGatewayService(WechatPayClient client) {
         this(client, 3, Duration.ofMillis(200));
     }
