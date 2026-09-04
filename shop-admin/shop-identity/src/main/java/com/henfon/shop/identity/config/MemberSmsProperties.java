@@ -12,6 +12,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public class MemberSmsProperties {
     private long ttlSeconds = 300;
     private long cooldownSeconds = 60;
+    private int maxVerifyAttempts = 5;
     private boolean exposeCode = true;
 
     /** 读取验证码有效期。 @return 秒数 @author Henfon @date 2026-09-04 */
@@ -22,6 +23,10 @@ public class MemberSmsProperties {
     public long getCooldownSeconds() { return cooldownSeconds; }
     /** 设置发送冷却时间。 @param cooldownSeconds 秒数 @author Henfon @date 2026-09-04 */
     public void setCooldownSeconds(long cooldownSeconds) { this.cooldownSeconds = cooldownSeconds; }
+    /** 读取验证码最大错误次数。 @return 最大错误次数 @author Henfon @date 2026-09-04 */
+    public int getMaxVerifyAttempts() { return maxVerifyAttempts; }
+    /** 设置验证码最大错误次数。 @param maxVerifyAttempts 最大错误次数 @author Henfon @date 2026-09-04 */
+    public void setMaxVerifyAttempts(int maxVerifyAttempts) { this.maxVerifyAttempts = maxVerifyAttempts; }
     /** 读取是否在开发环境返回验证码。 @return 是否返回 @author Henfon @date 2026-09-04 */
     public boolean isExposeCode() { return exposeCode; }
     /** 设置是否在开发环境返回验证码。 @param exposeCode 是否返回 @author Henfon @date 2026-09-04 */

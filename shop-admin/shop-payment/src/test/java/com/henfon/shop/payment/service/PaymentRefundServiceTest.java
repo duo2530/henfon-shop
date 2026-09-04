@@ -186,6 +186,28 @@ class PaymentRefundServiceTest {
     }
 
     /**
+     * 校验渠道提交成功后退款单进入处理中，失败退款单可再次提交。
+     *
+     * @author Henfon
+     * @date 2026-09-04
+     */
+    @Test
+    void shouldMarkRefundProcessingAndAllowRetryFromFailed() {
+        PaymentRefundOrder refund = refundOrder(11L, "REF-11", 21L, "PAY-21", 15L);
+        refund.setStatus(3);
+        when(refundOrderMapper.selectOne(any())).thenReturn(refund);
+        when(refundOrderMapper.updateById(any(PaymentRefundOrder.class))).thenReturn(1);
+
+        PaymentRefundService service = new PaymentRefundService(paymentOrderMapper, refundOrderMapper,
+                tradeOrderService, tradeAfterSaleService);
+        PaymentRefundResponse response = service.markProcessing("REF-11");
+
+        assertEquals(1, response.status());
+        assertEquals(1, refund.getStatus());
+        verify(refundOrderMapper).updateById(refund);
+    }
+
+    /**
      * 创建退款单测试夹具。
      *
      * @param id 退款单ID

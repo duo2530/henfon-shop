@@ -63,7 +63,8 @@ public class WechatRefundPaymentService {
         gatewayService.refund(new WechatRefundRequest(paymentOrder.getTransactionNo(), paymentOrder.getPaymentNo(),
                 refund.refundNo(), refund.reason(), refund.amount(), paymentOrder.getAmount(),
                 properties.refundNotifyUrl()));
-        return refund;
+        // 渠道已接受请求后再推进处理中，渠道调用异常时保留待退款状态便于安全重试。
+        return refundService.markProcessing(refund.refundNo());
     }
 
     /**

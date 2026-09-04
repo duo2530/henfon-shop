@@ -187,6 +187,43 @@ public class PaymentRefundService {
     }
 
     /**
+     * 标记退款单已提交支付渠道，进入处理中状态。
+     *
+     * <p>渠道请求成功后立即推进本地状态，避免退款单长期停留在待退款；失败状态允许重新提交时回到处理中。</p>
+     *
+     * @param refundNo 退款单号
+     * @return 更新后的退款单响应
+     * @author Henfon
+     * @date 2026-09-04
+     */
+    @Transactional
+    public PaymentRefundResponse markProcessing(String refundNo) {
+        if (!StringUtils.hasText(refundNo)) {
+            throw new BusinessException("PAYMENT_REFUND_NOT_FOUND", "退款单号不能为空");
+        }
+        PaymentRefundOrder refundOrder = refundOrderMapper.selectOne(new LambdaQueryWrapper<PaymentRefundOrder>()
+                .eq(PaymentRefundOrder::getRefundNo, refundNo.trim())
+                .last("LIMIT 1 FOR UPDATE"));
+        if (refundOrder == null) {
+            throw new BusinessException("PAYMENT_REFUND_NOT_FOUND", "退款单不存在");
+        }
+        Integer status = refundOrder.getStatus();
+        if (status != null && (status == REFUND_SUCCEEDED || status == REFUND_CLOSED)) {
+            // 终态不可回退，避免重复提交覆盖已经确认的资金结果。
+            return PaymentRefundResponse.from(refundOrder);
+        }
+        if (status != null && status == REFUND_PROCESSING) {
+            return PaymentRefundResponse.from(refundOrder);
+        }
+        refundOrder.setStatus(REFUND_PROCESSING);
+        refundOrder.setRemark("已提交支付渠道，等待退款回调");
+        if (refundOrderMapper.updateById(refundOrder) == 0) {
+            throw new BusinessException("PAYMENT_REFUND_CONCURRENT_UPDATE", "退款单已被其他操作修改");
+        }
+        return PaymentRefundResponse.from(refundOrder);
+    }
+
+    /**
      * 处理退款异步通知并保证重复通知幂等。
      *
      * @param request 退款通知请求

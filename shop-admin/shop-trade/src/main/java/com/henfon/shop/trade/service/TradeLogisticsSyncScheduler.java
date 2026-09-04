@@ -22,6 +22,7 @@ import java.util.List;
 public class TradeLogisticsSyncScheduler {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(TradeLogisticsSyncScheduler.class);
+    private static final int DEFAULT_MAX_ATTEMPTS = 3;
     private final TradeOrderMapper tradeOrderMapper;
     private final TradeOrderService tradeOrderService;
     private final LogisticsProvider logisticsProvider;
@@ -65,13 +66,38 @@ public class TradeLogisticsSyncScheduler {
             if (!StringUtils.hasText(order.getLogisticsCompany()) || !StringUtils.hasText(order.getTrackingNo())) {
                 continue;
             }
+            syncOrderWithRetry(order);
+        }
+    }
+
+    /**
+     * 同步单笔订单并对查询失败或无轨迹结果执行有限重试。
+     *
+     * @param order 待同步订单
+     * @author Henfon
+     * @date 2026-09-04
+     */
+    private void syncOrderWithRetry(TradeOrder order) {
+        int maxAttempts = DEFAULT_MAX_ATTEMPTS;
+        RuntimeException lastException = null;
+        for (int attempt = 1; attempt <= maxAttempts; attempt++) {
             try {
-                tradeOrderService.syncLogistics(order.getId());
+                var result = tradeOrderService.syncLogistics(order.getId());
+                // 服务商返回成功但没有节点，通常意味着暂无轨迹，需继续重试避免静默丢失。
+                if (result.syncedCount() > 0 || "SIGNED".equalsIgnoreCase(result.status())) {
+                    return;
+                }
+                LOGGER.warn("订单物流暂无轨迹，准备重试，orderId={}, attempt={}/{}, trackingNo={}",
+                        order.getId(), attempt, maxAttempts, maskTrackingNo(order.getTrackingNo()));
             } catch (RuntimeException exception) {
-                // 单个物流服务商失败不能阻塞其他订单，本轮由下一次扫描重试。
-                LOGGER.warn("订单物流同步失败，orderId={}, trackingNo={}", order.getId(), maskTrackingNo(order.getTrackingNo()), exception);
+                lastException = exception;
+                LOGGER.warn("订单物流同步失败，准备重试，orderId={}, attempt={}/{}, trackingNo={}",
+                        order.getId(), attempt, maxAttempts, maskTrackingNo(order.getTrackingNo()), exception);
             }
         }
+        // 达到重试上限后输出结构化错误日志，供日志平台配置告警通知。
+        LOGGER.error("订单物流同步告警，已达到重试上限，orderId={}, trackingNo={}",
+                order.getId(), maskTrackingNo(order.getTrackingNo()), lastException);
     }
 
     /**
