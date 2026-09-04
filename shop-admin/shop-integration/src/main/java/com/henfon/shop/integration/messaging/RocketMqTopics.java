@@ -20,6 +20,7 @@ public final class RocketMqTopics {
     public static final String ORDER_AUDIT_REJECTED = "shop_order_audit_rejected";
     public static final String REFUND_APPROVED = "shop_refund_approved";
     public static final String REFUND_SUCCEEDED = "shop_refund_succeeded";
+    public static final String PARTIAL_REFUND_SUCCEEDED = "shop_partial_refund_succeeded";
     public static final String AFTER_SALE_CREATED = "shop_after_sale_created";
     public static final String AFTER_SALE_APPROVED = "shop_after_sale_approved";
     public static final String AFTER_SALE_RETURN_RECEIVED = "shop_after_sale_return_received";

@@ -15,6 +15,9 @@ import com.henfon.shop.trade.dto.TradeOrderRefundRequest;
 import com.henfon.shop.trade.service.TradeAfterSaleService;
 import com.henfon.shop.trade.service.TradeOrderService;
 import com.henfon.shop.trade.service.TradeOrderStateMachine;
+import com.henfon.shop.integration.messaging.DomainEvent;
+import com.henfon.shop.integration.messaging.RocketMqEventPublisher;
+import com.henfon.shop.integration.messaging.RocketMqTopics;
 import org.springframework.stereotype.Service;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.transaction.annotation.Transactional;
@@ -22,6 +25,7 @@ import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
 
@@ -47,6 +51,7 @@ public class PaymentRefundService {
     private final PaymentRefundOrderMapper refundOrderMapper;
     private final TradeOrderService tradeOrderService;
     private final TradeAfterSaleService tradeAfterSaleService;
+    private final RocketMqEventPublisher eventPublisher;
 
     /**
      * 创建退款应用服务。
@@ -59,11 +64,13 @@ public class PaymentRefundService {
      */
     @Autowired
     public PaymentRefundService(PaymentOrderMapper paymentOrderMapper, PaymentRefundOrderMapper refundOrderMapper,
-                                TradeOrderService tradeOrderService, TradeAfterSaleService tradeAfterSaleService) {
+                                TradeOrderService tradeOrderService, TradeAfterSaleService tradeAfterSaleService,
+                                RocketMqEventPublisher eventPublisher) {
         this.paymentOrderMapper = paymentOrderMapper;
         this.refundOrderMapper = refundOrderMapper;
         this.tradeOrderService = tradeOrderService;
         this.tradeAfterSaleService = tradeAfterSaleService;
+        this.eventPublisher = eventPublisher;
     }
 
     /**
@@ -77,7 +84,22 @@ public class PaymentRefundService {
      */
     public PaymentRefundService(PaymentOrderMapper paymentOrderMapper, PaymentRefundOrderMapper refundOrderMapper,
                                 TradeOrderService tradeOrderService) {
-        this(paymentOrderMapper, refundOrderMapper, tradeOrderService, null);
+        this(paymentOrderMapper, refundOrderMapper, tradeOrderService, null, null);
+    }
+
+    /**
+     * 创建退款应用服务（兼容测试及未启用消息发布的调用方）。
+     *
+     * @param paymentOrderMapper 支付单数据访问对象
+     * @param refundOrderMapper 退款单数据访问对象
+     * @param tradeOrderService 交易订单应用服务
+     * @param tradeAfterSaleService 售后服务
+     * @author Henfon
+     * @date 2026-09-04
+     */
+    public PaymentRefundService(PaymentOrderMapper paymentOrderMapper, PaymentRefundOrderMapper refundOrderMapper,
+                                TradeOrderService tradeOrderService, TradeAfterSaleService tradeAfterSaleService) {
+        this(paymentOrderMapper, refundOrderMapper, tradeOrderService, tradeAfterSaleService, null);
     }
 
     /**
@@ -217,6 +239,9 @@ public class PaymentRefundService {
             if (paymentOrder != null && paymentOrder.getAmount() != null
                     && totalRefunded.compareTo(paymentOrder.getAmount()) >= 0) {
                 tradeOrderService.markRefunded(refundOrder.getOrderId(), totalRefunded);
+            } else if (paymentOrder != null && paymentOrder.getAmount() != null) {
+                // 部分退款通过独立事件驱动营销分摊，使用累计退款金额保证重复通知和多次退款一致。
+                publishPartialRefundSucceeded(refundOrder, totalRefunded, paymentOrder.getAmount());
             }
             // 即使订单尚未全额退款，对应仅退款售后单也应在本次资金成功后完成。
             if (tradeAfterSaleService != null) {
@@ -289,5 +314,28 @@ public class PaymentRefundService {
      */
     private String normalize(String value) {
         return StringUtils.hasText(value) ? value.trim() : null;
+    }
+
+    /**
+     * 发布部分退款成功事件，驱动优惠券分摊等营销补偿动作。
+     *
+     * @param refundOrder 退款单
+     * @param totalRefunded 订单累计退款金额
+     * @param paidAmount 订单实付金额
+     * @author Henfon
+     * @date 2026-09-04
+     */
+    private void publishPartialRefundSucceeded(PaymentRefundOrder refundOrder, BigDecimal totalRefunded,
+                                                BigDecimal paidAmount) {
+        if (eventPublisher == null) {
+            return;
+        }
+        String payload = "{\"orderId\":" + refundOrder.getOrderId()
+                + ",\"memberId\":" + refundOrder.getMemberId()
+                + ",\"refundAmount\":" + totalRefunded
+                + ",\"paidAmount\":" + paidAmount + "}";
+        eventPublisher.publish(RocketMqTopics.PARTIAL_REFUND_SUCCEEDED,
+                new DomainEvent(refundOrder.getRefundNo(), "PARTIAL_REFUND_SUCCEEDED",
+                        String.valueOf(refundOrder.getOrderId()), Instant.now(), payload));
     }
 }

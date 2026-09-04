@@ -95,7 +95,7 @@ public class CatalogAdminController {
      * @date 2026-08-29
      */
     @PostMapping("/products")
-    @PreAuthorize("hasAuthority('catalog:product:query')")
+    @PreAuthorize("hasAuthority('catalog:product:save')")
     public ApiResponse<Long> saveProduct(@Valid @RequestBody CatalogProductSaveRequest request) {
         return ApiResponse.success(catalogProductService.save(request), requestId());
     }
@@ -110,7 +110,7 @@ public class CatalogAdminController {
      * @date 2026-08-30
      */
     @org.springframework.web.bind.annotation.PutMapping("/products/{id}/status")
-    @PreAuthorize("hasAuthority('catalog:product:query')")
+    @PreAuthorize("hasAuthority('catalog:product:status')")
     public ApiResponse<Void> updateProductStatus(@PathVariable Long id, @RequestParam Integer status) {
         catalogProductService.updateStatus(id, status);
         return ApiResponse.success(requestId());
@@ -140,7 +140,7 @@ public class CatalogAdminController {
      * @date 2026-08-30
      */
     @PostMapping("/products/{productId}/skus")
-    @PreAuthorize("hasAuthority('catalog:product:query')")
+    @PreAuthorize("hasAuthority('catalog:product:save')")
     public ApiResponse<Long> saveSku(@PathVariable Long productId,
                                      @Valid @RequestBody CatalogSkuSaveRequest request) {
         return ApiResponse.success(catalogSkuService.save(productId, request), requestId());
@@ -157,7 +157,7 @@ public class CatalogAdminController {
      * @date 2026-08-30
      */
     @org.springframework.web.bind.annotation.PutMapping("/products/{productId}/skus/{skuId}/status")
-    @PreAuthorize("hasAuthority('catalog:product:query')")
+    @PreAuthorize("hasAuthority('catalog:product:status')")
     public ApiResponse<Void> updateSkuStatus(@PathVariable Long productId,
                                              @PathVariable Long skuId,
                                              @RequestParam Integer status) {
@@ -175,7 +175,7 @@ public class CatalogAdminController {
      * @date 2026-08-30
      */
     @DeleteMapping("/products/{productId}/skus/{skuId}")
-    @PreAuthorize("hasAuthority('catalog:product:query')")
+    @PreAuthorize("hasAuthority('catalog:product:delete')")
     public ApiResponse<Void> deleteSku(@PathVariable Long productId, @PathVariable Long skuId) {
         catalogSkuService.delete(productId, skuId);
         return ApiResponse.success(requestId());
@@ -205,7 +205,7 @@ public class CatalogAdminController {
      * @date 2026-08-31
      */
     @org.springframework.web.bind.annotation.PutMapping("/products/{productId}/content")
-    @PreAuthorize("hasAuthority('catalog:product:query')")
+    @PreAuthorize("hasAuthority('catalog:product:save')")
     public ApiResponse<Map<String, Object>> saveProductContent(
             @PathVariable Long productId,
             @Valid @RequestBody CatalogProductContentSaveRequest request) {
@@ -221,9 +221,8 @@ public class CatalogAdminController {
      * @date 2026-08-29
      */
     @DeleteMapping("/products/{id}")
-    @PreAuthorize("hasAuthority('catalog:product:query')")
+    @PreAuthorize("hasAuthority('catalog:product:delete')")
     public ApiResponse<Void> deleteProduct(@PathVariable Long id) {
-        // 当前阶段沿用商品查询权限，后续补充独立的商品编辑和删除按钮权限。
         catalogProductService.delete(id);
         return ApiResponse.success(requestId());
     }
@@ -237,7 +236,7 @@ public class CatalogAdminController {
      * @date 2026-09-04
      */
     @PostMapping("/products/{id}/copy")
-    @PreAuthorize("hasAuthority('catalog:product:query')")
+    @PreAuthorize("hasAuthority('catalog:product:save')")
     public ApiResponse<Long> copyProduct(@PathVariable Long id) {
         // 复制结果以草稿形式返回，前端可继续编辑后再上架。
         return ApiResponse.success(catalogProductService.copy(id), requestId());
