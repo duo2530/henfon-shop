@@ -4,7 +4,9 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.henfon.shop.common.api.ApiResponse;
 import com.henfon.shop.trade.entity.TradeEventOutbox;
 import com.henfon.shop.trade.service.TradeEventOutboxCompensationService;
+import com.henfon.shop.identity.security.AuthenticatedUser;
 import org.slf4j.MDC;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -70,7 +72,28 @@ public class TradeEventOutboxAdminController {
      */
     @PostMapping("/{eventId}/retry")
     @PreAuthorize("hasAuthority('trade:outbox:retry')")
-    public ApiResponse<TradeEventOutbox> retryDeadEvent(@PathVariable String eventId) {
-        return ApiResponse.success(compensationService.retryDeadEvent(eventId), MDC.get("requestId"));
+    public ApiResponse<TradeEventOutbox> retryDeadEvent(@PathVariable String eventId,
+                                                        Authentication authentication) {
+        return ApiResponse.success(compensationService.retryDeadEvent(eventId, operatorName(authentication)),
+                MDC.get("requestId"));
+    }
+
+    /**
+     * 从认证主体中提取人工补偿操作人名称。
+     *
+     * @param authentication 当前管理员认证信息
+     * @return 操作人用户名
+     * @author Henfon
+     * @date 2026-09-04
+     */
+    private String operatorName(Authentication authentication) {
+        if (authentication == null) {
+            return null;
+        }
+        Object principal = authentication.getPrincipal();
+        if (principal instanceof AuthenticatedUser user) {
+            return user.username();
+        }
+        return authentication.getName();
     }
 }

@@ -558,7 +558,66 @@ export default function App() {
           });
         }
         if (!active) return;
-        const mappedCart = remoteCart
+
+        // 登录同步阶段清理服务端失效购物车：无库存商品直接移除，超库存数量收敛到当前可售库存。
+        // 仅对已成功加载商品详情的条目执行清理，避免因详情接口临时失败误删用户数据。
+        const resolveAvailableStock = (item: typeof remoteCart[number], product: Product) =>
+          item.skuId !== undefined
+            ? (product.skus?.find((sku) => sku.id === item.skuId)?.stock ?? product.stock)
+            : product.stock;
+        const outOfStockItems = remoteCart.filter((item) => {
+          const product = productMap.get(item.productId);
+          return Boolean(product && resolveAvailableStock(item, product) <= 0);
+        });
+        const removedRemoteIds = new Set<number>();
+        if (outOfStockItems.length > 0) {
+          const removeResults = await Promise.allSettled(
+            outOfStockItems.map((item) => deletePortalCartItem(item.id))
+          );
+          removeResults.forEach((result, index) => {
+            if (result.status === 'fulfilled') {
+              removedRemoteIds.add(outOfStockItems[index].id);
+            }
+          });
+          const failedRemovals = removeResults.filter((result) => result.status === 'rejected').length;
+          if (failedRemovals > 0) {
+            showToast(`${failedRemovals} 件失效商品清理失败，请稍后重试`, 'info');
+          }
+          if (removedRemoteIds.size > 0) {
+            showToast(`已清理 ${removedRemoteIds.size} 件无库存商品`, 'info');
+          }
+        }
+
+        const quantityAdjustedIds = new Set<number>();
+        const quantityAdjustments = remoteCart
+          .filter((item) => {
+            const product = productMap.get(item.productId);
+            return !removedRemoteIds.has(item.id)
+              && Boolean(product && resolveAvailableStock(item, product) > 0 && item.quantity > resolveAvailableStock(item, product));
+          })
+          .map((item) => ({ item, quantity: resolveAvailableStock(item, productMap.get(item.productId)!) }));
+        if (quantityAdjustments.length > 0) {
+          const adjustResults = await Promise.allSettled(
+            quantityAdjustments.map(({ item, quantity }) => updatePortalCartItem(item.id, quantity))
+          );
+          adjustResults.forEach((result, index) => {
+            if (result.status === 'fulfilled') {
+              quantityAdjustments[index].item.quantity = quantityAdjustments[index].quantity;
+              quantityAdjustedIds.add(quantityAdjustments[index].item.id);
+            }
+          });
+          const failedAdjustments = adjustResults.filter((result) => result.status === 'rejected').length;
+          if (failedAdjustments > 0) {
+            showToast(`${failedAdjustments} 件商品库存不足，数量调整失败，请稍后重试`, 'info');
+          }
+          if (quantityAdjustedIds.size > 0) {
+            showToast(`已将 ${quantityAdjustedIds.size} 件商品数量调整为可售库存`, 'info');
+          }
+        }
+
+        if (!active) return;
+        const cleanedRemoteCart = remoteCart.filter((item) => !removedRemoteIds.has(item.id));
+        const mappedCart = cleanedRemoteCart
           .map((item) => {
             const product = productMap.get(item.productId);
             if (!product) return null;

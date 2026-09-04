@@ -34,6 +34,8 @@ interface CartDrawerProps {
   onRemoveCoupon: () => void;
   onOpenCheckout: () => void;
   onOpenCouponCenter?: () => void;
+  /** 清理已下架或无库存商品，返回清理结果供页面展示错误态。 */
+  onClearInvalidItems?: () => Promise<{ removed: number; failed: number }>;
 }
 
 export const CartDrawer: React.FC<CartDrawerProps> = ({
@@ -51,6 +53,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
   onRemoveCoupon,
   onOpenCheckout,
   onOpenCouponCenter,
+  onClearInvalidItems,
 }) => {
   const [couponInput, setCouponInput] = useState('');
   const [couponError, setCouponError] = useState('');
@@ -66,6 +69,23 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
   const isAllSelected = safeCartItems.length > 0 && selectedItems.length === safeCartItems.length;
   const cartQuantity = safeCartItems.reduce((sum, item) => sum + (item.quantity || 0), 0);
   const selectedQuantity = selectedItems.reduce((sum, item) => sum + (item.quantity || 0), 0);
+  const [invalidClearing, setInvalidClearing] = useState(false);
+
+  // 商品下架、SKU 删除或库存归零后，购物车仍可能保留历史条目，需要明确提示用户处理。
+  const invalidItems = safeCartItems.filter((item) => {
+    const sku = item.skuId !== undefined ? item.product.skus?.find((candidate) => candidate.id === item.skuId) : undefined;
+    return (sku?.stock ?? item.product.stock ?? 0) <= 0;
+  });
+
+  const handleClearInvalidItems = async () => {
+    if (!onClearInvalidItems || invalidItems.length === 0 || invalidClearing) return;
+    setInvalidClearing(true);
+    try {
+      await onClearInvalidItems();
+    } finally {
+      setInvalidClearing(false);
+    }
+  };
 
   const rawSubtotal = selectedItems.reduce(
     (acc, item) => acc + (item.unitPrice || 0) * (item.quantity || 1),
@@ -199,6 +219,23 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
 
         {/* Item List or Empty state */}
         <div className="flex-1 overflow-y-auto p-4 space-y-3">
+          {invalidItems.length > 0 && (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2.5 text-xs text-amber-800">
+              <div className="flex items-center justify-between gap-2">
+                <span>有 {invalidItems.length} 件商品已下架或库存不足，无法结算</span>
+                {onClearInvalidItems && (
+                  <button
+                    type="button"
+                    onClick={handleClearInvalidItems}
+                    disabled={invalidClearing}
+                    className="shrink-0 rounded-lg bg-amber-600 px-2.5 py-1 text-[11px] font-semibold text-white transition hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {invalidClearing ? '清理中…' : '一键清理'}
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
           {cartItems.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-center p-6 space-y-4 text-zinc-400">
               <div className="w-16 h-16 rounded-full bg-zinc-100 flex items-center justify-center text-zinc-400">

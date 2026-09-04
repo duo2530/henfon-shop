@@ -79,6 +79,21 @@ public class TradeEventOutboxCompensationService {
      */
     @Transactional
     public TradeEventOutbox retryDeadEvent(String eventId) {
+        return retryDeadEvent(eventId, null);
+    }
+
+    /**
+     * 将死信重新入队并记录人工补偿审计信息。
+     *
+     * @param eventId 事件唯一标识
+     * @param operator 操作人用户名
+     * @return 已重置的 Outbox 事件
+     * @throws BusinessException 事件不存在、状态不为死信或并发更新失败
+     * @author Henfon
+     * @date 2026-09-04
+     */
+    @Transactional
+    public TradeEventOutbox retryDeadEvent(String eventId, String operator) {
         String normalizedEventId = normalizeFilter(eventId);
         if (!StringUtils.hasText(normalizedEventId)) {
             throw new BusinessException("TRADE_OUTBOX_EVENT_ID_INVALID", "事件标识不能为空");
@@ -97,6 +112,10 @@ public class TradeEventOutboxCompensationService {
         event.setRetryCount(0);
         event.setNextRetryAt(LocalDateTime.now());
         event.setPublishedAt(null);
+        // 将本次人工补偿操作者、时间和结果写回事件，便于审计追踪。
+        event.setManualRetryBy(normalizeFilter(operator));
+        event.setManualRetryAt(LocalDateTime.now());
+        event.setManualRetryResult("SUCCESS");
         if (outboxMapper.updateById(event) != 1) {
             throw new BusinessException("TRADE_OUTBOX_CONCURRENT_UPDATE", "Outbox 事件已被其他操作修改，请刷新后重试");
         }

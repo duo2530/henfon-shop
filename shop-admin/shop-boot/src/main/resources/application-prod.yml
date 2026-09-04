@@ -51,6 +51,10 @@ shop:
     outbox-initial-delay-ms: ${SHOP_OUTBOX_INITIAL_DELAY_MS:10000}
     logistics-sync-scan-ms: ${SHOP_LOGISTICS_SYNC_SCAN_MS:600000}
     logistics-sync-initial-delay-ms: ${SHOP_LOGISTICS_SYNC_INITIAL_DELAY_MS:30000}
+  marketing:
+    flash-sale-warmup-scan-ms: ${SHOP_FLASH_SALE_WARMUP_SCAN_MS:60000}
+    flash-sale-warmup-initial-delay-ms: ${SHOP_FLASH_SALE_WARMUP_INITIAL_DELAY_MS:15000}
+    flash-sale-warmup-minutes: ${SHOP_FLASH_SALE_WARMUP_MINUTES:30}
   notification:
     email:
       enabled: ${SHOP_EMAIL_NOTIFICATION_ENABLED:false}

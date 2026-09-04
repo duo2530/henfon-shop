@@ -81,6 +81,26 @@ class TradeEventOutboxCompensationServiceTest {
     }
 
     /**
+     * 校验人工重试会记录操作人、时间和成功结果，形成可追溯审计信息。
+     *
+     * @author Henfon
+     * @date 2026-09-04
+     */
+    @Test
+    void shouldRecordManualRetryAudit() {
+        TradeEventOutbox event = deadEvent();
+        when(outboxMapper.selectOne(any(Wrapper.class))).thenReturn(event);
+        when(outboxMapper.updateById(event)).thenReturn(1);
+
+        TradeEventOutboxCompensationService service = new TradeEventOutboxCompensationService(outboxMapper);
+        TradeEventOutbox actual = service.retryDeadEvent("evt-1", " admin ");
+
+        assertEquals("admin", actual.getManualRetryBy());
+        assertNotNull(actual.getManualRetryAt());
+        assertEquals("SUCCESS", actual.getManualRetryResult());
+    }
+
+    /**
      * 校验非死信事件不能被人工重试，避免重复投递已成功消息。
      *
      * @author Henfon

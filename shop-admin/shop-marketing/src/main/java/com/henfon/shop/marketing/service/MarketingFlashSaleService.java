@@ -26,6 +26,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * 秒杀促销活动管理服务。
@@ -35,6 +37,8 @@ import java.util.Set;
  */
 @Service
 public class MarketingFlashSaleService implements FlashSaleReservationService {
+
+    private static final Logger log = LoggerFactory.getLogger(MarketingFlashSaleService.class);
 
     private final MarketingFlashSaleMapper activityMapper;
     private final MarketingFlashSaleItemMapper itemMapper;
@@ -166,6 +170,70 @@ public class MarketingFlashSaleService implements FlashSaleReservationService {
             reservation.setReleasedAt(LocalDateTime.now());
             reservationMapper.updateById(reservation);
         }
+    }
+
+    /**
+     * 预热即将开始的秒杀活动并收口已结束状态。
+     *
+     * @param warmupMinutes 预热时间窗口（分钟）
+     * @return 本轮处理的活动数量
+     * @author Henfon
+     * @date 2026-09-04
+     */
+    @Transactional
+    public int warmupUpcomingActivities(int warmupMinutes) {
+        int safeMinutes = Math.max(warmupMinutes, 0);
+        LocalDateTime now = LocalDateTime.now();
+        // 先将已结束的启用活动收口，避免门户继续暴露过期活动。
+        List<MarketingFlashSale> expired = activityMapper.selectList(new LambdaQueryWrapper<MarketingFlashSale>()
+                .eq(MarketingFlashSale::getStatus, 1)
+                .lt(MarketingFlashSale::getEndAt, now));
+        if (expired != null) {
+            for (MarketingFlashSale activity : expired) {
+                activity.setStatus(2);
+                activityMapper.updateById(activity);
+            }
+        }
+        LocalDateTime windowEnd = now.plusMinutes(safeMinutes);
+        List<MarketingFlashSale> upcoming = activityMapper.selectList(new LambdaQueryWrapper<MarketingFlashSale>()
+                .eq(MarketingFlashSale::getStatus, 1)
+                .gt(MarketingFlashSale::getStartAt, now)
+                .le(MarketingFlashSale::getStartAt, windowEnd));
+        if (upcoming == null || upcoming.isEmpty()) {
+            return 0;
+        }
+        int processed = 0;
+        for (MarketingFlashSale activity : upcoming) {
+            List<MarketingFlashSaleItem> items = itemMapper.selectList(new LambdaQueryWrapper<MarketingFlashSaleItem>()
+                    .eq(MarketingFlashSaleItem::getActivityId, activity.getId())
+                    .eq(MarketingFlashSaleItem::getStatus, 1));
+            boolean valid = items != null && !items.isEmpty();
+            if (valid) {
+                for (MarketingFlashSaleItem item : items) {
+                    Integer total = item.getTotalStock();
+                    Integer sold = item.getSoldStock();
+                    if (total == null || total < 0 || (sold != null && sold < 0) || (sold != null && sold > total)) {
+                        valid = false;
+                        log.warn("秒杀活动预热库存校验失败，activityId={}, itemId={}, totalStock={}, soldStock={}",
+                                activity.getId(), item.getId(), total, sold);
+                        continue;
+                    }
+                    if (sold == null) {
+                        // 历史数据可能没有已售快照，预热阶段补齐为 0，保证扣减表达式可安全执行。
+                        item.setSoldStock(0);
+                        itemMapper.updateById(item);
+                    }
+                }
+            }
+            if (valid) {
+                processed++;
+                log.info("秒杀活动预热完成，activityId={}, startAt={}, itemCount={}", activity.getId(),
+                        activity.getStartAt(), items.size());
+            } else {
+                log.warn("秒杀活动预热跳过无效活动，activityId={}, startAt={}", activity.getId(), activity.getStartAt());
+            }
+        }
+        return processed;
     }
 
     /**

@@ -1,6 +1,8 @@
 package com.henfon.shop.marketing.service;
 
 import com.henfon.shop.marketing.entity.MarketingFlashSaleReservation;
+import com.henfon.shop.marketing.entity.MarketingFlashSale;
+import com.henfon.shop.marketing.entity.MarketingFlashSaleItem;
 import com.henfon.shop.marketing.mapper.MarketingFlashSaleItemMapper;
 import com.henfon.shop.marketing.mapper.MarketingFlashSaleMapper;
 import com.henfon.shop.marketing.mapper.MarketingFlashSaleReservationMapper;
@@ -9,6 +11,7 @@ import com.henfon.shop.common.marketing.FlashSaleReservationItem;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.time.LocalDateTime;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -93,5 +96,54 @@ class MarketingFlashSaleServiceTest {
 
         verify(itemMapper, never()).update(any(), any());
         verify(reservationMapper, never()).updateById(org.mockito.ArgumentMatchers.<MarketingFlashSaleReservation>any());
+    }
+
+    /**
+     * 验证预热会补齐缺失已售库存并处理即将开始的活动。
+     *
+     * @author Henfon
+     * @date 2026-09-04
+     */
+    @Test
+    void shouldWarmupUpcomingActivityAndInitializeSoldStock() {
+        MarketingFlashSale activity = new MarketingFlashSale();
+        activity.setId(10L);
+        activity.setStatus(1);
+        activity.setStartAt(LocalDateTime.now().plusMinutes(5));
+        activity.setEndAt(LocalDateTime.now().plusHours(1));
+        MarketingFlashSaleItem item = new MarketingFlashSaleItem();
+        item.setId(11L);
+        item.setActivityId(10L);
+        item.setTotalStock(20);
+        item.setSoldStock(null);
+        item.setStatus(1);
+        when(activityMapper.selectList(any())).thenReturn(List.of(), List.of(activity));
+        when(itemMapper.selectList(any())).thenReturn(List.of(item));
+
+        // 预热阶段将历史空值库存快照初始化为 0，保证后续原子扣减稳定。
+        assertEquals(1, service.warmupUpcomingActivities(30));
+        assertEquals(0, item.getSoldStock());
+        verify(itemMapper).updateById(item);
+    }
+
+    /**
+     * 验证预热会将已结束的启用活动自动收口为结束状态。
+     *
+     * @author Henfon
+     * @date 2026-09-04
+     */
+    @Test
+    void shouldCloseExpiredActivityDuringWarmup() {
+        MarketingFlashSale expired = new MarketingFlashSale();
+        expired.setId(20L);
+        expired.setStatus(1);
+        expired.setStartAt(LocalDateTime.now().minusHours(2));
+        expired.setEndAt(LocalDateTime.now().minusMinutes(1));
+        when(activityMapper.selectList(any())).thenReturn(List.of(expired), List.of());
+
+        // 已结束活动不再参与门户售卖，并在调度轮次内统一切换到结束状态。
+        assertEquals(0, service.warmupUpcomingActivities(30));
+        assertEquals(2, expired.getStatus());
+        verify(activityMapper).updateById(expired);
     }
 }

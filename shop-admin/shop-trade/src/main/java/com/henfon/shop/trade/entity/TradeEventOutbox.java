@@ -39,4 +39,10 @@ public class TradeEventOutbox {
     @Version
     private Integer version;
     private String remark;
+    /** 人工重试操作人。 */
+    private String manualRetryBy;
+    /** 最近一次人工重试时间。 */
+    private LocalDateTime manualRetryAt;
+    /** 最近一次人工重试结果。 */
+    private String manualRetryResult;
 }
