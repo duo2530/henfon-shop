@@ -131,7 +131,7 @@ interface AdminContextType {
   batchShipOrders: (shipments: { orderId: string; carrier: string; trackingNumber: string }[]) => void;
   batchCancelOrders: (ids: string[], reason?: string) => void;
   updateOrderRemark: (id: string, sellerNote: string, flagColor?: Order['flagColor'] | null) => void;
-  processOrderRefund: (id: string, refundAmount: number, refundReason: string) => void;
+  processOrderRefund: (id: string, refundAmount: number, refundReason: string) => Promise<void>;
   auditOrder: (id: string, approved: boolean, remark?: string) => Promise<void>;
   
   // User actions (Customer members)
@@ -949,7 +949,13 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     });
   };
 
-  const processOrderRefund = (id: string, refundAmount: number, refundReason: string) => {
+  const processOrderRefund = async (id: string, refundAmount: number, refundReason: string): Promise<void> => {
+    const previousOrder = orders.find((order) => order.id === id);
+    if (!previousOrder) {
+      showToast('未找到待退款订单，请刷新后重试', 'error');
+      return;
+    }
+    // 退款请求采用乐观更新，但必须保留快照，服务端失败时立即恢复，避免页面长期停留在“退款中”。
     setOrders((prev) =>
       prev.map((o) => {
         if (o.id === id) {
@@ -964,13 +970,20 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         return o;
       })
     );
-    showToast(`退款申请已提交，等待渠道确认 ¥${refundAmount.toFixed(2)}`, 'success');
     const numericId = Number(id);
     if (Number.isFinite(numericId)) {
-      void refundTradeOrder(numericId, refundAmount, refundReason).catch(() => {
-        showToast('退款已更新本地状态，但服务端处理失败', 'warning');
-        void hydrateTradeMetadata();
-      });
+      try {
+        await refundTradeOrder(numericId, refundAmount, refundReason);
+        // 以服务端订单状态覆盖本地快照，确保退款单号/状态等字段及时同步。
+        await hydrateTradeMetadata();
+        showToast(`退款申请已提交，等待渠道确认 ¥${refundAmount.toFixed(2)}`, 'success');
+      } catch (error) {
+        setOrders((prev) => prev.map((order) => order.id === id ? previousOrder : order));
+        showToast(error instanceof Error ? error.message : '退款提交失败，已恢复原订单状态', 'error');
+        throw error;
+      }
+    } else {
+      showToast(`退款申请已提交，等待渠道确认 ¥${refundAmount.toFixed(2)}`, 'success');
     }
   };
 

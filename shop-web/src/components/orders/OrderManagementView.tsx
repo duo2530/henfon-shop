@@ -78,6 +78,7 @@ export const OrderManagementView: React.FC = () => {
   const [refundOrder, setRefundOrder] = useState<Order | null>(null);
   const [refundAmount, setRefundAmount] = useState(0);
   const [refundReason, setRefundReason] = useState('协商一致售后退款');
+  const [isRefundSubmitting, setIsRefundSubmitting] = useState(false);
 
   useEffect(() => {
     if (!inspectOrder) return;
@@ -239,11 +240,30 @@ export const OrderManagementView: React.FC = () => {
     setRefundReason(order.refundReason || '协商一致售后退款');
   };
 
-  const handleConfirmRefund = () => {
+  const handleConfirmRefund = async () => {
     if (!refundOrder) return;
     if (!requirePermission('order:refund', '订单退款')) return;
-    processOrderRefund(refundOrder.id, refundAmount, refundReason);
-    setRefundOrder(null);
+    if (!Number.isFinite(refundAmount) || refundAmount <= 0) {
+      showToast('退款金额必须大于 0', 'error');
+      return;
+    }
+    if (refundAmount > refundOrder.amount) {
+      showToast('退款金额不能超过订单实付金额', 'error');
+      return;
+    }
+    if (!refundReason.trim()) {
+      showToast('请填写退款原因', 'error');
+      return;
+    }
+    setIsRefundSubmitting(true);
+    try {
+      await processOrderRefund(refundOrder.id, Number(refundAmount.toFixed(2)), refundReason.trim());
+      setRefundOrder(null);
+    } catch {
+      // Context 已负责恢复订单快照，这里保留弹窗便于用户修正后重试。
+    } finally {
+      setIsRefundSubmitting(false);
+    }
   };
 
   const handleExportOrders = () => {
@@ -1367,6 +1387,7 @@ export const OrderManagementView: React.FC = () => {
                   max={refundOrder.amount}
                   value={refundAmount}
                   onChange={(e) => setRefundAmount(parseFloat(e.target.value) || 0)}
+                  disabled={isRefundSubmitting}
                   className="w-full h-[36px] px-3 rounded-lg border border-gray-300 font-semibold text-sm"
                 />
               </div>
@@ -1379,6 +1400,7 @@ export const OrderManagementView: React.FC = () => {
                   type="text"
                   value={refundReason}
                   onChange={(e) => setRefundReason(e.target.value)}
+                  disabled={isRefundSubmitting}
                   className="w-full h-[36px] px-3 rounded-lg border border-gray-300 text-xs"
                 />
               </div>
@@ -1387,15 +1409,17 @@ export const OrderManagementView: React.FC = () => {
             <div className="pt-3 border-t border-gray-200 flex justify-end gap-2">
               <button
                 onClick={() => setRefundOrder(null)}
+                disabled={isRefundSubmitting}
                 className="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 text-xs font-medium"
               >
                 取消
               </button>
               <button
                 onClick={handleConfirmRefund}
+                disabled={isRefundSubmitting}
                 className="px-5 py-2 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-xs font-semibold shadow-xs"
               >
-                同意并原路退款
+                {isRefundSubmitting ? '提交中...' : '同意并原路退款'}
               </button>
             </div>
           </div>

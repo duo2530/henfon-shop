@@ -62,7 +62,7 @@ HTTP 状态：成功 2xx；参数/业务错误 400；认证失败 401；无权�
 
 - 管理认证：`POST /api/admin/auth/login`、`POST /api/admin/auth/refresh`、`POST /api/admin/auth/password`、`POST /api/admin/auth/logout`、`GET /api/admin/auth/me`、`GET /api/admin/auth/menus`。登录返回 8 小时访问令牌和 30 天刷新令牌；刷新请求体为 `{ "refreshToken": "..." }`，刷新令牌使用 Redis 原子消费并一次性轮换，旧令牌立即失效。修改密码请求体为 `{ "oldPassword": "...", "newPassword": "..." }`，新密码长度 6～64 位；退出接口允许在访问令牌过期时调用，会将当前 JWT（如仍有效）加入黑名单，并删除请求体中的刷新令牌。
 - 会员认证：`POST /api/portal/auth/login|register|refresh|logout`；邮箱找回密码申请 `POST /api/portal/auth/password-reset/request`（请求 `{ "email": "buyer@example.com" }`，无论邮箱是否存在均返回统一成功响应），确认 `POST /api/portal/auth/password-reset/confirm`（请求 `{ "token": "...", "newPassword": "..." }`，令牌 Redis 短时有效且原子消费，仅可使用一次）。
-- 会员门户：`GET /api/portal/member/profile|addresses|favorites|compare/history`；地址 `POST /addresses`、`PUT/DELETE /addresses/{id}`、`PUT /addresses/{id}/default`；收藏 `POST /favorites/{productId}/toggle`；对比历史 `POST /compare/history`。
+- 会员门户：`GET/PUT /api/portal/member/profile`、`GET /addresses|favorites|compare/history`；地址 `POST /addresses`、`PUT/DELETE /addresses/{id}`、`PUT /addresses/{id}/default`；收藏 `POST /favorites/{productId}/toggle`；对比历史 `POST /compare/history`。资料更新仅允许修改昵称、手机号、邮箱和头像，会员等级、积分、余额等字段由服务端维护。
 - 会员管理：`GET /api/admin/member/users`（分页）、`POST /users`（后台会员建档）、`PUT /users/{id}`、`PUT /users/{id}/status`、`PUT /users/{id}/assets`、标签 `GET/PUT /tags`、`PUT /tags/{id}`、`PUT /users/{id}/tags`。
 - 系统管理：`/api/admin/system/users|depts|roles|menus|data-rules` 的分页/创建/更新/删除，以及用户角色、角色菜单、角色数据规则的 `GET/PUT` 关联接口。
 - 审计：`GET /api/admin/audit/login-logs`、`GET /api/admin/audit/operation-logs`（均分页）。

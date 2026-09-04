@@ -19,6 +19,7 @@ import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.math.BigDecimal;
 
 /**
  * 支付单应用服务，负责支付单生命周期和异步通知幂等处理。
@@ -151,6 +152,7 @@ public class PaymentService {
     @Transactional
     public PaymentOrderResponse notifyPayment(PaymentNotifyRequest request) {
         PaymentOrder paymentOrder = requirePaymentForUpdate(request.paymentNo());
+        validateNotifyAmount(paymentOrder, request.amount());
         if (paymentOrder.getStatus() == STATUS_SUCCEEDED) {
             if (!request.transactionNo().equals(paymentOrder.getTransactionNo())) {
                 throw new BusinessException("PAYMENT_TRANSACTION_CONFLICT", "支付单已绑定其他第三方交易号");
@@ -173,6 +175,23 @@ public class PaymentService {
                     paymentOrder.getAmount(), paymentOrder.getPaidAt());
         }
         return PaymentOrderResponse.from(paymentOrder);
+    }
+
+    /**
+     * 校验渠道回调金额与本地支付单金额一致，防止金额篡改或错单入账。
+     *
+     * @param paymentOrder 本地支付单
+     * @param callbackAmount 渠道回调金额（人民币），历史联调请求可为空
+     * @author Henfon
+     * @date 2026-09-04
+     */
+    private void validateNotifyAmount(PaymentOrder paymentOrder, BigDecimal callbackAmount) {
+        if (callbackAmount == null) {
+            return;
+        }
+        if (paymentOrder.getAmount() == null || callbackAmount.compareTo(paymentOrder.getAmount()) != 0) {
+            throw new BusinessException("PAYMENT_AMOUNT_MISMATCH", "支付回调金额与订单金额不一致");
+        }
     }
 
     /**

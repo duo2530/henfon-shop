@@ -19,6 +19,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.Map;
+import java.math.BigDecimal;
 
 /**
  * 支付平台异步通知接口。
@@ -127,7 +128,13 @@ public class PaymentNotifyController {
             if (paymentNo == null || paymentNo.isBlank() || transactionNo == null || transactionNo.isBlank()) {
                 throw new WechatPayException("微信支付回调缺少商户支付单号或交易号");
             }
-            return new PaymentNotifyRequest(paymentNo, transactionNo, rawPayload);
+            JsonNode amountNode = payload.get("amount");
+            JsonNode totalNode = amountNode == null ? null : amountNode.get("total");
+            if (totalNode == null || !totalNode.canConvertToLong() || totalNode.asLong() <= 0) {
+                throw new WechatPayException("微信支付回调缺少合法的支付金额");
+            }
+            BigDecimal amount = BigDecimal.valueOf(totalNode.asLong(), 2);
+            return new PaymentNotifyRequest(paymentNo, transactionNo, rawPayload, amount);
         } catch (WechatPayException exception) {
             throw exception;
         } catch (Exception exception) {

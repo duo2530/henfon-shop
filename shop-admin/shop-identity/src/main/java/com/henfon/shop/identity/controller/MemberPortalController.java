@@ -2,6 +2,7 @@ package com.henfon.shop.identity.controller;
 
 import com.henfon.shop.common.api.ApiResponse;
 import com.henfon.shop.identity.dto.MemberAddressRequest;
+import com.henfon.shop.identity.dto.MemberProfileUpdateRequest;
 import com.henfon.shop.identity.entity.MemberAddress;
 import com.henfon.shop.identity.entity.MemberCompareHistory;
 import com.henfon.shop.identity.entity.MemberFavorite;
@@ -58,6 +59,21 @@ public class MemberPortalController {
                                           Authentication authentication) {
         return ApiResponse.success(service.profile(MemberPrincipalResolver.requireMemberId(authentication, memberId)),
                 MDC.get("requestId"));
+    }
+
+    /**
+     * 更新当前会员公开资料。
+     *
+     * @param request 资料更新请求
+     * @return 更新后的会员资料
+     * @author Henfon
+     * @date 2026-09-04
+     */
+    @PutMapping("/profile")
+    public ApiResponse<MemberUser> updateProfile(@Valid @RequestBody MemberProfileUpdateRequest request,
+                                                 Authentication authentication) {
+        Long memberId = MemberPrincipalResolver.requireMemberId(authentication, null);
+        return ApiResponse.success(service.updateProfile(memberId, request), MDC.get("requestId"));
     }
 
     /**

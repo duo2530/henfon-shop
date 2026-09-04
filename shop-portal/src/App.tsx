@@ -50,6 +50,7 @@ import {
   fetchPortalProductDetail,
   fetchPortalProducts,
   logoutPortalMember,
+  updatePortalMemberProfile,
   savePortalAddress,
   updatePortalAddress,
   deletePortalAddress,
@@ -911,9 +912,30 @@ export default function App() {
       });
   };
 
-  const handleUpdateUser = (updatedUser: UserProfile) => {
-    setCurrentUser(updatedUser);
-    showToast('个人资料与偏好设置已更新', 'success');
+  const handleUpdateUser = async (updatedUser: UserProfile) => {
+    if (DEMO_MODE) {
+      setCurrentUser(updatedUser);
+      showToast('个人资料与偏好设置已更新', 'success');
+      return;
+    }
+    try {
+      const saved = await updatePortalMemberProfile({
+        nickname: updatedUser.nickname,
+        phone: updatedUser.phone,
+        email: updatedUser.email,
+        avatarUrl: updatedUser.avatar,
+      });
+      setCurrentUser((current) => current ? {
+        ...current,
+        nickname: saved.nickname,
+        phone: saved.phone || '',
+        email: saved.email || '',
+        avatar: saved.avatarUrl || current.avatar,
+      } : current);
+      showToast('个人资料与偏好设置已更新', 'success');
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : '资料保存失败，请稍后重试', 'error');
+    }
   };
 
   // 打开商品详情时补充后端的卖点、参数和媒体数据。
@@ -1504,6 +1526,13 @@ export default function App() {
   };
 
   const handlePlaceOrderSuccess = (newOrder: Order, persistence?: CheckoutPersistenceResult) => {
+    // 生产模式不保留未同步到服务端的本地演示订单，避免订单列表出现无法支付、取消或售后的“孤儿订单”。
+    // 若服务端已创建订单但支付单失败（存在 serverOrderId），仍保留该订单以支持重新支付。
+    if (!DEMO_MODE && !persistence?.serverOrderId) {
+      setIsCheckoutOpen(false);
+      setShowPaymentPage(false);
+      return;
+    }
     const purchasedProductIds = new Set(newOrder.items.map((item) => item.productId));
     const purchasedCartItems = checkoutItems.filter(
       (item) => item.selected && purchasedProductIds.has(item.productId)

@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.UpdateWrapper;
 import com.henfon.shop.common.exception.BusinessException;
 import com.henfon.shop.identity.dto.MemberAddressRequest;
+import com.henfon.shop.identity.dto.MemberProfileUpdateRequest;
 import com.henfon.shop.identity.entity.MemberAddress;
 import com.henfon.shop.identity.entity.MemberCompareHistory;
 import com.henfon.shop.identity.entity.MemberCompareItem;
@@ -65,6 +66,34 @@ public class MemberPortalService {
     public MemberUser profile(Long memberId) {
         return userMapper.selectOne(new LambdaQueryWrapper<MemberUser>()
                 .eq(MemberUser::getId, memberId).eq(MemberUser::getStatus, 1));
+    }
+
+    /**
+     * 更新当前会员公开资料。
+     *
+     * @param memberId 会员ID
+     * @param request 资料更新请求
+     * @return 更新后的会员资料
+     * @author Henfon
+     * @date 2026-09-04
+     */
+    @Transactional
+    public MemberUser updateProfile(Long memberId, MemberProfileUpdateRequest request) {
+        MemberUser member = userMapper.selectOne(new LambdaQueryWrapper<MemberUser>()
+                .eq(MemberUser::getId, memberId).eq(MemberUser::getStatus, 1));
+        if (member == null) {
+            throw new BusinessException("MEMBER_NOT_FOUND", "会员不存在或已被冻结");
+        }
+        // 仅允许修改公开资料，账号、等级、积分和余额由服务端维护。
+        if (request.nickname() != null) member.setNickname(request.nickname().trim());
+        if (request.phone() != null) member.setPhone(request.phone().trim());
+        if (request.email() != null) member.setEmail(request.email().trim());
+        if (request.avatarUrl() != null) member.setAvatarUrl(request.avatarUrl().trim());
+        member.setUpdatedAt(LocalDateTime.now());
+        if (userMapper.updateById(member) == 0) {
+            throw new BusinessException("MEMBER_PROFILE_CONCURRENT_UPDATE", "会员资料已被其他操作修改，请刷新后重试");
+        }
+        return member;
     }
 
     /**

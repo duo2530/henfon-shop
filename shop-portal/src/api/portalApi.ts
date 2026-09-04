@@ -439,6 +439,51 @@ export async function refreshPortalMember(refreshToken?: string): Promise<Member
   return response;
 }
 
+/**
+ * 更新当前会员公开资料。
+ *
+ * @param payload 资料更新内容
+ * @return 服务端保存后的会员认证资料
+ * @author Henfon
+ * @date 2026-09-04
+ */
+export async function updatePortalMemberProfile(payload: {
+  nickname?: string;
+  phone?: string;
+  email?: string;
+  avatarUrl?: string;
+}): Promise<MemberAuthResponse> {
+  const member = await request<{
+    id: number;
+    username: string;
+    nickname: string;
+    phone?: string;
+    email?: string;
+    avatarUrl?: string;
+    memberLevel: string;
+    points: number;
+    balance: number;
+  }>('/api/portal/member/profile', {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  });
+  // 资料接口不刷新令牌，沿用当前令牌并返回统一的认证资料结构。
+  return {
+    accessToken: localStorage.getItem(MEMBER_TOKEN_KEY) || '',
+    refreshToken: localStorage.getItem(MEMBER_REFRESH_TOKEN_KEY) || '',
+    expiresInSeconds: 0,
+    memberId: member.id,
+    username: member.username,
+    nickname: member.nickname,
+    memberLevel: member.memberLevel,
+    points: Number(member.points || 0),
+    balance: Number(member.balance || 0),
+    phone: member.phone,
+    email: member.email,
+    avatarUrl: member.avatarUrl,
+  };
+}
+
 export async function logoutPortalMember(refreshToken?: string): Promise<void> {
   const token = refreshToken || localStorage.getItem(MEMBER_REFRESH_TOKEN_KEY);
   await request<void>('/api/portal/auth/logout', {
