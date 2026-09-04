@@ -65,8 +65,10 @@ public class MemberSmsService {
      */
     public MemberLoginResponse login(MemberSmsLoginRequest request) {
         String phone = normalizePhone(request.phone());
-        String expected = tokenStore.consumeSmsCode(phone);
-        if (expected == null || !expected.equals(request.verificationCode().trim())) {
+        int verifyResult = tokenStore.verifySmsCode(phone, request.verificationCode(), properties.getMaxVerifyAttempts(),
+                Duration.ofSeconds(properties.getTtlSeconds()));
+        if (verifyResult != 1) {
+            // 统一返回错误信息，避免泄露验证码是否存在；错误次数达到阈值后验证码已被 Redis 原子失效。
             throw new BusinessException("MEMBER_SMS_INVALID", "验证码错误或已过期");
         }
         MemberUser member = memberUserMapper.selectOne(new LambdaQueryWrapper<MemberUser>()

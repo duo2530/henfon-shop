@@ -23,11 +23,21 @@ public class MemberTokenStore {
     private static final String PASSWORD_RESET_COOLDOWN_PREFIX = "shop:member:password-reset:cooldown:";
     private static final String SMS_CODE_PREFIX = "shop:member:sms-code:";
     private static final String SMS_COOLDOWN_PREFIX = "shop:member:sms-cooldown:";
+    private static final String SMS_ATTEMPTS_PREFIX = "shop:member:sms-attempts:";
     private static final Duration REFRESH_TTL = Duration.ofDays(30);
     /** Redis 5 兼容的一次性读取并删除脚本，避免依赖 Redis 6 的 GETDEL 命令。 */
     private static final DefaultRedisScript<String> GET_AND_DELETE_SCRIPT = new DefaultRedisScript<>(
             "local value = redis.call('get', KEYS[1]); "
                     + "if value then redis.call('del', KEYS[1]); end; return value;", String.class);
+    /** 短信验证码校验脚本：成功一次性消费，错误累计达到阈值后失效。 */
+    private static final DefaultRedisScript<Long> VERIFY_SMS_SCRIPT = new DefaultRedisScript<>(
+            "local expected = redis.call('get', KEYS[1]); "
+                    + "if not expected then return -1; end; "
+                    + "if expected == ARGV[1] then redis.call('del', KEYS[1]); redis.call('del', KEYS[2]); return 1; end; "
+                    + "local attempts = redis.call('incr', KEYS[2]); "
+                    + "if attempts == 1 then redis.call('expire', KEYS[2], ARGV[2]); end; "
+                    + "if attempts >= tonumber(ARGV[3]) then redis.call('del', KEYS[1]); redis.call('del', KEYS[2]); return -2; end; "
+                    + "return 0;", Long.class);
 
     private final StringRedisTemplate redisTemplate;
     private final Duration accessTokenTtl;
@@ -214,6 +224,29 @@ public class MemberTokenStore {
         // Lua 脚本保证验证码只能成功校验一次，防止并发重放。
         return redisTemplate.execute(GET_AND_DELETE_SCRIPT,
                 Collections.singletonList(SMS_CODE_PREFIX + phone.trim()));
+    }
+
+    /**
+     * 原子校验会员短信验证码并累计错误次数。
+     *
+     * @param phone 手机号
+     * @param code 待校验验证码
+     * @param maxAttempts 最大错误次数
+     * @param attemptTtl 错误计数有效期
+     * @return 1成功，0验证码错误，-1验证码不存在或过期，-2错误次数超限
+     * @author Henfon
+     * @date 2026-09-04
+     */
+    public int verifySmsCode(String phone, String code, int maxAttempts, Duration attemptTtl) {
+        if (phone == null || phone.isBlank() || code == null || code.isBlank()
+                || maxAttempts <= 0 || attemptTtl == null || attemptTtl.isZero() || attemptTtl.isNegative()) {
+            return -1;
+        }
+        // Redis Lua 保证并发请求下校验、计数和失效操作原子执行，避免绕过错误次数限制。
+        Long result = redisTemplate.execute(VERIFY_SMS_SCRIPT,
+                java.util.Arrays.asList(SMS_CODE_PREFIX + phone.trim(), SMS_ATTEMPTS_PREFIX + phone.trim()),
+                code.trim(), String.valueOf(Math.max(1, attemptTtl.getSeconds())), String.valueOf(maxAttempts));
+        return result == null ? -1 : result.intValue();
     }
 
     /**
