@@ -112,6 +112,11 @@ export interface PortalFlashSaleItemRecord {
   id: number;
   productId: number;
   skuId?: number;
+  productName: string;
+  skuName?: string;
+  imageUrl?: string;
+  originalPrice?: number;
+  attributesJson?: string;
   activityPrice: number;
   totalStock: number;
   soldStock: number;

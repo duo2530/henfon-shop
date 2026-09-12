@@ -2,6 +2,9 @@ package com.henfon.shop.marketing.service;
 
 import com.henfon.shop.marketing.entity.MarketingFlashSale;
 import com.henfon.shop.marketing.entity.MarketingFlashSaleItem;
+import com.henfon.shop.catalog.entity.CatalogProduct;
+import com.henfon.shop.catalog.mapper.CatalogProductMapper;
+import com.henfon.shop.catalog.mapper.CatalogSkuMapper;
 import com.henfon.shop.marketing.mapper.MarketingFlashSaleItemMapper;
 import com.henfon.shop.marketing.mapper.MarketingFlashSaleMapper;
 import org.junit.jupiter.api.Test;
@@ -26,7 +29,10 @@ class MarketingFlashSalePortalServiceTest {
 
     private final MarketingFlashSaleMapper activityMapper = mock(MarketingFlashSaleMapper.class);
     private final MarketingFlashSaleItemMapper itemMapper = mock(MarketingFlashSaleItemMapper.class);
-    private final MarketingFlashSalePortalService service = new MarketingFlashSalePortalService(activityMapper, itemMapper);
+    private final CatalogProductMapper productMapper = mock(CatalogProductMapper.class);
+    private final CatalogSkuMapper skuMapper = mock(CatalogSkuMapper.class);
+    private final MarketingFlashSalePortalService service = new MarketingFlashSalePortalService(activityMapper, itemMapper,
+            productMapper, skuMapper);
 
     /**
      * 验证活动商品返回剩余库存，并过滤停用和售罄商品。
@@ -53,8 +59,15 @@ class MarketingFlashSalePortalServiceTest {
         item.setSoldStock(3);
         item.setLimitPerMember(1);
         item.setStatus(1);
+        CatalogProduct product = new CatalogProduct();
+        product.setId(100L);
+        product.setProductName("测试商品");
+        product.setPrice(new BigDecimal("19.90"));
+        product.setStatus(1);
         when(activityMapper.selectList(any())).thenReturn(List.of(activity));
         when(itemMapper.selectList(any())).thenReturn(List.of(item));
+        when(productMapper.selectList(any())).thenReturn(List.of(product));
+        when(skuMapper.selectList(any())).thenReturn(List.of());
 
         var result = service.activeFlashSales();
 

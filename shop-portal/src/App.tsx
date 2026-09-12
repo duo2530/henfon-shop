@@ -1266,12 +1266,41 @@ export default function App() {
       showToast('请先登录会员账号，再参加秒杀活动', 'info');
       return;
     }
-    const product = products.find((candidate) => candidate.id === `prod-${item.productId}`);
-    if (!product || item.remainingStock <= 0) {
+    if (item.remainingStock <= 0) {
       showToast('该秒杀商品暂不可购买', 'error');
       return;
     }
-    const selectedSku = item.skuId ? product.skus?.find((sku) => sku.id === item.skuId) : undefined;
+    // 秒杀接口返回独立商品快照，不再依赖当前商品分页，避免商品不在当前页时无法下单。
+    const selectedSku = item.skuId ? {
+      id: item.skuId,
+      skuCode: `FLASH-${item.skuId}`,
+      skuName: item.skuName || '秒杀规格',
+      attributes: {},
+      price: Number(item.activityPrice),
+      marketPrice: Number(item.originalPrice || item.activityPrice),
+      stock: item.remainingStock,
+    } : undefined;
+    const product: Product = {
+      id: `prod-${item.productId}`,
+      title: item.productName || `商品 #${item.productId}`,
+      subtitle: item.skuName || '限时秒杀商品',
+      category: 'lifestyle',
+      categoryLabel: '限时秒杀',
+      brand: '',
+      price: Number(item.activityPrice),
+      originalPrice: Number(item.originalPrice || item.activityPrice),
+      rating: 0,
+      reviewCount: 0,
+      salesCount: 0,
+      stock: item.remainingStock,
+      images: item.imageUrl ? [item.imageUrl] : [],
+      features: [],
+      specs: {},
+      skus: selectedSku ? [selectedSku] : undefined,
+      description: '限时秒杀商品',
+      isFreeShipping: false,
+      deliveryEstimate: '以订单实际配送信息为准',
+    };
     const tempItem: CartItem = {
       id: `flash-${saleId}-${item.id}-${Date.now()}`,
       productId: product.id,
@@ -2272,12 +2301,12 @@ export default function App() {
                     {sale.items.slice(0, 4).map((item) => {
                       const product = products.find((candidate) => candidate.id === `prod-${item.productId}`);
                       return <div key={item.id} className="min-w-[150px] rounded-lg border border-zinc-100 bg-zinc-50 p-2">
-                        <button type="button" onClick={() => product && openProduct(product)} disabled={!product} className="w-full text-left disabled:cursor-default">
-                          <div className="truncate text-xs text-zinc-700">{product?.title || `商品 #${item.productId}`}</div>
+                        <button type="button" onClick={() => { if (product) void openProduct(product); }} disabled={!product} className="w-full text-left disabled:cursor-default">
+                          <div className="truncate text-xs text-zinc-700">{item.productName || `商品 #${item.productId}`}</div>
                           <div className="mt-1 text-sm font-bold text-orange-600">¥{Number(item.activityPrice || 0).toFixed(2)}</div>
                           <div className="mt-1 text-[10px] text-zinc-400">剩余 {item.remainingStock} 件</div>
                         </button>
-                        <button type="button" onClick={() => handleFlashSaleBuy(sale.id, item)} disabled={!product || item.remainingStock <= 0} className="mt-2 w-full rounded-md bg-orange-500 px-2 py-1 text-[11px] font-semibold text-white hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-50">立即秒杀</button>
+                        <button type="button" onClick={() => handleFlashSaleBuy(sale.id, item)} disabled={item.remainingStock <= 0} className="mt-2 w-full rounded-md bg-orange-500 px-2 py-1 text-[11px] font-semibold text-white hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-50">{item.remainingStock <= 0 ? '已售罄' : '立即秒杀'}</button>
                       </div>;
                     })}
                   </div>

@@ -7,6 +7,10 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.henfon.shop.common.exception.BusinessException;
 import com.henfon.shop.common.marketing.FlashSaleReservationItem;
 import com.henfon.shop.common.marketing.FlashSaleReservationService;
+import com.henfon.shop.catalog.entity.CatalogProduct;
+import com.henfon.shop.catalog.entity.CatalogSku;
+import com.henfon.shop.catalog.mapper.CatalogProductMapper;
+import com.henfon.shop.catalog.mapper.CatalogSkuMapper;
 import com.henfon.shop.marketing.dto.MarketingFlashSaleSaveRequest;
 import com.henfon.shop.marketing.entity.MarketingFlashSale;
 import com.henfon.shop.marketing.entity.MarketingFlashSaleItem;
@@ -43,20 +47,28 @@ public class MarketingFlashSaleService implements FlashSaleReservationService {
     private final MarketingFlashSaleMapper activityMapper;
     private final MarketingFlashSaleItemMapper itemMapper;
     private final MarketingFlashSaleReservationMapper reservationMapper;
+    private final CatalogProductMapper productMapper;
+    private final CatalogSkuMapper skuMapper;
 
     /**
      * 创建秒杀活动服务。
      *
      * @param activityMapper 活动数据访问对象
      * @param itemMapper 活动商品数据访问对象
+     * @param reservationMapper 秒杀预占数据访问对象
+     * @param productMapper 商品目录数据访问对象
+     * @param skuMapper 商品SKU数据访问对象
      * @author Henfon
      * @date 2026-08-31
      */
     public MarketingFlashSaleService(MarketingFlashSaleMapper activityMapper, MarketingFlashSaleItemMapper itemMapper,
-                                     MarketingFlashSaleReservationMapper reservationMapper) {
+                                     MarketingFlashSaleReservationMapper reservationMapper,
+                                     CatalogProductMapper productMapper, CatalogSkuMapper skuMapper) {
         this.activityMapper = activityMapper;
         this.itemMapper = itemMapper;
         this.reservationMapper = reservationMapper;
+        this.productMapper = productMapper;
+        this.skuMapper = skuMapper;
     }
 
     /**
@@ -327,6 +339,7 @@ public class MarketingFlashSaleService implements FlashSaleReservationService {
             if (requestItem.totalStock() < soldStock) {
                 throw new BusinessException("MARKETING_FLASH_SALE_STOCK_INVALID", "活动库存不能低于已售库存");
             }
+            validateAvailableStock(requestItem, soldStock);
             item.setSoldStock(soldStock);
             item.setLimitPerMember(requestItem.limitPerMember());
             item.setStatus(requestItem.status());
@@ -396,6 +409,43 @@ public class MarketingFlashSaleService implements FlashSaleReservationService {
             if (item.totalStock() < item.limitPerMember()) {
                 throw new BusinessException("MARKETING_FLASH_SALE_STOCK_INVALID", "活动库存不能小于单会员限购数量");
             }
+            CatalogProduct product = productMapper.selectById(item.productId());
+            if (product == null || !Integer.valueOf(1).equals(product.getStatus())) {
+                throw new BusinessException("MARKETING_FLASH_SALE_PRODUCT_INVALID", "秒杀商品不存在或未上架");
+            }
+            BigDecimal originalPrice = product.getPrice();
+            if (item.skuId() != null) {
+                CatalogSku sku = skuMapper.selectById(item.skuId());
+                if (sku == null || !item.productId().equals(sku.getProductId()) || !Integer.valueOf(1).equals(sku.getStatus())) {
+                    throw new BusinessException("MARKETING_FLASH_SALE_SKU_INVALID", "秒杀SKU不存在、未启用或不属于该商品");
+                }
+                originalPrice = sku.getPrice();
+            }
+            if (originalPrice == null || item.activityPrice().compareTo(originalPrice) > 0) {
+                throw new BusinessException("MARKETING_FLASH_SALE_PRICE_INVALID", "活动价不能高于商品当前销售价");
+            }
+        }
+    }
+
+    /**
+     * 校验本次新增的活动库存不能超过商品当前可用库存。
+     *
+     * @param item 活动商品请求
+     * @param soldStock 已售活动库存
+     * @author Henfon
+     * @date 2026-09-12
+     */
+    private void validateAvailableStock(MarketingFlashSaleSaveRequest.Item item, int soldStock) {
+        int availableStock;
+        if (item.skuId() == null) {
+            CatalogProduct product = productMapper.selectById(item.productId());
+            availableStock = product == null || product.getCurrentStock() == null ? 0 : product.getCurrentStock();
+        } else {
+            CatalogSku sku = skuMapper.selectById(item.skuId());
+            availableStock = sku == null || sku.getStock() == null ? 0 : sku.getStock();
+        }
+        if (item.totalStock() - soldStock > availableStock) {
+            throw new BusinessException("MARKETING_FLASH_SALE_STOCK_INVALID", "活动库存不能超过商品当前可用库存");
         }
     }
 
