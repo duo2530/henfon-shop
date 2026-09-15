@@ -31,7 +31,6 @@ import { Pagination } from '../common/Pagination';
 export const OrderManagementView: React.FC = () => {
   const { 
     orders, 
-    addOrder, 
     updateOrderStatus, 
     syncOrderLogistics,
     cancelOrder, 
@@ -45,7 +44,8 @@ export const OrderManagementView: React.FC = () => {
     prompt,
     products,
     requirePermission,
-    searchQuery
+    searchQuery,
+    logisticsCarriers
   } = useAdmin();
 
   // Tab filter
@@ -62,13 +62,14 @@ export const OrderManagementView: React.FC = () => {
   // Modals & Drawers
   const [inspectOrder, setInspectOrder] = useState<Order | null>(null);
   const [shippingOrder, setShippingOrder] = useState<Order | null>(null);
-  const [carrier, setCarrier] = useState('顺丰速运');
+  const [carrier, setCarrier] = useState('');
   const [trackingNumber, setTrackingNumber] = useState('');
   const [isNewOrderModalOpen, setIsNewOrderModalOpen] = useState(false);
 
   // Batch Ship Modal
   const [isBatchShipModalOpen, setIsBatchShipModalOpen] = useState(false);
-  const [batchCarrier, setBatchCarrier] = useState('顺丰速运');
+  const [batchCarrier, setBatchCarrier] = useState('');
+  const [batchTrackingNumbers, setBatchTrackingNumbers] = useState('');
 
   // Remark & Flag Modal
   const [remarkOrder, setRemarkOrder] = useState<Order | null>(null);
@@ -125,6 +126,8 @@ export const OrderManagementView: React.FC = () => {
   const pendingShipmentCount = orders.filter((o) => o.status === 'pending_shipment').length;
   const shippedCount = orders.filter((o) => o.status === 'shipped').length;
   const refundedCount = orders.filter((o) => o.status === 'refunded' || o.refundStatus).length;
+  const todayOrderCount = orders.filter((order) => order.createdAt.slice(0, 10) === new Date().toISOString().slice(0, 10)).length;
+  const disputeRate = orders.length === 0 ? 0 : (refundedCount / orders.length) * 100;
 
   // Paginated Orders
   const totalEntries = filteredOrders.length;
@@ -156,6 +159,10 @@ export const OrderManagementView: React.FC = () => {
       showToast('请填写物流运单号', 'error');
       return;
     }
+    if (!carrier) {
+      showToast('请选择物流承运商', 'error');
+      return;
+    }
     updateOrderStatus(shippingOrder.id, 'shipped', trackingNumber, carrier);
     setShippingOrder(null);
     setTrackingNumber('');
@@ -168,58 +175,30 @@ export const OrderManagementView: React.FC = () => {
       showToast('选中的订单中没有待发货订单', 'warning');
       return;
     }
+    if (!batchCarrier) {
+      showToast('请选择物流承运商', 'error');
+      return;
+    }
+    const trackingNumbers = batchTrackingNumbers.split(/[\s,，\n]+/).map((value) => value.trim()).filter(Boolean);
+    if (trackingNumbers.length !== pendingOrdersToShip.length) {
+      showToast(`请按选中订单顺序填写 ${pendingOrdersToShip.length} 个真实运单号`, 'error');
+      return;
+    }
     const shipments = pendingOrdersToShip.map((o, idx) => ({
       orderId: o.id,
       carrier: batchCarrier,
-      trackingNumber: `SF${Date.now().toString().slice(-8)}${idx + 10}`
+      trackingNumber: trackingNumbers[idx]
     }));
     batchShipOrders(shipments);
     setIsBatchShipModalOpen(false);
     setSelectedOrderIds([]);
+    setBatchTrackingNumbers('');
   };
 
   const handleCreateOrder = (e: React.FormEvent) => {
     e.preventDefault();
     if (!requirePermission('order:add', '代客录单')) return;
-    const product = products.find((p) => p.id === selectedProductId) || products[0];
-    if (!product) return;
-
-    const newOrderNumber = `ORD-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}-${Math.floor(100 + Math.random() * 900)}`;
-
-    addOrder({
-      orderNumber: newOrderNumber,
-      customerName: newOrderCustomer || '新客户',
-      customerPhone: newOrderPhone || '13800138000',
-      amount: product.price * itemQuantity,
-      paymentMethod: 'wechat',
-      status: 'pending_shipment',
-      flagColor: 'blue',
-      discountAmount: 0,
-      sellerNote: '人工录单创建',
-      items: [
-        {
-          productId: product.id,
-          productName: product.name,
-          price: product.price,
-          quantity: itemQuantity,
-          imageUrl: product.imageUrl
-        }
-      ],
-      shippingAddress: newOrderAddress || '北京市朝阳区建国路88号国贸大厦1201',
-      logisticsSteps: [
-        {
-          time: new Date().toISOString().slice(0, 16).replace('T', ' '),
-          title: '订单创建成功',
-          desc: '买家已提交订单，客服人工代客录单完成',
-          status: 'current'
-        }
-      ]
-    });
-
-    setIsNewOrderModalOpen(false);
-    setNewOrderCustomer('');
-    setNewOrderPhone('');
-    setNewOrderAddress('');
+    showToast('代客录单尚未接入服务端创建接口，暂不生成本地订单', 'warning');
   };
 
   const handleOpenRemark = (order: Order) => {
@@ -339,11 +318,11 @@ export const OrderManagementView: React.FC = () => {
           <PermissionGate permission="order:add">
             <button
               id="btn-create-order"
-              onClick={() => setIsNewOrderModalOpen(true)}
+              onClick={() => showToast('代客录单尚未接入服务端创建接口，暂不可创建订单', 'warning')}
               className="h-[36px] px-4 rounded-lg bg-[#2563EB] text-white hover:bg-blue-700 flex items-center justify-center gap-2 text-xs font-semibold shadow-xs transition-colors cursor-pointer"
             >
               <Plus className="w-4 h-4" />
-              <span>代客录单 (New Order)</span>
+              <span>代客录单（接口待接入）</span>
             </button>
           </PermissionGate>
         </div>
@@ -361,10 +340,8 @@ export const OrderManagementView: React.FC = () => {
             </div>
           </div>
           <div className="flex items-baseline gap-2 mt-1">
-            <span className="text-2xl md:text-3xl font-bold text-gray-900">{orders.length + 1200}</span>
-            <span className="text-xs font-medium text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded">
-              +14.8%
-            </span>
+            <span className="text-2xl md:text-3xl font-bold text-gray-900">{todayOrderCount}</span>
+            <span className="text-xs font-medium text-gray-500 bg-gray-50 px-1.5 py-0.5 rounded">接口实时统计</span>
           </div>
         </div>
 
@@ -397,7 +374,7 @@ export const OrderManagementView: React.FC = () => {
           <div className="flex items-baseline gap-2 mt-1">
             <span className="text-2xl md:text-3xl font-bold text-gray-900">{shippedCount}</span>
             <span className="text-xs font-medium text-purple-600 bg-purple-50 px-1.5 py-0.5 rounded">
-              顺丰/京东承运
+              {logisticsCarriers.length > 0 ? `${logisticsCarriers.length} 家承运商可选` : '暂无承运商字典'}
             </span>
           </div>
         </div>
@@ -413,7 +390,7 @@ export const OrderManagementView: React.FC = () => {
           </div>
           <div className="flex items-baseline gap-2 mt-1">
             <span className="text-2xl md:text-3xl font-bold text-gray-900">{refundedCount}</span>
-            <span className="text-xs text-gray-400">争议率 0.4%</span>
+            <span className="text-xs text-gray-400">争议率 {disputeRate.toFixed(1)}%</span>
           </div>
         </div>
       </div>
@@ -858,7 +835,8 @@ export const OrderManagementView: React.FC = () => {
                                 <button
                                   onClick={() => {
                                     setShippingOrder(order);
-                                    setTrackingNumber(`SF${Math.floor(10000000000 + Math.random() * 90000000000)}`);
+                                    setCarrier('');
+                                    setTrackingNumber('');
                                   }}
                                   disabled={order.auditStatus !== undefined && order.auditStatus !== 'approved'}
                                   className="px-2 py-1 text-xs font-semibold bg-orange-50 text-orange-700 hover:bg-orange-100 rounded border border-orange-200 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
@@ -1139,10 +1117,8 @@ export const OrderManagementView: React.FC = () => {
                   onChange={(e) => setCarrier(e.target.value)}
                   className="w-full h-[36px] px-3 rounded-lg border border-gray-300 focus:border-blue-500 outline-none text-sm bg-white"
                 >
-                  <option value="顺丰速运">顺丰速运 (SF Express)</option>
-                  <option value="中通快递">中通快递 (ZTO Express)</option>
-                  <option value="圆通速递">圆通速递 (YTO Express)</option>
-                  <option value="京东快递">京东快递 (JD Logistics)</option>
+                  <option value="">请选择承运商</option>
+                  {logisticsCarriers.map((item) => <option key={item.code} value={item.name}>{item.name}</option>)}
                 </select>
               </div>
 
@@ -1211,11 +1187,21 @@ export const OrderManagementView: React.FC = () => {
                   onChange={(e) => setBatchCarrier(e.target.value)}
                   className="w-full h-[36px] px-3 rounded-lg border border-gray-300 bg-white text-sm"
                 >
-                  <option value="顺丰速运">顺丰速运 (SF Express)</option>
-                  <option value="京东快递">京东快递 (JD Express)</option>
-                  <option value="中通快递">中通快递 (ZTO Express)</option>
-                  <option value="圆通速递">圆通速递 (YTO Express)</option>
+                  <option value="">请选择承运商</option>
+                  {logisticsCarriers.map((item) => <option key={item.code} value={item.name}>{item.name}</option>)}
                 </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">
+                  真实运单号（按选中订单顺序填写）
+                </label>
+                <textarea
+                  value={batchTrackingNumbers}
+                  onChange={(e) => setBatchTrackingNumbers(e.target.value)}
+                  placeholder="每行一个，也可用逗号分隔"
+                  className="w-full min-h-20 px-3 py-2 rounded-lg border border-gray-300 bg-white text-sm font-mono"
+                />
               </div>
             </div>
 
@@ -1329,7 +1315,7 @@ export const OrderManagementView: React.FC = () => {
                   rows={3}
                   value={remarkText}
                   onChange={(e) => setRemarkText(e.target.value)}
-                  placeholder="仅内部运营客服可见，例如：买家要求顺丰特快并随单赠送清洁喷雾..."
+                  placeholder="仅内部运营客服可见，例如：买家要求加急配送并随单赠送清洁喷雾..."
                   className="w-full p-2.5 rounded-lg border border-gray-300 focus:border-blue-500 outline-none text-xs"
                 />
               </div>
@@ -1468,7 +1454,7 @@ export const OrderManagementView: React.FC = () => {
                     required
                     value={newOrderPhone}
                     onChange={(e) => setNewOrderPhone(e.target.value)}
-                    placeholder="13800000000"
+                    placeholder="请输入真实手机号"
                     className="w-full h-[36px] px-3 rounded-lg border border-gray-300 focus:border-blue-500 outline-none text-sm"
                   />
                 </div>

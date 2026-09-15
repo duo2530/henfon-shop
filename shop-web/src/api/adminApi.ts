@@ -75,6 +75,23 @@ export interface BackendMemberTag {
   status: number;
 }
 
+export interface BackendSystemConfig {
+  storeName: string;
+  storeContactPhone: string;
+  storeContactEmail: string;
+  lowStockThreshold: number;
+  autoNotifyEmail: boolean;
+  autoTrackingSync: boolean;
+  enableWechatPay: boolean;
+  version?: number;
+}
+
+export interface BackendLogisticsCarrier {
+  code: string;
+  name: string;
+  sortNo: number;
+}
+
 export interface BackendDepartment {
   id: number;
   parentId?: number;
@@ -409,7 +426,7 @@ export interface BackendTradeOrderItem {
 export interface BackendTradeFreightTemplate {
   id: number;
   templateName: string;
-  carrierName: string;
+  carrierName?: string;
   baseWeightGram: number;
   baseFee: number;
   additionalWeightGram: number;
@@ -790,6 +807,26 @@ export function listSystemMenus(): Promise<BackendMenu[]> {
 
 export function listDataRules(): Promise<BackendDataRule[]> {
   return request<BackendDataRule[]>('/api/admin/system/data-rules');
+}
+
+export function getSystemConfig(): Promise<BackendSystemConfig> {
+  return request<BackendSystemConfig>('/api/admin/system/config');
+}
+
+export function saveSystemConfig(config: Omit<BackendSystemConfig, 'version'> & { version?: number }): Promise<BackendSystemConfig> {
+  return request<BackendSystemConfig>('/api/admin/system/config', {
+    method: 'PUT',
+    body: JSON.stringify(config),
+  });
+}
+
+export function resetSystemConfig(version?: number): Promise<BackendSystemConfig> {
+  const query = version === undefined ? '' : `?version=${encodeURIComponent(String(version))}`;
+  return request<BackendSystemConfig>(`/api/admin/system/config/reset${query}`, { method: 'POST' });
+}
+
+export function listLogisticsCarriers(): Promise<BackendLogisticsCarrier[]> {
+  return request<BackendLogisticsCarrier[]>('/api/admin/system/dictionaries/logistics-carriers');
 }
 
 export function listUserRoleIds(userId: number): Promise<number[]> {

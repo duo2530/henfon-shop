@@ -82,8 +82,8 @@ export const UserManagementView: React.FC = () => {
     tier: 'regular' as User['tier'],
     avatar: '',
     balance: 0,
-    points: 100,
-    tags: ['新注册会员']
+    points: 0,
+    tags: []
   });
 
   // All unique user tags for quick filtering
@@ -162,8 +162,8 @@ export const UserManagementView: React.FC = () => {
       tier: 'regular',
       avatar: '',
       balance: 0,
-      points: 100,
-      tags: ['新注册会员']
+      points: 0,
+      tags: []
     });
     setIsAddUserModalOpen(true);
   };
@@ -1056,7 +1056,7 @@ export const UserManagementView: React.FC = () => {
                   required
                   value={formData.phone}
                   onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                  placeholder="13800138000"
+                  placeholder="请输入真实手机号"
                   className="w-full h-[36px] px-3 rounded-lg border border-gray-300 focus:border-blue-500 outline-none text-sm"
                 />
               </div>

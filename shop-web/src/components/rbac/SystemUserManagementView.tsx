@@ -20,7 +20,6 @@ import {
   Phone, 
   Clock, 
   MapPin, 
-  RotateCcw,
   Sparkles
 } from 'lucide-react';
 
@@ -56,7 +55,8 @@ export const SystemUserManagementView: React.FC = () => {
     email: '',
     avatar: '',
     status: 'active' as 'active' | 'inactive',
-    dataScope: 'dept_and_sub' as SystemUser['dataScope']
+    dataScope: 'dept_and_sub' as SystemUser['dataScope'],
+    initialPassword: ''
   });
 
   // Assign Role Modal state
@@ -100,7 +100,8 @@ export const SystemUserManagementView: React.FC = () => {
       email: '',
       avatar: '',
       status: 'active',
-      dataScope: 'dept_and_sub'
+      dataScope: 'dept_and_sub',
+      initialPassword: ''
     });
     setModalMode('create');
   };
@@ -117,7 +118,8 @@ export const SystemUserManagementView: React.FC = () => {
       email: user.email,
       avatar: user.avatar || '',
       status: user.status,
-      dataScope: user.dataScope
+      dataScope: user.dataScope,
+      initialPassword: ''
     });
     setModalMode('edit');
   };
@@ -141,6 +143,10 @@ export const SystemUserManagementView: React.FC = () => {
   const handleSaveForm = (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.username.trim() || !formData.realName.trim()) return;
+    if (modalMode === 'create' && formData.initialPassword.length < 6) {
+      showToast('请设置至少6位初始密码', 'warning');
+      return;
+    }
 
     const matchedDept = deptList.find(d => d.id === formData.deptId);
     const deptName = matchedDept ? matchedDept.name : formData.deptName;
@@ -157,8 +163,9 @@ export const SystemUserManagementView: React.FC = () => {
         deptName,
         roles: formData.roles,
         roleNames,
-        phone: formData.phone.trim() || '13800000000',
-        email: formData.email.trim() || `${formData.username}@company.com`,
+        phone: formData.phone.trim(),
+        email: formData.email.trim(),
+        initialPassword: formData.initialPassword,
         avatar: formData.avatar.trim() || undefined,
         status: formData.status,
         dataScope: formData.dataScope
@@ -198,10 +205,6 @@ export const SystemUserManagementView: React.FC = () => {
     });
     setAssignRoleUser(null);
     showToast(`已更新「${assignRoleUser.realName}」的角色绑定`, 'success');
-  };
-
-  const handleResetPassword = (user: SystemUser) => {
-    showToast(`用户 ${user.username} 的密码重置链接已发送至 ${user.email} (初始密码: Abc@123456)`, 'info');
   };
 
   return (
@@ -412,16 +415,6 @@ export const SystemUserManagementView: React.FC = () => {
                             <KeyRound className="w-4 h-4" />
                           </button>
 
-                          {/* Reset Password */}
-                          <button
-                            id={`btn-reset-pwd-${user.id}`}
-                            onClick={() => handleResetPassword(user)}
-                            title="重置登录密码"
-                            className="p-1.5 text-amber-600 hover:bg-amber-50 rounded-md transition-colors"
-                          >
-                            <RotateCcw className="w-4 h-4" />
-                          </button>
-
                           {/* Edit User */}
                           <button
                             id={`btn-edit-user-${user.id}`}
@@ -508,6 +501,23 @@ export const SystemUserManagementView: React.FC = () => {
                 </div>
               </div>
 
+              {modalMode === 'create' && (
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    初始登录密码 <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="password"
+                    required
+                    minLength={6}
+                    placeholder="请设置至少6位密码"
+                    value={formData.initialPassword}
+                    onChange={(e) => setFormData({ ...formData, initialPassword: e.target.value })}
+                    className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 font-mono"
+                  />
+                </div>
+              )}
+
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">
@@ -546,7 +556,7 @@ export const SystemUserManagementView: React.FC = () => {
                   </label>
                   <input
                     type="text"
-                    placeholder="13800138000"
+                    placeholder="请输入联系电话"
                     value={formData.phone}
                     onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                     className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 font-mono"
@@ -559,7 +569,7 @@ export const SystemUserManagementView: React.FC = () => {
                   </label>
                   <input
                     type="email"
-                    placeholder="user@company.com"
+                    placeholder="请输入工作邮箱"
                     value={formData.email}
                     onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                     className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 font-mono"

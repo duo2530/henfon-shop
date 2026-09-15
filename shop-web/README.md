@@ -1,20 +1,26 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
-</div>
+# Henfon 商城管理端
 
-# Run and deploy your AI Studio app
+管理端前端基于 Vite、React 和 TypeScript，默认访问本地后端 `http://127.0.0.1:8080`。
 
-This contains everything you need to run your app locally.
+## 开发
 
-View your app in AI Studio: https://ai.studio/apps/24e41e78-9cd4-4563-b3db-dd78d51c5b4f
+需要 Node.js 18+（建议使用当前 LTS）。
 
-## Run Locally
+```powershell
+npm install
+Copy-Item .env.example .env.local
+npm run dev
+```
 
-**Prerequisites:**  Node.js
+开发服务器默认地址为 `http://localhost:3000`。后端地址可通过 `.env.local` 中的 `VITE_API_BASE_URL` 覆盖。
 
+## 构建与检查
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+```powershell
+npm run lint       # TypeScript 类型检查
+npm test           # 无障碍及核心流程冒烟测试
+npm run build      # 生产构建
+npm run preview    # 预览 dist
+```
+
+管理端接口、账号和依赖服务说明见仓库根目录 [README](../README.md) 及 [API 契约](../docs/API契约.md)。

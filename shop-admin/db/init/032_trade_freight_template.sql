@@ -29,7 +29,7 @@ DEALLOCATE PREPARE sku_weight_stmt;
 CREATE TABLE IF NOT EXISTS trade_freight_template (
     id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '主键ID',
     template_name VARCHAR(64) NOT NULL COMMENT '模板名称',
-    carrier_name VARCHAR(64) NOT NULL DEFAULT '顺丰速运' COMMENT '承运商名称',
+    carrier_name VARCHAR(64) DEFAULT NULL COMMENT '承运商名称，发货时由承运商字典选择',
     base_weight_gram INT UNSIGNED NOT NULL DEFAULT 1000 COMMENT '首重（克）',
     base_fee DECIMAL(18,2) NOT NULL DEFAULT 15.00 COMMENT '首重费用',
     additional_weight_gram INT UNSIGNED NOT NULL DEFAULT 1000 COMMENT '续重计费单位（克）',
@@ -53,7 +53,7 @@ INSERT INTO trade_freight_template
     (template_name, carrier_name, base_weight_gram, base_fee, additional_weight_gram, additional_fee,
      free_shipping_threshold, remote_surcharge, remote_regions_csv, status, is_default)
 VALUES
-    ('全国顺丰配送模板', '顺丰速运', 1000, 15.00, 1000, 5.00, 99.00, 0.00,
+    ('全国配送模板', NULL, 1000, 15.00, 1000, 5.00, 99.00, 0.00,
      '西藏,新疆,港澳台', 1, 1)
 ON DUPLICATE KEY UPDATE
     updated_at = CURRENT_TIMESTAMP(3);

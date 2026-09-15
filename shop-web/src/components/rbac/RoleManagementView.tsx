@@ -560,28 +560,19 @@ export const RoleManagementView: React.FC = () => {
                 <div className="border border-slate-200 rounded-lg p-3 bg-slate-50 space-y-2">
                   <p className="text-xs font-semibold text-slate-700">勾选允许查看的部门/门店:</p>
                   <div className="max-h-40 overflow-y-auto space-y-1.5 text-xs">
-                    <label className="flex items-center gap-2 p-1.5 hover:bg-white rounded">
-                      <input
-                        type="checkbox"
-                        checked={selectedCustomDepts.includes('dept-1-2-1')}
-                        onChange={(e) => {
-                          if (e.target.checked) setSelectedCustomDepts([...selectedCustomDepts, 'dept-1-2-1']);
-                          else setSelectedCustomDepts(selectedCustomDepts.filter(id => id !== 'dept-1-2-1'));
-                        }}
-                      />
-                      <span>上海静安旗舰店 (STORE_SH_01)</span>
-                    </label>
-                    <label className="flex items-center gap-2 p-1.5 hover:bg-white rounded">
-                      <input
-                        type="checkbox"
-                        checked={selectedCustomDepts.includes('dept-1-2-2')}
-                        onChange={(e) => {
-                          if (e.target.checked) setSelectedCustomDepts([...selectedCustomDepts, 'dept-1-2-2']);
-                          else setSelectedCustomDepts(selectedCustomDepts.filter(id => id !== 'dept-1-2-2'));
-                        }}
-                      />
-                      <span>杭州西湖体验店 (STORE_HZ_01)</span>
-                    </label>
+                    {departments.flatMap((department) => [department, ...(department.children || [])]).map((department) => (
+                      <label key={department.id} className="flex items-center gap-2 p-1.5 hover:bg-white rounded">
+                        <input
+                          type="checkbox"
+                          checked={selectedCustomDepts.includes(department.id)}
+                          onChange={(e) => setSelectedCustomDepts((previous) => e.target.checked
+                            ? Array.from(new Set([...previous, department.id]))
+                            : previous.filter((id) => id !== department.id))}
+                        />
+                        <span>{department.name} ({department.code})</span>
+                      </label>
+                    ))}
+                    {departments.length === 0 && <span className="text-xs text-slate-400">暂无可选部门</span>}
                   </div>
                 </div>
               )}

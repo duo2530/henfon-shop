@@ -27,7 +27,7 @@ export const AuthorizationView: React.FC = () => {
   const permissionTreeData = useMemo(() => menuItemsToPermissionTree(menuItems), [menuItems]);
 
   // Selected active role
-  const [selectedRoleId, setSelectedRoleId] = useState<string>(roles[0]?.id || 'role-super-admin');
+  const [selectedRoleId, setSelectedRoleId] = useState<string>(roles[0]?.id || '');
   const activeRole = roles.find(r => r.id === selectedRoleId) || roles[0];
 
   // Local state for checked permission keys of active role

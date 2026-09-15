@@ -27,7 +27,7 @@ import java.math.BigDecimal;
  */
 public record TradeFreightTemplateSaveRequest(Long id,
                                                @NotBlank @Size(max = 64) String templateName,
-                                               @NotBlank @Size(max = 64) String carrierName,
+                                               @Size(max = 64) String carrierName,
                                                @NotNull @Min(1) Integer baseWeightGram,
                                                @NotNull @DecimalMin("0.00") BigDecimal baseFee,
                                                @NotNull @Min(1) Integer additionalWeightGram,

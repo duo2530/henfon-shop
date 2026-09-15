@@ -4,6 +4,9 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.henfon.shop.common.api.ApiResponse;
 import com.henfon.shop.identity.dto.SysUserCreateRequest;
 import com.henfon.shop.identity.dto.SysUserUpdateRequest;
+import com.henfon.shop.identity.dto.SystemConfigResponse;
+import com.henfon.shop.identity.dto.SystemConfigSaveRequest;
+import com.henfon.shop.identity.dto.LogisticsCarrierResponse;
 import com.henfon.shop.identity.entity.SysDataRule;
 import com.henfon.shop.identity.entity.SysDept;
 import com.henfon.shop.identity.entity.SysMenu;
@@ -12,6 +15,8 @@ import com.henfon.shop.identity.entity.SysUser;
 import com.henfon.shop.identity.service.IdentityMetadataService;
 import com.henfon.shop.identity.service.PermissionAssignmentService;
 import com.henfon.shop.identity.service.SysUserService;
+import com.henfon.shop.identity.service.SystemConfigService;
+import com.henfon.shop.identity.service.SystemDictionaryService;
 import jakarta.validation.Valid;
 import org.slf4j.MDC;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -24,6 +29,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.security.core.Authentication;
+import com.henfon.shop.identity.security.AuthenticatedUser;
 
 import java.util.List;
 
@@ -42,6 +49,8 @@ public class IdentityAdminController {
     private final SysUserService sysUserService;
     private final IdentityMetadataService identityMetadataService;
     private final PermissionAssignmentService permissionAssignmentService;
+    private final SystemConfigService systemConfigService;
+    private final SystemDictionaryService systemDictionaryService;
 
     /**
      * 创建身份权限控制器。
@@ -54,10 +63,74 @@ public class IdentityAdminController {
      */
     public IdentityAdminController(SysUserService sysUserService,
                                    IdentityMetadataService identityMetadataService,
-                                   PermissionAssignmentService permissionAssignmentService) {
+                                   PermissionAssignmentService permissionAssignmentService,
+                                   SystemConfigService systemConfigService,
+                                   SystemDictionaryService systemDictionaryService) {
         this.sysUserService = sysUserService;
         this.identityMetadataService = identityMetadataService;
         this.permissionAssignmentService = permissionAssignmentService;
+        this.systemConfigService = systemConfigService;
+        this.systemDictionaryService = systemDictionaryService;
+    }
+
+    /**
+     * 查询当前租户系统配置。
+     *
+     * @param authentication 当前认证信息
+     * @return 系统配置
+     * @author Henfon
+     * @date 2026-09-15
+     */
+    @GetMapping("/config")
+    @PreAuthorize("hasAuthority('system:config:view')")
+    public ApiResponse<SystemConfigResponse> getConfig(Authentication authentication) {
+        return ApiResponse.success(systemConfigService.get(tenantId(authentication)), requestId());
+    }
+
+    /**
+     * 保存当前租户系统配置。
+     *
+     * @param request 配置保存请求
+     * @param authentication 当前认证信息
+     * @return 保存后的系统配置
+     * @author Henfon
+     * @date 2026-09-15
+     */
+    @PutMapping("/config")
+    @PreAuthorize("hasAuthority('system:config:save')")
+    public ApiResponse<SystemConfigResponse> saveConfig(@Valid @RequestBody SystemConfigSaveRequest request,
+                                                         Authentication authentication) {
+        return ApiResponse.success(systemConfigService.save(tenantId(authentication), request), requestId());
+    }
+
+    /**
+     * 恢复当前租户系统配置默认值。
+     *
+     * @param version 当前配置版本
+     * @param authentication 当前认证信息
+     * @return 重置后的系统配置
+     * @author Henfon
+     * @date 2026-09-15
+     */
+    @PostMapping("/config/reset")
+    @PreAuthorize("hasAuthority('system:config:save')")
+    public ApiResponse<SystemConfigResponse> resetConfig(@RequestParam(required = false) Integer version,
+                                                          Authentication authentication) {
+        return ApiResponse.success(systemConfigService.reset(tenantId(authentication), version), requestId());
+    }
+
+    /**
+     * 查询当前租户可用的物流承运商字典。
+     *
+     * @param authentication 当前认证信息
+     * @return 启用的承运商列表
+     * @author Henfon
+     * @date 2026-09-15
+     */
+    @GetMapping("/dictionaries/logistics-carriers")
+    @PreAuthorize("hasAnyAuthority('system:config:view', 'trade:order:ship')")
+    public ApiResponse<List<LogisticsCarrierResponse>> listLogisticsCarriers(Authentication authentication) {
+        return ApiResponse.success(systemDictionaryService.listLogisticsCarriers(tenantId(authentication)), requestId());
     }
 
     /**
@@ -392,5 +465,20 @@ public class IdentityAdminController {
      */
     private String requestId() {
         return MDC.get("requestId");
+    }
+
+    /**
+     * 提取当前认证主体的租户ID。
+     *
+     * @param authentication 当前认证信息
+     * @return 租户ID
+     * @author Henfon
+     * @date 2026-09-15
+     */
+    private Long tenantId(Authentication authentication) {
+        if (authentication != null && authentication.getPrincipal() instanceof AuthenticatedUser user) {
+            return user.tenantId() == null ? 0L : user.tenantId();
+        }
+        return 0L;
     }
 }

@@ -47,11 +47,11 @@ export const DataPermissionView: React.FC = () => {
     ruleName: '',
     module: 'orders' as DataRule['module'],
     moduleName: '订单履约数据',
-    roleId: roles[0]?.id || 'role-ops-manager',
+    roleId: roles[0]?.id || '',
     scopeType: 'dept_and_sub' as DataRule['scopeType'],
     customDeptIds: [] as string[],
-    fieldMasks: ['customer_phone_mask'] as string[],
-    filterCondition: 'dept_id IN (本部门及子部门树)',
+    fieldMasks: [] as string[],
+    filterCondition: '',
     status: 'active' as 'active' | 'inactive'
   });
 
@@ -80,11 +80,11 @@ export const DataPermissionView: React.FC = () => {
       ruleName: '',
       module: 'orders',
       moduleName: '订单履约数据',
-      roleId: roles[1]?.id || roles[0]?.id || '',
+      roleId: '',
       scopeType: 'dept_and_sub',
       customDeptIds: [],
-      fieldMasks: ['customer_phone_mask'],
-      filterCondition: 'dept_id IN (当前部门及子树)',
+      fieldMasks: [],
+      filterCondition: '',
       status: 'active'
     });
     setModalMode('create');

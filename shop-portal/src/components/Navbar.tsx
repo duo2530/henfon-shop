@@ -302,11 +302,11 @@ export const Navbar: React.FC<NavbarProps> = ({
             <span>
               {currentUser ? (
                 <>
-                  尊贵的 <strong>{currentUser.nickname}</strong>，您享有全场专享特惠与顺丰极速直达服务
+                  尊贵的 <strong>{currentUser.nickname}</strong>，您享有全场专享特惠与优先配送服务
                 </>
               ) : (
                 <>
-                  全场实付满 ¥99 享顺丰包邮 | 新用户注册即送 <strong>¥100</strong> 优惠券礼包
+                  全场实付满 ¥99 享免费配送 | 新用户注册即送 <strong>¥100</strong> 优惠券礼包
                 </>
               )}
             </span>
@@ -314,7 +314,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
           <div className="hidden md:flex items-center gap-4 text-[11px] text-zinc-400">
             <span className="flex items-center gap-1">
-              <Truck className="w-3 h-3 text-emerald-400" /> 顺丰极速直达
+              <Truck className="w-3 h-3 text-emerald-400" /> 极速配送
             </span>
             <span className="flex items-center gap-1">
               <ShieldCheck className="w-3 h-3 text-emerald-400" /> 100% 正品行货
@@ -329,11 +329,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               >
                 免费注册领券
               </button>
-            ) : (
-              <span className="text-amber-300/90 font-medium">
-                积分: {currentUser.points} | 余额: ¥{currentUser.balance.toFixed(2)}
-              </span>
-            )}
+            ) : null}
           </div>
         </div>
       </div>

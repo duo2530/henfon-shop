@@ -15,14 +15,9 @@ import {
   Department,
   DataRule
 } from '../types';
-import { 
-  initialRoles, 
-  initialSystemUsers, 
-  initialDepartments, 
-  initialDataRules 
-} from '../data/rbacMockData';
 import {
   AdminUser,
+  BackendLogisticsCarrier,
   BackendMenu,
   BackendTradeOrder,
   clearAdminToken,
@@ -44,6 +39,7 @@ import {
   listSystemMenus,
   listSystemRoles,
   listSystemUsers,
+  listLogisticsCarriers,
   listUserRoleIds,
   loginAdmin,
   replaceRoleDataRules,
@@ -103,6 +99,7 @@ interface AdminContextType {
   orders: Order[];
   users: User[];
   catalogCategories: Array<{ id: number; code: ProductCategory; name: string }>;
+  logisticsCarriers: BackendLogisticsCarrier[];
   todos: TodoItem[];
   notifications: NotificationItem[];
   searchQuery: string;
@@ -124,7 +121,6 @@ interface AdminContextType {
   adjustProductStock: (id: string, newStock: number, reason?: string) => void;
   
   // Order actions
-  addOrder: (order: Omit<Order, 'id' | 'createdAt'>) => void;
   updateOrderStatus: (id: string, status: Order['status'], trackingNumber?: string, carrier?: string) => void;
   syncOrderLogistics: (id: string) => Promise<void>;
   cancelOrder: (id: string) => void;
@@ -159,7 +155,7 @@ interface AdminContextType {
 
   // RBAC System Users
   systemUsers: SystemUser[];
-  addSystemUser: (user: Omit<SystemUser, 'id' | 'createdAt' | 'lastLoginTime' | 'lastLoginIp'>) => void;
+  addSystemUser: (user: Omit<SystemUser, 'id' | 'createdAt' | 'lastLoginTime' | 'lastLoginIp'> & { initialPassword: string }) => void;
   updateSystemUser: (id: string, updates: Partial<SystemUser>) => void;
   deleteSystemUser: (id: string) => void;
   toggleSystemUserStatus: (id: string) => void;
@@ -196,19 +192,11 @@ function menuTypeToBackend(type: MenuItem['type']): 'DIRECTORY' | 'MENU' | 'BUTT
   return type === 'directory' ? 'DIRECTORY' : type === 'button' ? 'BUTTON' : 'MENU';
 }
 
-const categoryIdByCode: Record<ProductCategory, number> = {
-  electronics: 1,
-  clothing: 2,
-  home: 3,
-  beauty: 4,
-  food: 5
-};
-
 function productToCatalogRequest(product: Product) {
   return {
     id: Number(product.id),
-    // 优先使用后端返回的真实类目ID，兼容旧的本地演示数据再回退到默认映射。
-    categoryId: product.categoryId ?? categoryIdByCode[product.category],
+    // 商品类目ID必须来自类目接口，避免用前端枚举推断数据库主键。
+    categoryId: product.categoryId,
     categoryName: product.categoryName,
     productName: product.name,
     productCode: product.productCode || product.sku || `PROD-${product.id}`,
@@ -286,6 +274,7 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   // 会员列表以服务端返回为唯一事实来源，避免管理端展示本地演示会员。
   const [users, setUsers] = useState<User[]>([]);
   const [catalogCategories, setCatalogCategories] = useState<Array<{ id: number; code: ProductCategory; name: string }>>([]);
+  const [logisticsCarriers, setLogisticsCarriers] = useState<BackendLogisticsCarrier[]>([]);
   // 工作台待办和通知只展示服务端同步结果，避免把本地演示数据误当成线上业务数据。
   const [todos, setTodos] = useState<TodoItem[]>([]);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
@@ -294,12 +283,13 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   const [dialog, setDialog] = useState<AdminDialogRequest | null>(null);
 
   // RBAC state
-  const [roles, setRoles] = useState<Role[]>(initialRoles);
+  // RBAC 数据只允许来自服务端，接口不可用时保持空状态，避免展示本地演示数据。
+  const [roles, setRoles] = useState<Role[]>([]);
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [authorizedMenuItems, setAuthorizedMenuItems] = useState<MenuItem[]>([]);
-  const [systemUsers, setSystemUsers] = useState<SystemUser[]>(initialSystemUsers);
-  const [departments, setDepartmentsState] = useState<Department[]>(initialDepartments);
-  const [dataRules, setDataRules] = useState<DataRule[]>(initialDataRules);
+  const [systemUsers, setSystemUsers] = useState<SystemUser[]>([]);
+  const [departments, setDepartmentsState] = useState<Department[]>([]);
+  const [dataRules, setDataRules] = useState<DataRule[]>([]);
 
   const showToast = useCallback((message: string, type: 'success' | 'info' | 'warning' | 'error' = 'success') => {
     const id = Date.now().toString() + Math.random().toString(36).substring(2, 5);
@@ -405,10 +395,13 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       rolePermissions.forEach(([roleId, permissions]) => permissionMap.set(roleId, permissions));
     }
     const frontendRoles = backendRolesToFrontend(backendRoles, permissionMap);
-    if (frontendRoles.length) setRoles(frontendRoles);
+    // 即使接口返回空数组，也必须覆盖当前状态，不能保留旧的本地数据。
+    setRoles(frontendRoles);
 
     if (deptsResult.status === 'fulfilled') {
       setDepartmentsState(backendDepartmentsToFrontend(deptsResult.value));
+    } else {
+      setDepartmentsState([]);
     }
     if (rulesResult.status === 'fulfilled') {
       const ruleRoleMap = new Map<number, { id: string; name: string }>();
@@ -421,6 +414,8 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         }
       }));
       setDataRules(backendDataRulesToFrontend(rulesResult.value, ruleRoleMap));
+    } else {
+      setDataRules([]);
     }
     if (usersResult.status === 'fulfilled') {
       const deptNames = new Map((deptsResult.status === 'fulfilled' ? deptsResult.value : []).map((dept) => [dept.id, dept.deptName]));
@@ -443,6 +438,8 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         userCountByRole.set(roleId, (userCountByRole.get(roleId) || 0) + 1);
       }));
       setRoles((previous) => previous.map((role) => ({ ...role, userCount: userCountByRole.get(role.id) || 0 })));
+    } else {
+      setSystemUsers([]);
     }
     if (memberResult.status === 'fulfilled') {
       // 会员接口成功后以服务端事实替换当前快照，不混入本地演示会员。
@@ -464,6 +461,16 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     } else {
       // 商品接口不可用时清空列表，避免继续展示本地演示商品。
       setProducts([]);
+    }
+  };
+
+  const hydrateSystemDictionaries = async () => {
+    try {
+      setLogisticsCarriers(await listLogisticsCarriers());
+    } catch (error) {
+      // 字典接口失败时清空候选项，禁止页面继续使用本地承运商演示值。
+      setLogisticsCarriers([]);
+      console.warn('物流承运商字典接口暂不可用，已清空候选项', error);
     }
   };
 
@@ -555,6 +562,7 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       setAuthorizedMenuItems(menuTree);
       setCurrentTabState((previousTab) => containsMenuTab(menuTree, previousTab) ? previousTab : (firstMenuTab(menuTree) || 'dashboard'));
       await hydrateIdentityMetadata(menus);
+      await hydrateSystemDictionaries();
       await hydrateCatalogMetadata();
       await hydrateTradeMetadata();
       await hydrateDashboardTasks();
@@ -600,6 +608,7 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     setAuthorizedMenuItems(menuTree);
     setCurrentTab(firstMenuTab(menuTree) || 'dashboard');
     await hydrateIdentityMetadata(menus);
+    await hydrateSystemDictionaries();
     await hydrateCatalogMetadata();
     await hydrateTradeMetadata();
     await hydrateDashboardTasks();
@@ -746,18 +755,6 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   };
 
   // Order Methods
-  const addOrder = (orderData: Omit<Order, 'id' | 'createdAt'>) => {
-    const now = new Date();
-    const formattedDate = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
-    const newOrder: Order = {
-      ...orderData,
-      id: `ord-${Date.now()}`,
-      createdAt: formattedDate
-    };
-    setOrders((prev) => [newOrder, ...prev]);
-    showToast(`订单 ${newOrder.orderNumber} 已创建`, 'success');
-  };
-
   const updateOrderStatus = (id: string, status: Order['status'], trackingNumber?: string, carrier?: string) => {
     setOrders((prev) =>
       prev.map((o) => {
@@ -768,7 +765,7 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             newLogistics.unshift({
               time: nowStr,
               title: '已发货/待揽收',
-              desc: `${carrier || o.shippingCarrier || '物流公司'} 运单号: ${trackingNumber || o.trackingNumber || 'SF8899201'} 已生成并出库`,
+              desc: `${carrier || o.shippingCarrier || '未设置承运商'} 运单号: ${trackingNumber || o.trackingNumber || '未填写'} 已生成并出库`,
               status: 'current'
             });
           }
@@ -1346,9 +1343,10 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   };
 
   // RBAC System User Methods
-  const addSystemUser = (userData: Omit<SystemUser, 'id' | 'createdAt' | 'lastLoginTime' | 'lastLoginIp'>) => {
+  const addSystemUser = (userData: Omit<SystemUser, 'id' | 'createdAt' | 'lastLoginTime' | 'lastLoginIp'> & { initialPassword: string }) => {
+    const { initialPassword, ...systemUserData } = userData;
     const newUser: SystemUser = {
-      ...userData,
+      ...systemUserData,
       id: `sys-${Date.now()}`,
       createdAt: new Date().toISOString().split('T')[0],
       lastLoginTime: '尚未登录',
@@ -1358,7 +1356,7 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     showToast(`正在开通系统用户「${newUser.username}」`, 'info');
     void createSystemUser({
       username: newUser.username,
-      password: '123456',
+      password: initialPassword,
       realName: newUser.realName,
       phone: newUser.phone === '-' ? undefined : newUser.phone,
       email: newUser.email === '-' ? undefined : newUser.email,
@@ -1400,7 +1398,10 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             avatarUrl: merged.avatar
           } : previous);
         }
-      }).catch(() => showToast('系统用户已更新本地状态，但服务端保存失败', 'warning'));
+      }).catch(() => {
+        setSystemUsers((previous) => previous.map((user) => user.id === id ? target : user));
+        showToast('系统用户保存失败，已回滚本地状态', 'warning');
+      });
       if (updates.roles) {
         void replaceUserRoles(Number(id), updates.roles.map(Number).filter((roleId) => Number.isFinite(roleId)))
           .catch(() => showToast('角色绑定已更新本地状态，但服务端保存失败', 'warning'));
@@ -1417,7 +1418,10 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     setSystemUsers((prev) => prev.filter((u) => u.id !== id));
     showToast(`系统用户 ${target?.username || ''} 已删除`, 'info');
     if (Number.isFinite(Number(id))) {
-      void deleteSystemUserApi(Number(id)).catch(() => showToast('系统用户已从当前页面移除，但服务端删除失败', 'warning'));
+      void deleteSystemUserApi(Number(id)).catch(() => {
+        if (target) setSystemUsers((prev) => [target, ...prev]);
+        showToast('系统用户删除失败，已恢复本地状态', 'warning');
+      });
     }
   };
 
@@ -1564,6 +1568,7 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         orders,
         users,
         catalogCategories,
+        logisticsCarriers,
         todos,
         notifications,
         searchQuery,
@@ -1581,7 +1586,6 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         batchDeleteProducts,
         batchUpdateProductCategory,
         adjustProductStock,
-        addOrder,
         updateOrderStatus,
         syncOrderLogistics,
         cancelOrder,

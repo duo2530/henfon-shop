@@ -57,14 +57,6 @@ function contentFromBackend(content: BackendCatalogProductContent): ProductConte
   };
 }
 
-const fallbackCategoryOptions: Array<{ id: number; code: ProductCategory; name: string }> = [
-  { id: 1, code: 'electronics', name: '数码数控 (Electronics)' },
-  { id: 2, code: 'clothing', name: '服饰鞋包 (Clothing)' },
-  { id: 3, code: 'home', name: '家居生活 (Home)' },
-  { id: 4, code: 'beauty', name: '美妆护肤 (Beauty)' },
-  { id: 5, code: 'food', name: '食品生鲜 (Food)' }
-];
-
 export const ProductManagementView: React.FC = () => {
   const { 
     products, 
@@ -83,8 +75,8 @@ export const ProductManagementView: React.FC = () => {
     searchQuery
   } = useAdmin();
 
-  // 类目名称和ID由后端提供；接口暂不可用时保留本地选项，避免页面无法录入商品。
-  const categoryOptions = catalogCategories.length > 0 ? catalogCategories : fallbackCategoryOptions;
+  // 商品类目只允许使用服务端返回的数据，接口不可用时不提供虚构类目。
+  const categoryOptions = catalogCategories;
   const categoryName = (code: ProductCategory) =>
     categoryOptions.find((option) => option.code === code)?.name || code;
   const categoryId = (code: ProductCategory) =>
@@ -132,11 +124,11 @@ export const ProductManagementView: React.FC = () => {
     category: 'electronics' as ProductCategory,
     price: 0,
     costPrice: 0,
-    safetyStock: 10,
+    safetyStock: 0,
     originalPrice: 0,
-    stock: 10,
+    stock: 0,
     status: 'active' as ProductStatus,
-    imageUrl: 'https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=400&auto=format&fit=crop&q=80',
+    imageUrl: '',
     sku: '',
     tags: [] as string[],
     newTagInput: '',
@@ -166,7 +158,7 @@ export const ProductManagementView: React.FC = () => {
           selectedStatus === 'all' || item.status === selectedStatus;
         
         let matchesStock = true;
-        const safety = item.safetyStock ?? 10;
+        const safety = item.safetyStock ?? 0;
         if (stockFilter === 'out_of_stock') matchesStock = item.stock === 0;
         else if (stockFilter === 'low_stock') matchesStock = item.stock > 0 && item.stock <= safety;
         else if (stockFilter === 'normal') matchesStock = item.stock > safety;
@@ -235,21 +227,25 @@ export const ProductManagementView: React.FC = () => {
 
   const handleOpenAddModal = () => {
     if (!requirePermission('product:add', '新建商品')) return;
+    if (categoryOptions.length === 0) {
+      showToast('商品类目暂未加载，无法新建商品，请刷新后重试', 'warning');
+      return;
+    }
     setEditingProduct(null);
     setProductContent(emptyProductContent);
     setOriginalMediaKeys([]);
     setFormData({
       name: '',
-      category: 'electronics',
-      price: 299.00,
-      costPrice: 160.00,
-      safetyStock: 15,
-      originalPrice: 399.00,
-      stock: 50,
+      category: categoryOptions[0].code,
+      price: 0,
+      costPrice: 0,
+      safetyStock: 0,
+      originalPrice: 0,
+      stock: 0,
       status: 'active',
-      imageUrl: 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=400&auto=format&fit=crop&q=80',
-      sku: `SKU-${Date.now().toString().slice(-6)}`,
-      tags: ['新品上市', '核心爆款'],
+      imageUrl: '',
+      sku: '',
+      tags: [],
       newTagInput: '',
       description: ''
     });
@@ -265,9 +261,9 @@ export const ProductManagementView: React.FC = () => {
       name: product.name,
       category: product.category,
       price: product.price,
-      costPrice: product.costPrice || Math.round(product.price * 0.55),
-      safetyStock: product.safetyStock || 10,
-      originalPrice: product.originalPrice || product.price * 1.2,
+      costPrice: product.costPrice ?? 0,
+      safetyStock: product.safetyStock ?? 0,
+      originalPrice: product.originalPrice ?? 0,
       stock: product.stock,
       status: product.status,
       imageUrl: product.imageUrl,
@@ -358,6 +354,10 @@ export const ProductManagementView: React.FC = () => {
     e.preventDefault();
     if (!formData.name.trim()) {
       showToast('请输入商品名称', 'error');
+      return;
+    }
+    if (categoryOptions.length === 0 || !categoryId(formData.category)) {
+      showToast('商品类目数据不可用，无法保存商品', 'error');
       return;
     }
 
@@ -465,6 +465,10 @@ export const ProductManagementView: React.FC = () => {
 
   const handleConfirmBatchCategory = () => {
     if (!requirePermission('product:edit', '批量变更商品类目')) return;
+    if (categoryOptions.length === 0 || !categoryId(targetBatchCategory)) {
+      showToast('商品类目数据不可用，无法批量变更类目', 'error');
+      return;
+    }
     batchUpdateProductCategory(selectedIds, targetBatchCategory, categoryName(targetBatchCategory));
     setBatchCategoryOpen(false);
     setSelectedIds([]);
@@ -790,7 +794,7 @@ export const ProductManagementView: React.FC = () => {
               ) : (
                 paginatedProducts.map((product, idx) => {
                   const isSelected = selectedIds.includes(product.id);
-                  const cost = product.costPrice || Math.round(product.price * 0.55);
+                  const cost = product.costPrice ?? 0;
                   const grossMargin = Math.max(0, ((product.price - cost) / product.price) * 100).toFixed(0);
                   const safety = product.safetyStock ?? 10;
                   const isOutOfStock = product.stock === 0;
@@ -833,7 +837,7 @@ export const ProductManagementView: React.FC = () => {
                           {product.name}
                         </div>
                         <div className="flex items-center gap-2 text-xs text-gray-500 mt-1">
-                          <span className="text-blue-600 font-medium">{product.categoryName}</span>
+                  <span className="text-blue-600 font-medium">{product.categoryName || '未分类'}</span>
                           <span className="text-gray-300">•</span>
                           <span className="font-mono text-gray-400 text-[11px]">{product.sku}</span>
                         </div>
@@ -1045,23 +1049,23 @@ export const ProductManagementView: React.FC = () => {
                 <div>
                   <div className="text-xs text-gray-500">零售标价</div>
                   <div className="text-base font-bold text-gray-900 mt-0.5">¥{detailProduct.price.toFixed(2)}</div>
-                  <div className="text-[11px] text-gray-400 line-through">原价 ¥{(detailProduct.originalPrice || detailProduct.price * 1.2).toFixed(2)}</div>
+                  <div className="text-[11px] text-gray-400 line-through">原价 ¥{(detailProduct.originalPrice ?? 0).toFixed(2)}</div>
                 </div>
                 <PermissionGate permission="product:cost:view" fallback={<div className="flex items-center justify-center text-xs text-gray-400">成本信息已隐藏</div>}>
                   <div>
                     <div className="text-xs text-gray-500">采购成本 / 毛利率</div>
                     <div className="text-base font-bold text-emerald-700 mt-0.5">
-                      ¥{(detailProduct.costPrice || detailProduct.price * 0.55).toFixed(2)}
+                      ¥{(detailProduct.costPrice ?? 0).toFixed(2)}
                     </div>
                     <div className="text-[11px] text-emerald-600 font-medium">
-                      毛利率 {Math.max(0, (((detailProduct.price - (detailProduct.costPrice || detailProduct.price * 0.55)) / detailProduct.price) * 100)).toFixed(1)}%
+                      毛利率 {detailProduct.price > 0 ? Math.max(0, (((detailProduct.price - (detailProduct.costPrice ?? 0)) / detailProduct.price) * 100)).toFixed(1) : '0.0'}%
                     </div>
                   </div>
                 </PermissionGate>
                 <div>
                   <div className="text-xs text-gray-500">现存可用库存</div>
                   <div className="text-base font-bold text-blue-600 mt-0.5">{detailProduct.stock} 件</div>
-                  <div className="text-[11px] text-gray-500">安全警戒: {detailProduct.safetyStock || 10} 件</div>
+                  <div className="text-[11px] text-gray-500">安全警戒: {detailProduct.safetyStock ?? 0} 件</div>
                 </div>
               </div>
 

@@ -93,7 +93,7 @@ public class TradeFreightService {
                 .set(TradeFreightTemplate::getIsDefault, 0)
                 .eq(TradeFreightTemplate::getIsDefault, 1));
         template.setTemplateName(request.templateName().trim());
-        template.setCarrierName(request.carrierName().trim());
+        template.setCarrierName(StringUtils.hasText(request.carrierName()) ? request.carrierName().trim() : null);
         template.setBaseWeightGram(request.baseWeightGram());
         template.setBaseFee(money(request.baseFee()));
         template.setAdditionalWeightGram(request.additionalWeightGram());

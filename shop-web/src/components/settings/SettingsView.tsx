@@ -1,6 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import { useAdmin } from '../../context/AdminContext';
-import { getTradeFreightTemplate, saveTradeFreightTemplate } from '../../api/adminApi';
+import {
+  BackendSystemConfig,
+  getSystemConfig,
+  getTradeFreightTemplate,
+  resetSystemConfig,
+  saveSystemConfig,
+  saveTradeFreightTemplate
+} from '../../api/adminApi';
 import { 
   Store, 
   BellRing, 
@@ -14,49 +21,93 @@ import {
 import { PermissionGate } from '../common/PermissionGate';
 
 export const SettingsView: React.FC = () => {
-  const { showToast, requirePermission, confirm } = useAdmin();
+  const { showToast, requirePermission, confirm, logisticsCarriers } = useAdmin();
 
   // Settings State
-  const [storeName, setStoreName] = useState('极简臻品官方旗舰店');
-  const [storeContactPhone, setStoreContactPhone] = useState('400-888-9999');
-  const [storeContactEmail, setStoreContactEmail] = useState('support@brandmall.com');
-  const [lowStockThreshold, setLowStockThreshold] = useState(10);
-  const [autoNotifyEmail, setAutoNotifyEmail] = useState(true);
-  const [autoTrackingSync, setAutoTrackingSync] = useState(true);
-  const [enableWechatPay, setEnableWechatPay] = useState(true);
-  const [defaultCarrier, setDefaultCarrier] = useState('顺丰速运');
+  const [storeName, setStoreName] = useState('');
+  const [storeContactPhone, setStoreContactPhone] = useState('');
+  const [storeContactEmail, setStoreContactEmail] = useState('');
+  const [lowStockThreshold, setLowStockThreshold] = useState<number | null>(null);
+  const [autoNotifyEmail, setAutoNotifyEmail] = useState<boolean | null>(null);
+  const [autoTrackingSync, setAutoTrackingSync] = useState<boolean | null>(null);
+  const [enableWechatPay, setEnableWechatPay] = useState<boolean | null>(null);
+  const [defaultCarrier, setDefaultCarrier] = useState('');
   const [freightTemplateId, setFreightTemplateId] = useState<number>();
-  const [baseWeightGram, setBaseWeightGram] = useState(1000);
-  const [baseFee, setBaseFee] = useState(15);
-  const [additionalWeightGram, setAdditionalWeightGram] = useState(1000);
-  const [additionalFee, setAdditionalFee] = useState(5);
-  const [freeShippingThreshold, setFreeShippingThreshold] = useState(99);
-  const [remoteSurcharge, setRemoteSurcharge] = useState(0);
-  const [remoteRegionsCsv, setRemoteRegionsCsv] = useState('西藏,新疆,港澳台');
+  const [baseWeightGram, setBaseWeightGram] = useState<number | null>(null);
+  const [baseFee, setBaseFee] = useState<number | null>(null);
+  const [additionalWeightGram, setAdditionalWeightGram] = useState<number | null>(null);
+  const [additionalFee, setAdditionalFee] = useState<number | null>(null);
+  const [freeShippingThreshold, setFreeShippingThreshold] = useState<number | null>(null);
+  const [remoteSurcharge, setRemoteSurcharge] = useState<number | null>(null);
+  const [remoteRegionsCsv, setRemoteRegionsCsv] = useState('');
+  const [systemConfigVersion, setSystemConfigVersion] = useState<number>();
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  const applySystemConfig = (config: BackendSystemConfig) => {
+    setStoreName(config.storeName);
+    setStoreContactPhone(config.storeContactPhone);
+    setStoreContactEmail(config.storeContactEmail);
+    setLowStockThreshold(config.lowStockThreshold);
+    setAutoNotifyEmail(config.autoNotifyEmail);
+    setAutoTrackingSync(config.autoTrackingSync);
+    setEnableWechatPay(config.enableWechatPay);
+    setSystemConfigVersion(config.version);
+  };
 
   useEffect(() => {
-    getTradeFreightTemplate().then((template) => {
+    let active = true;
+    setLoading(true);
+    setLoadError(null);
+    void Promise.all([getSystemConfig(), getTradeFreightTemplate()]).then(([config, template]) => {
+      if (!active) return;
+      applySystemConfig(config);
       setFreightTemplateId(template.id);
-      setDefaultCarrier(template.carrierName || '顺丰速运');
-      setBaseWeightGram(template.baseWeightGram || 1000);
-      setBaseFee(Number(template.baseFee || 0));
-      setAdditionalWeightGram(template.additionalWeightGram || 1000);
-      setAdditionalFee(Number(template.additionalFee || 0));
-      setFreeShippingThreshold(Number(template.freeShippingThreshold || 0));
-      setRemoteSurcharge(Number(template.remoteSurcharge || 0));
+      setDefaultCarrier(template.carrierName || '');
+      setBaseWeightGram(template.baseWeightGram);
+      setBaseFee(Number(template.baseFee));
+      setAdditionalWeightGram(template.additionalWeightGram);
+      setAdditionalFee(Number(template.additionalFee));
+      setFreeShippingThreshold(Number(template.freeShippingThreshold));
+      setRemoteSurcharge(Number(template.remoteSurcharge));
       setRemoteRegionsCsv(template.remoteRegionsCsv || '');
-    }).catch(() => {
-      // 后端尚未启动时保留默认值，页面仍可用于查看和编辑其他设置。
+    }).catch((error) => {
+      if (!active) return;
+      setLoadError(error instanceof Error ? error.message : '系统设置加载失败，请重试');
+    }).finally(() => {
+      if (active) setLoading(false);
     });
+    return () => {
+      active = false;
+    };
   }, []);
 
   const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!requirePermission('system:config:save', '保存系统配置')) return;
+    if (lowStockThreshold === null || autoNotifyEmail === null || autoTrackingSync === null || enableWechatPay === null
+      || baseWeightGram === null || baseFee === null || additionalWeightGram === null
+      || additionalFee === null || freeShippingThreshold === null || remoteSurcharge === null) {
+      showToast('系统配置尚未加载完成，请稍后重试', 'warning');
+      return;
+    }
+    setSaving(true);
     try {
-      const template = await saveTradeFreightTemplate({
+      const [config, template] = await Promise.all([
+        saveSystemConfig({
+          storeName,
+          storeContactPhone,
+          storeContactEmail,
+          lowStockThreshold,
+          autoNotifyEmail,
+          autoTrackingSync,
+          enableWechatPay,
+          version: systemConfigVersion,
+        }),
+        saveTradeFreightTemplate({
         id: freightTemplateId,
-        templateName: '全国顺丰配送模板',
+        templateName: '全国配送模板',
         carrierName: defaultCarrier,
         baseWeightGram,
         baseFee,
@@ -66,29 +117,51 @@ export const SettingsView: React.FC = () => {
         remoteSurcharge,
         remoteRegionsCsv,
         status: 1,
-      });
+        })
+      ]);
+      applySystemConfig(config);
       setFreightTemplateId(template.id);
+      setDefaultCarrier(template.carrierName || '');
       showToast('系统设置已成功保存，运费规则立即生效', 'success');
     } catch (error) {
+      // 两类配置分别持久化，任一失败时都重新读取服务端快照，避免本地值与已成功保存的一半配置不一致。
+      const [latestConfig, latestTemplate] = await Promise.allSettled([getSystemConfig(), getTradeFreightTemplate()]);
+      if (latestConfig.status === 'fulfilled') applySystemConfig(latestConfig.value);
+      if (latestTemplate.status === 'fulfilled') {
+        setFreightTemplateId(latestTemplate.value.id);
+        setDefaultCarrier(latestTemplate.value.carrierName || '');
+        setBaseWeightGram(latestTemplate.value.baseWeightGram);
+        setBaseFee(Number(latestTemplate.value.baseFee));
+        setAdditionalWeightGram(latestTemplate.value.additionalWeightGram);
+        setAdditionalFee(Number(latestTemplate.value.additionalFee));
+        setFreeShippingThreshold(Number(latestTemplate.value.freeShippingThreshold));
+        setRemoteSurcharge(Number(latestTemplate.value.remoteSurcharge));
+        setRemoteRegionsCsv(latestTemplate.value.remoteRegionsCsv || '');
+      }
       showToast(error instanceof Error ? error.message : '运费配置保存失败，请稍后重试', 'error');
+    } finally {
+      setSaving(false);
     }
   };
 
-  const handleResetSettings = () => {
-    setStoreName('极简臻品官方旗舰店');
-    setLowStockThreshold(10);
-    setAutoNotifyEmail(true);
-    setAutoTrackingSync(true);
-    setDefaultCarrier('顺丰速运');
-    setBaseWeightGram(1000);
-    setBaseFee(15);
-    setAdditionalWeightGram(1000);
-    setAdditionalFee(5);
-    setFreeShippingThreshold(99);
-    setRemoteSurcharge(0);
-    setRemoteRegionsCsv('西藏,新疆,港澳台');
-    showToast('已重置为默认系统配置', 'info');
+  const handleResetSettings = async () => {
+    if (!requirePermission('system:config:save', '重置系统配置')) return;
+    try {
+      const config = await resetSystemConfig(systemConfigVersion);
+      applySystemConfig(config);
+      showToast('已恢复服务端默认系统配置', 'info');
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : '系统配置重置失败，请稍后重试', 'error');
+    }
   };
+
+  if (loading) {
+    return <div className="flex items-center justify-center py-20 text-sm text-gray-500">正在加载系统配置…</div>;
+  }
+
+  if (loadError) {
+    return <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-6 text-sm text-red-700"><p>{loadError}</p><button type="button" onClick={() => window.location.reload()} className="mt-3 rounded-lg border border-red-300 bg-white px-3 py-1.5 text-xs font-semibold">刷新重试</button></div>;
+  }
 
   return (
     <div className="space-y-6 animate-in fade-in-50 duration-200 max-w-5xl">
@@ -105,8 +178,8 @@ export const SettingsView: React.FC = () => {
 
         <div className="flex items-center gap-3">
           <PermissionGate permission="system:config:save">
-          <button type="button" onClick={async () => { if (await confirm('确认重置系统设置为默认值吗？', '恢复默认设置')) handleResetSettings(); }} className="h-[36px] px-3.5 rounded-lg border border-[#E2E8F0] bg-white text-gray-700 hover:bg-gray-50 flex items-center gap-1.5 text-xs font-semibold shadow-2xs transition-colors"><RotateCcw className="w-3.5 h-3.5 text-gray-500" /><span>重置默认</span></button>
-            <button type="button" onClick={handleSaveSettings} className="h-[36px] px-4 rounded-lg bg-[#2563EB] text-white hover:bg-blue-700 flex items-center justify-center gap-1.5 text-xs font-semibold shadow-sm transition-colors cursor-pointer"><Save className="w-4 h-4" /><span>保存全部配置</span></button>
+            <button type="button" onClick={async () => { if (await confirm('确认恢复服务端默认系统配置吗？', '恢复默认设置')) await handleResetSettings(); }} className="h-[36px] px-3.5 rounded-lg border border-[#E2E8F0] bg-white text-gray-700 hover:bg-gray-50 flex items-center gap-1.5 text-xs font-semibold shadow-2xs transition-colors"><RotateCcw className="w-3.5 h-3.5 text-gray-500" /><span>重置默认</span></button>
+            <button type="submit" disabled={saving} className="h-[36px] px-4 rounded-lg bg-[#2563EB] text-white hover:bg-blue-700 disabled:opacity-60 flex items-center justify-center gap-1.5 text-xs font-semibold shadow-sm transition-colors cursor-pointer"><Save className="w-4 h-4" /><span>{saving ? '保存中…' : '保存全部配置'}</span></button>
           </PermissionGate>
         </div>
       </div>
@@ -196,7 +269,7 @@ export const SettingsView: React.FC = () => {
                   min="1"
                   max="1000"
                   value={lowStockThreshold}
-                  onChange={(e) => setLowStockThreshold(parseInt(e.target.value, 10) || 10)}
+                  onChange={(e) => setLowStockThreshold(e.target.value === '' ? null : parseInt(e.target.value, 10))}
                   className="w-full h-[36px] px-3 rounded-lg border border-gray-300 bg-white text-sm outline-none text-right font-mono"
                 />
               </div>
@@ -209,7 +282,7 @@ export const SettingsView: React.FC = () => {
               </div>
               <input
                 type="checkbox"
-                checked={autoNotifyEmail}
+                checked={autoNotifyEmail === true}
                 onChange={(e) => setAutoNotifyEmail(e.target.checked)}
                 className="w-5 h-5 rounded text-blue-600 focus:ring-blue-500 cursor-pointer"
               />
@@ -239,47 +312,45 @@ export const SettingsView: React.FC = () => {
                 onChange={(e) => setDefaultCarrier(e.target.value)}
                 className="w-full h-[36px] px-3 rounded-lg border border-gray-300 bg-white focus:border-blue-500 outline-none text-sm"
               >
-                <option value="顺丰速运">顺丰速运 (SF Express)</option>
-                <option value="中通快递">中通快递 (ZTO Express)</option>
-                <option value="圆通速递">圆通速递 (YTO Express)</option>
-                <option value="京东快递">京东快递 (JD Logistics)</option>
+                <option value="">请选择承运商</option>
+                {logisticsCarriers.map((item) => <option key={item.code} value={item.name}>{item.name}</option>)}
               </select>
             </div>
 
             <div>
               <label className="block text-xs font-semibold text-gray-700 mb-1.5">首重（克）</label>
               <input type="number" min="1" value={baseWeightGram}
-                onChange={(e) => setBaseWeightGram(Number(e.target.value) || 1000)}
+                onChange={(e) => setBaseWeightGram(e.target.value === '' ? null : Number(e.target.value))}
                 className="w-full h-[36px] px-3 rounded-lg border border-gray-300 bg-white text-sm outline-none" />
             </div>
             <div>
               <label className="block text-xs font-semibold text-gray-700 mb-1.5">首重费用（元）</label>
               <input type="number" min="0" step="0.01" value={baseFee}
-                onChange={(e) => setBaseFee(Number(e.target.value) || 0)}
+                onChange={(e) => setBaseFee(e.target.value === '' ? null : Number(e.target.value))}
                 className="w-full h-[36px] px-3 rounded-lg border border-gray-300 bg-white text-sm outline-none" />
             </div>
             <div>
               <label className="block text-xs font-semibold text-gray-700 mb-1.5">续重（克）</label>
               <input type="number" min="1" value={additionalWeightGram}
-                onChange={(e) => setAdditionalWeightGram(Number(e.target.value) || 1000)}
+                onChange={(e) => setAdditionalWeightGram(e.target.value === '' ? null : Number(e.target.value))}
                 className="w-full h-[36px] px-3 rounded-lg border border-gray-300 bg-white text-sm outline-none" />
             </div>
             <div>
               <label className="block text-xs font-semibold text-gray-700 mb-1.5">每续重费用（元）</label>
               <input type="number" min="0" step="0.01" value={additionalFee}
-                onChange={(e) => setAdditionalFee(Number(e.target.value) || 0)}
+                onChange={(e) => setAdditionalFee(e.target.value === '' ? null : Number(e.target.value))}
                 className="w-full h-[36px] px-3 rounded-lg border border-gray-300 bg-white text-sm outline-none" />
             </div>
             <div>
               <label className="block text-xs font-semibold text-gray-700 mb-1.5">包邮门槛（元，0 表示不包邮）</label>
               <input type="number" min="0" step="0.01" value={freeShippingThreshold}
-                onChange={(e) => setFreeShippingThreshold(Number(e.target.value) || 0)}
+                onChange={(e) => setFreeShippingThreshold(e.target.value === '' ? null : Number(e.target.value))}
                 className="w-full h-[36px] px-3 rounded-lg border border-gray-300 bg-white text-sm outline-none" />
             </div>
             <div>
               <label className="block text-xs font-semibold text-gray-700 mb-1.5">偏远地区附加费（元）</label>
               <input type="number" min="0" step="0.01" value={remoteSurcharge}
-                onChange={(e) => setRemoteSurcharge(Number(e.target.value) || 0)}
+                onChange={(e) => setRemoteSurcharge(e.target.value === '' ? null : Number(e.target.value))}
                 className="w-full h-[36px] px-3 rounded-lg border border-gray-300 bg-white text-sm outline-none" />
             </div>
             <div className="md:col-span-2">
@@ -292,12 +363,12 @@ export const SettingsView: React.FC = () => {
 
             <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg md:col-span-2">
               <div>
-                <span className="font-semibold text-gray-800 text-sm">发货后自动开启快递鸟/顺丰单号实时轨迹追踪</span>
+                <span className="font-semibold text-gray-800 text-sm">发货后自动开启物流单号实时轨迹追踪</span>
                 <p className="text-xs text-gray-500">买家可在订单中心实时查看各转运节点详情</p>
               </div>
               <input
                 type="checkbox"
-                checked={autoTrackingSync}
+                checked={autoTrackingSync === true}
                 onChange={(e) => setAutoTrackingSync(e.target.checked)}
                 className="w-5 h-5 rounded text-blue-600 focus:ring-blue-500 cursor-pointer"
               />
@@ -330,7 +401,7 @@ export const SettingsView: React.FC = () => {
               </div>
               <input
                 type="checkbox"
-                checked={enableWechatPay}
+                checked={enableWechatPay === true}
                 onChange={(e) => setEnableWechatPay(e.target.checked)}
                 className="w-5 h-5 rounded text-blue-600 focus:ring-blue-500 cursor-pointer"
               />
