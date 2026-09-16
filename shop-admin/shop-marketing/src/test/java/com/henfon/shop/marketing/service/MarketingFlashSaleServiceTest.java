@@ -13,6 +13,7 @@ import com.henfon.shop.common.marketing.FlashSaleReservationItem;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -20,6 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -83,6 +85,43 @@ class MarketingFlashSaleServiceTest {
                 List.of(new FlashSaleReservationItem(100L, null, 1, java.math.BigDecimal.TEN))));
         assertEquals("MARKETING_FLASH_SALE_ORDER_CONFLICT", exception.getCode());
         verify(activityMapper, never()).selectById(any());
+    }
+
+    /**
+     * 验证活动按商品维度配置（sku_id 为空）时，携带具体 SKU 的下单请求仍能命中明细。
+     *
+     * @author Henfon
+     * @date 2026-09-16
+     */
+    @Test
+    void shouldFallbackToProductWideItemWhenExactSkuMisses() {
+        MarketingFlashSale activity = new MarketingFlashSale();
+        activity.setId(10L);
+        activity.setStatus(1);
+        activity.setStartAt(LocalDateTime.now().minusMinutes(1));
+        activity.setEndAt(LocalDateTime.now().plusHours(1));
+        activity.setLimitPerMember(2);
+        MarketingFlashSaleItem item = new MarketingFlashSaleItem();
+        item.setId(11L);
+        item.setActivityId(10L);
+        item.setProductId(100L);
+        item.setActivityPrice(BigDecimal.valueOf(0.01).setScale(2));
+        item.setTotalStock(10);
+        item.setSoldStock(0);
+        item.setLimitPerMember(2);
+        item.setStatus(1);
+        when(activityMapper.selectById(10L)).thenReturn(activity);
+        when(reservationMapper.selectList(any())).thenReturn(List.of(), List.of());
+        // 精确匹配未命中（活动未按 SKU 配置），通配查询返回按商品配置的明细。
+        when(itemMapper.selectOne(any())).thenReturn(null, item);
+        when(itemMapper.update(any(), any())).thenReturn(1);
+
+        service.reserve(10L, 20L, 30L, List.of(new FlashSaleReservationItem(100L, 391L, 1,
+                BigDecimal.valueOf(0.01).setScale(2))));
+
+        // 两次查询：先精确匹配，未命中后回退通配，最终落库一条预占。
+        verify(itemMapper, times(2)).selectOne(any());
+        verify(reservationMapper).insert(org.mockito.ArgumentMatchers.<MarketingFlashSaleReservation>any());
     }
 
     /**

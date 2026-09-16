@@ -110,13 +110,7 @@ public class MarketingFlashSaleService implements FlashSaleReservationService {
             if (requestItem == null || requestItem.quantity() < 1) {
                 throw new BusinessException("MARKETING_FLASH_SALE_QUANTITY_INVALID", "秒杀购买数量必须大于 0");
             }
-            MarketingFlashSaleItem item = itemMapper.selectOne(new LambdaQueryWrapper<MarketingFlashSaleItem>()
-                    .eq(MarketingFlashSaleItem::getActivityId, activityId)
-                    .eq(MarketingFlashSaleItem::getProductId, requestItem.productId())
-                    .eq(requestItem.skuId() != null, MarketingFlashSaleItem::getSkuId, requestItem.skuId())
-                    .isNull(requestItem.skuId() == null, MarketingFlashSaleItem::getSkuId)
-                    .eq(MarketingFlashSaleItem::getStatus, 1)
-                    .last("LIMIT 1 FOR UPDATE"));
+            MarketingFlashSaleItem item = matchActivityItem(activityId, requestItem.productId(), requestItem.skuId());
             if (item == null) {
                 throw new BusinessException("MARKETING_FLASH_SALE_ITEM_INVALID", "商品不在当前秒杀活动中");
             }
@@ -150,6 +144,41 @@ public class MarketingFlashSaleService implements FlashSaleReservationService {
             reservation.setStatus(0);
             reservationMapper.insert(reservation);
         }
+    }
+
+    /**
+     * 匹配活动明细：优先命中指定 SKU，未命中时回退到按商品配置的通配明细。
+     *
+     * <p>门户下单链路必须先通过库存预占，而库存预占要求订单明细指定具体 SKU，
+     * 因此请求中的 skuId 恒不为空；管理端又允许按商品维度配置活动明细（sku_id 为空，
+     * 语义是该商品任意 SKU 都参与活动）。两者叠加时若只做精确匹配，通配明细永远命不中，
+     * 会员下单只会收到「商品不在当前秒杀活动中」。</p>
+     *
+     * @param activityId 活动ID
+     * @param productId 商品ID
+     * @param skuId 请求携带的SKU ID，可为空
+     * @return 命中的活动明细，未命中返回 null
+     * @author Henfon
+     * @date 2026-09-16
+     */
+    private MarketingFlashSaleItem matchActivityItem(Long activityId, Long productId, Long skuId) {
+        if (skuId != null) {
+            MarketingFlashSaleItem exact = itemMapper.selectOne(new LambdaQueryWrapper<MarketingFlashSaleItem>()
+                    .eq(MarketingFlashSaleItem::getActivityId, activityId)
+                    .eq(MarketingFlashSaleItem::getProductId, productId)
+                    .eq(MarketingFlashSaleItem::getSkuId, skuId)
+                    .eq(MarketingFlashSaleItem::getStatus, 1)
+                    .last("LIMIT 1 FOR UPDATE"));
+            if (exact != null) {
+                return exact;
+            }
+        }
+        return itemMapper.selectOne(new LambdaQueryWrapper<MarketingFlashSaleItem>()
+                .eq(MarketingFlashSaleItem::getActivityId, activityId)
+                .eq(MarketingFlashSaleItem::getProductId, productId)
+                .isNull(MarketingFlashSaleItem::getSkuId)
+                .eq(MarketingFlashSaleItem::getStatus, 1)
+                .last("LIMIT 1 FOR UPDATE"));
     }
 
     /**

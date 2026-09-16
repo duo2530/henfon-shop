@@ -1762,6 +1762,8 @@ export default function App() {
     const district = order.shippingAddress.district;
     let serverOrderId: number | undefined;
     let serverOrderNo: string | undefined;
+    // 秒杀订单的成交价是活动价，SKU 只用于补齐 skuId；若用 SKU 原价提交，会与活动价不符而被服务端拒绝。
+    const isFlashSaleOrder = Boolean(order.flashSaleId);
     try {
       // 商品分页接口可能不返回 SKU，提交订单前补拉详情，确保库存预占拿到有效 skuId。
       const orderItems = await Promise.all(order.items.map(async (item) => {
@@ -1779,7 +1781,7 @@ export default function App() {
           skuCode: sku?.skuCode,
           productName: item.title,
           imageUrl: item.image,
-          unitPrice: sku?.price ?? item.price,
+          unitPrice: isFlashSaleOrder ? item.price : (sku?.price ?? item.price),
           quantity: item.quantity,
           skuName: item.variantsSummary,
         };
