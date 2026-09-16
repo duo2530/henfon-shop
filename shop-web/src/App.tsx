@@ -5,6 +5,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { AdminProvider, useAdmin } from './context/AdminContext';
+import { ExportCenterProvider } from './context/ExportCenterContext';
 import { Sidebar } from './components/layout/Sidebar';
 import { TopNavbar } from './components/layout/TopNavbar';
 import { DashboardView } from './components/dashboard/DashboardView';
@@ -132,7 +133,10 @@ const AdminLayoutContent: React.FC = () => {
 export default function App() {
   return (
     <AdminProvider>
-      <AuthenticatedApp />
+      {/* 下载中心依赖登录态与权限，必须嵌套在 AdminProvider 内部。 */}
+      <ExportCenterProvider>
+        <AuthenticatedApp />
+      </ExportCenterProvider>
     </AdminProvider>
   );
 }

@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useAdmin } from '../../context/AdminContext';
+import { useExportCenter } from '../../context/ExportCenterContext';
 import {
   BackendMarketingCoupon,
   deleteMarketingCoupon,
@@ -76,7 +77,8 @@ function mapBackendCoupon(record: BackendMarketingCoupon): CouponItem {
 }
 
 export const CouponManagementView: React.FC = () => {
-  const { showToast } = useAdmin();
+  const { showToast, requirePermission } = useAdmin();
+  const { submit: submitExportTask } = useExportCenter();
   const [coupons, setCoupons] = useState<CouponItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -202,24 +204,20 @@ export const CouponManagementView: React.FC = () => {
     }
   };
 
-  const handleExportCSV = () => {
-    const csvContent =
-      'data:text/csv;charset=utf-8,\uFEFF' +
-      '优惠券ID,券名称,券代码,类型,优惠额度,门槛金额,总发放量,单会员上限,已领取,已核销,状态,有效期\n' +
-      filteredCoupons
-        .map(
-          (c) =>
-            `"${c.id}","${c.name}","${c.code}","${c.type}",${c.discountValue},${c.minSpend},${c.totalQuantity},${c.perMemberLimit},${c.claimedQuantity},${c.usedQuantity ?? ''},"${c.status}","${c.startDate} ~ ${c.endDate}"`
-        )
-        .join('\n');
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `营销优惠券报表_${new Date().toISOString().split('T')[0]}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    showToast('优惠券数据报表已成功导出', 'success');
+  const handleExportCoupons = () => {
+    if (!requirePermission('marketing:coupon:export', '导出卡券报表')) return;
+    // 导出改为后台异步生成：服务端按关键字、启停状态与有效期状态取全量数据。
+    // 「进行中/未开始/已过期」是页面按 start_at/end_at 推导的状态，服务端用同一套时间判据还原；
+    // 「卡券类型」不参与导出，它取自自由文本列 tag，导出侧再分一次类会与页面口径不一致。
+    const validityStatus = statusFilter === 'active' || statusFilter === 'scheduled' || statusFilter === 'expired'
+      ? statusFilter
+      : undefined;
+    void submitExportTask({
+      exportType: 'COUPON',
+      keyword: searchTerm.trim() || undefined,
+      status: statusFilter === 'disabled' ? 0 : undefined,
+      statusText: validityStatus,
+    });
   };
 
   return (
@@ -242,11 +240,11 @@ export const CouponManagementView: React.FC = () => {
 
         <div className="flex items-center gap-3">
           <button
-            onClick={handleExportCSV}
+            onClick={handleExportCoupons}
             className="h-[36px] px-3.5 rounded-lg border border-[#E2E8F0] bg-white text-gray-700 hover:bg-gray-50 flex items-center gap-2 text-xs font-semibold shadow-2xs transition-colors cursor-pointer"
           >
             <Download className="w-4 h-4 text-gray-500" />
-            <span>导出卡券报表</span>
+            <span>导出 Excel</span>
           </button>
 
           <button

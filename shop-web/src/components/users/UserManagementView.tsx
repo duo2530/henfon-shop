@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useAdmin } from '../../context/AdminContext';
+import { useExportCenter } from '../../context/ExportCenterContext';
 import { User, UserStatus } from '../../types';
 import { PermissionGate } from '../common/PermissionGate';
 import { Pagination } from '../common/Pagination';
@@ -41,8 +42,10 @@ export const UserManagementView: React.FC = () => {
     adjustUserBalanceAndPoints,
     updateUserTags,
     showToast,
-    searchQuery
+    searchQuery,
+    requirePermission
   } = useAdmin();
+  const { submit: submitExportTask } = useExportCenter();
 
   // Search & Filters
   const [searchTerm, setSearchTerm] = useState('');
@@ -246,23 +249,14 @@ export const UserManagementView: React.FC = () => {
   };
 
   const handleExportUsers = () => {
-    const csvContent =
-      'data:text/csv;charset=utf-8,\uFEFF' +
-      '用户编号,姓名,手机号,邮箱,会员等级,可用余额,积分,成长值,累计消费,状态,用户标签\n' +
-      filteredUsers
-        .map(
-          (u) =>
-            `"${u.userCode}","${u.name}","${u.phone}","${u.email}","${u.tier}",${u.balance || 0},${u.points || 0},${u.growthValue || 0},${u.totalSpent},"${u.status === 'active' ? '正常' : '已冻结'}","${(u.tags || []).join(';')}"`
-        )
-        .join('\n');
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `会员用户资产报表_${new Date().toISOString().split('T')[0]}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    showToast('会员用户资产报表已成功导出', 'success');
+    if (!requirePermission('member:user:export', '导出会员报表')) return;
+    // 导出改为后台异步生成：按当前筛选条件取全量会员数据，不受当前分页限制。
+    void submitExportTask({
+      exportType: 'MEMBER',
+      keyword: (searchTerm || searchQuery).trim() || undefined,
+      status: statusFilter === 'all' ? undefined : statusFilter === 'active' ? 1 : 0,
+      memberLevel: tierFilter === 'all' ? undefined : tierFilter.toUpperCase(),
+    });
   };
 
   const getTierBadge = (tier: User['tier']) => {
@@ -315,13 +309,15 @@ export const UserManagementView: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-3">
-          <button
-            onClick={handleExportUsers}
-            className="h-[36px] px-3.5 rounded-lg border border-[#E2E8F0] bg-white text-gray-700 hover:bg-gray-50 flex items-center gap-2 text-xs font-semibold shadow-2xs transition-colors cursor-pointer"
-          >
-            <Download className="w-4 h-4 text-gray-500" />
-            <span>导出会员名单</span>
-          </button>
+          <PermissionGate permission="member:user:export">
+            <button
+              onClick={handleExportUsers}
+              className="h-[36px] px-3.5 rounded-lg border border-[#E2E8F0] bg-white text-gray-700 hover:bg-gray-50 flex items-center gap-2 text-xs font-semibold shadow-2xs transition-colors cursor-pointer"
+            >
+              <Download className="w-4 h-4 text-gray-500" />
+              <span>导出 Excel</span>
+            </button>
+          </PermissionGate>
 
           <PermissionGate permission="member:user:status">
             <button

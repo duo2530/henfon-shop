@@ -236,57 +236,6 @@ public class ReportingDashboardService {
     }
 
     /**
-     * 导出报表 CSV 文件内容，使用 UTF-8 BOM 兼容常见表格软件。
-     *
-     * @param reportType 报表类型：PRODUCT_RANKING、MEMBER_ANALYSIS 或 SALES_TREND
-     * @param startDate 开始日期
-     * @param endDate 结束日期
-     * @param limit 商品排行条数
-     * @return CSV 二进制内容
-     * @author Henfon
-     * @date 2026-09-01
-     */
-    public byte[] export(String reportType, LocalDate startDate, LocalDate endDate, Integer limit) {
-        String type = reportType == null ? "PRODUCT_RANKING" : reportType.trim().toUpperCase(Locale.ROOT);
-        StringBuilder csv = new StringBuilder("\uFEFF");
-        switch (type) {
-            case "PRODUCT_RANKING", "PRODUCTS" -> {
-                csv.append("排名,商品ID,商品名称,类目,销量,销售额,订单数\n");
-                for (ReportingProductRankingItem item : queryProductRanking(startDate, endDate, limit)) {
-                    csv.append(item.rank()).append(',').append(item.productId()).append(',')
-                            .append(csvCell(item.productName())).append(',').append(csvCell(item.categoryName()))
-                            .append(',').append(item.salesVolume()).append(',').append(item.salesAmount())
-                            .append(',').append(item.orderCount()).append('\n');
-                }
-            }
-            case "MEMBER_ANALYSIS", "MEMBERS" -> {
-                ReportingMemberAnalysisResponse response = queryMemberAnalysis(startDate, endDate);
-                csv.append("统计开始日期,统计结束日期,会员总数,新增会员,活跃会员,复购会员,复购率(%),支付订单数,支付金额,平均客单价\n");
-                csv.append(response.startDate()).append(',').append(response.endDate()).append(',')
-                        .append(response.totalMemberCount()).append(',').append(response.newMemberCount()).append(',')
-                        .append(response.activeMemberCount()).append(',').append(response.repeatPurchaseMemberCount())
-                        .append(',').append(response.repurchaseRate()).append(',').append(response.paidOrderCount())
-                        .append(',').append(response.paidAmount()).append(',').append(response.averageOrderAmount()).append('\n');
-                csv.append("会员等级,会员数,活跃会员,支付订单数,支付金额\n");
-                for (ReportingMemberLevelStat item : response.levelStats()) {
-                    csv.append(csvCell(item.memberLevel())).append(',').append(item.memberCount()).append(',')
-                            .append(item.activeMemberCount()).append(',').append(item.paidOrderCount()).append(',')
-                            .append(item.paidAmount()).append('\n');
-                }
-            }
-            case "SALES_TREND", "TREND" -> {
-                csv.append("日期,销售额,订单数,销量\n");
-                for (ReportingSalesTrendPoint point : querySalesTrend(startDate, endDate)) {
-                    csv.append(point.getDate()).append(',').append(point.getSalesAmount()).append(',')
-                            .append(point.getOrderCount()).append(',').append(point.getProductQuantity()).append('\n');
-                }
-            }
-            default -> throw new BusinessException("REPORTING_TYPE_INVALID", "不支持的报表类型");
-        }
-        return csv.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8);
-    }
-
-    /**
      * 规范化报表日期范围并限制最大查询窗口。
      *
      * @param startDate 开始日期
@@ -309,23 +258,6 @@ public class ReportingDashboardService {
             throw new BusinessException("REPORTING_DATE_RANGE_TOO_LARGE", "报表查询范围最多支持366天");
         }
         return new DateRange(queryStart, queryEnd, queryStart.atStartOfDay(), queryEnd.plusDays(1).atStartOfDay());
-    }
-
-    /**
-     * 对 CSV 文本字段进行转义。
-     *
-     * @param value 文本值
-     * @return 转义后的 CSV 单元格
-     * @author Henfon
-     * @date 2026-09-01
-     */
-    private String csvCell(String value) {
-        if (value == null) {
-            return "";
-        }
-        String escaped = value.replace("\"", "\"\"");
-        return escaped.indexOf(',') >= 0 || escaped.indexOf('\n') >= 0 || escaped.indexOf('\r') >= 0
-                ? '"' + escaped + '"' : escaped;
     }
 
     /**

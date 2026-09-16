@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState, useMemo } from 'react';
 import { useAdmin } from '../../context/AdminContext';
+import { useExportCenter } from '../../context/ExportCenterContext';
 import { listPaymentReconciliation, actionPaymentReconciliation, BackendPaymentReconciliationRecord } from '../../api/adminApi';
 import { 
   DollarSign, 
@@ -46,7 +47,8 @@ function toFinanceTransaction(record: BackendPaymentReconciliationRecord): Finan
 }
 
 export const TransactionReconciliationView: React.FC = () => {
-  const { showToast } = useAdmin();
+  const { showToast, requirePermission } = useAdmin();
+  const { submit: submitExportTask } = useExportCenter();
   const [transactions, setTransactions] = useState<FinanceTransaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -112,23 +114,14 @@ export const TransactionReconciliationView: React.FC = () => {
   const formatRate = (value: number) => `${value.toFixed(2)}%`;
 
   const handleExportReconciliation = () => {
-    const csvContent =
-      'data:text/csv;charset=utf-8,\uFEFF' +
-      '流水单号,关联业务单号,交易类型,支付渠道,交易金额(¥),手续费(¥),净结算额(¥),对账状态,结算时间,商户账号/说明\n' +
-      filtered
-        .map(
-          (t) =>
-            `"${t.transNo}","${t.orderNumber}","${t.type}","${t.channel}",${t.amount},${t.fee},${t.netAmount},"${t.status}","${t.settledAt}","${t.accountNumber} - ${t.notes || ''}"`
-        )
-        .join('\n');
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `财务资金对账单_${new Date().toISOString().split('T')[0]}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    showToast('财务日结对账单已成功导出', 'success');
+    if (!requirePermission('payment:transaction:export', '导出资金对账单')) return;
+    // 导出改为后台异步生成：服务端按当前关键字、流水类型和对账状态取全量数据。
+    void submitExportTask({
+      exportType: 'FINANCE',
+      keyword: searchTerm.trim() || undefined,
+      financeType: typeFilter === 'all' ? undefined : typeFilter,
+      statusText: statusFilter === 'all' ? undefined : statusFilter,
+    });
   };
 
   const handleReconciliationAction = async (transaction: FinanceTransaction) => {
@@ -179,7 +172,7 @@ export const TransactionReconciliationView: React.FC = () => {
             className="h-[36px] px-4 rounded-lg bg-[#2563EB] text-white hover:bg-blue-700 flex items-center justify-center gap-2 text-xs font-semibold shadow-xs transition-colors cursor-pointer"
           >
             <Download className="w-4 h-4" />
-            <span>导出标准会计报表</span>
+            <span>导出 Excel</span>
           </button>
         </div>
       </div>

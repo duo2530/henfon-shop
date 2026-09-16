@@ -1,6 +1,7 @@
 package com.henfon.shop.integration.storage;
 
 import com.henfon.shop.common.exception.BusinessException;
+import io.minio.GetObjectArgs;
 import io.minio.GetPresignedObjectUrlArgs;
 import io.minio.MinioClient;
 import io.minio.PutObjectArgs;
@@ -12,7 +13,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.InputStream;
 import java.net.URI;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.util.Locale;
@@ -207,6 +211,76 @@ public class MinioStorageService {
     private boolean isHttpAddress(String value) {
         String normalized = value.toLowerCase(Locale.ROOT);
         return normalized.startsWith("http://") || normalized.startsWith("https://");
+    }
+
+    /**
+     * 上传系统生成的二进制文件。
+     *
+     * <p>与面向用户的 {@link #upload(MultipartFile)} 不同，本方法服务于导出产物这类
+     * 由服务端自身生成的文件，因此不限制业务媒体类型，但对象键仍由调用方严格构造。</p>
+     *
+     * <p>入参是磁盘上的临时文件而不是字节数组：导出产物可能达到几十兆，先整个读进堆再上传
+     * 会让大表导出重新受内存约束，只有边读边传才能让 Excel 侧的流式写盘真正生效。</p>
+     *
+     * @param objectKey 对象键
+     * @param file 待上传的本地文件
+     * @param contentType 内容类型
+     * @return 上传的字节数
+     * @author Henfon
+     * @date 2026-09-16
+     */
+    public long uploadGenerated(String objectKey, Path file, String contentType) {
+        ensureConfigured();
+        if (!StringUtils.hasText(objectKey) || objectKey.contains("..") || objectKey.startsWith("/")) {
+            throw new BusinessException("STORAGE_OBJECT_KEY_INVALID", "文件对象键不合法");
+        }
+        if (file == null || !Files.isReadable(file)) {
+            throw new BusinessException("STORAGE_FILE_EMPTY", "上传内容不能为空");
+        }
+        try {
+            long size = Files.size(file);
+            if (size == 0L) {
+                throw new BusinessException("STORAGE_FILE_EMPTY", "上传内容不能为空");
+            }
+            ensureBucket();
+            try (InputStream input = Files.newInputStream(file)) {
+                minioClient.putObject(PutObjectArgs.builder()
+                        .bucket(properties.bucket())
+                        .object(objectKey)
+                        .stream(input, size, -1)
+                        .contentType(contentType)
+                        .build());
+            }
+            recordSuccess();
+            return size;
+        } catch (BusinessException exception) {
+            throw exception;
+        } catch (Exception exception) {
+            recordFailure("生成文件上传失败: " + exception.getMessage(), exception);
+            throw new BusinessException("STORAGE_UPLOAD_FAILED", "生成文件上传失败，请稍后重试");
+        }
+    }
+
+    /**
+     * 打开对象输入流，供服务端转发下载使用。
+     *
+     * @param objectKey 对象键
+     * @return 对象输入流，调用方负责关闭
+     * @author Henfon
+     * @date 2026-09-16
+     */
+    public InputStream openObject(String objectKey) {
+        ensureConfigured();
+        if (!StringUtils.hasText(objectKey) || objectKey.contains("..") || objectKey.startsWith("/")) {
+            throw new BusinessException("STORAGE_OBJECT_KEY_INVALID", "文件对象键不合法");
+        }
+        try {
+            return minioClient.getObject(GetObjectArgs.builder()
+                    .bucket(properties.bucket()).object(objectKey).build());
+        } catch (Exception exception) {
+            recordFailure("读取文件失败: " + exception.getMessage(), exception);
+            throw new BusinessException("STORAGE_DOWNLOAD_FAILED", "文件不存在或已过期，请重新导出");
+        }
     }
 
     /**

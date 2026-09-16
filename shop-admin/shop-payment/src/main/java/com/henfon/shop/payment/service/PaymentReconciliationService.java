@@ -24,6 +24,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Consumer;
 
 /**
  * 财务对账查询服务，基于支付单和退款单事实记录生成统一流水视图。
@@ -41,6 +42,8 @@ public class PaymentReconciliationService {
     private static final int REFUND_PROCESSING = 1;
     private static final int REFUND_SUCCEEDED = 2;
     private static final int REFUND_FAILED = 3;
+    /** 流式导出的单页条数，与导出模块的分页大小保持一致。 */
+    private static final int EXPORT_PAGE_SIZE = 500;
 
     private final PaymentOrderMapper paymentOrderMapper;
     private final PaymentRefundOrderMapper refundOrderMapper;
@@ -75,6 +78,279 @@ public class PaymentReconciliationService {
                                                     long current, long size) {
         long safeCurrent = Math.max(current, 1);
         long safeSize = Math.min(Math.max(size, 1), 200);
+        List<PaymentReconciliationRecord> records = collect(keyword, type, status);
+        Page<PaymentReconciliationRecord> result = new Page<>(safeCurrent, safeSize, records.size());
+        int from = (int) Math.min((safeCurrent - 1) * safeSize, records.size());
+        int to = (int) Math.min((long) from + safeSize, records.size());
+        result.setRecords(records.subList(from, to));
+        return result;
+    }
+
+    /**
+     * 按筛选条件流式推送对账流水，供导出使用。
+     *
+     * <p>筛选与排序口径与 {@link #page} 完全一致，区别是不把结果集读进内存：
+     * 支付单与退款单各自分页拉取，再按结算时间倒序做双路归并。两条流在同一时刻相遇时优先取支付单，
+     * 这与内存排序「先支付后退款、再稳定排序」的结果相同。空时间排在末尾，也对齐
+     * {@code nullsLast(reverseOrder())} 的语义。</p>
+     *
+     * <p>超额退款判断依赖全部成功退款的聚合结果，因此无法逐行推导，先由 {@code selectOverRefundPaymentNos}
+     * 用一条聚合 SQL 算出来——它的结果规模等于被退过款的支付单数，不随流水总量增长。</p>
+     *
+     * @param keyword 流水号、订单号或备注关键字
+     * @param type 流水类型，可选 order_income/refund_payout
+     * @param status 对账状态，可选 reconciled/pending_settle/discrepancy
+     * @param consumer 逐行消费者
+     * @author Henfon
+     * @date 2026-09-16
+     */
+    public void forEachExportRecord(String keyword, String type, String status,
+                                    Consumer<PaymentReconciliationRecord> consumer) {
+        String normalizedKeyword = StringUtils.hasText(keyword) ? keyword.trim().toLowerCase(Locale.ROOT) : null;
+        // 类型筛选能把整条流排除掉，此时连查都不必查；判定方式与 matches 里的比较保持字面一致。
+        boolean wantAllTypes = !StringUtils.hasText(type) || "all".equalsIgnoreCase(type);
+        boolean wantPayments = wantAllTypes || "order_income".equals(type);
+        boolean wantRefunds = wantAllTypes || "refund_payout".equals(type);
+
+        Set<String> overRefundPaymentNos = wantRefunds
+                ? new HashSet<>(refundOrderMapper.selectOverRefundPaymentNos()) : Set.of();
+        PaymentCursor payments = wantPayments ? new PaymentCursor() : null;
+        RefundCursor refunds = wantRefunds ? new RefundCursor() : null;
+
+        while (true) {
+            PaymentOrder payment = payments == null ? null : payments.peek();
+            PaymentRefundOrder refund = refunds == null ? null : refunds.peek();
+            if (payment == null && refund == null) {
+                return;
+            }
+            boolean takePayment = refund == null
+                    || (payment != null && compareBySettledTimeDesc(
+                            coalesce(payment.getPaidAt(), payment.getCreatedAt()),
+                            coalesce(refund.getRefundedAt(), refund.getRequestedAt())) <= 0);
+            PaymentReconciliationRecord record;
+            if (takePayment) {
+                payments.next();
+                record = toPaymentRecord(payment);
+            } else {
+                refunds.next();
+                record = toRefundRecord(refund, refunds.paymentIndex(), overRefundPaymentNos);
+            }
+            if (matches(record, normalizedKeyword, type, status)) {
+                consumer.accept(record);
+            }
+        }
+    }
+
+    /**
+     * 取结算时间，缺主时间时回退到创建时间。
+     *
+     * @param primary 主时间
+     * @param fallback 回退时间
+     * @return 有效时间
+     * @author Henfon
+     * @date 2026-09-16
+     */
+    private static LocalDateTime coalesce(LocalDateTime primary, LocalDateTime fallback) {
+        return primary != null ? primary : fallback;
+    }
+
+    /**
+     * 按结算时间倒序比较，空值排在最后。
+     *
+     * @param left 左侧时间
+     * @param right 右侧时间
+     * @return 负数表示左侧在前
+     * @author Henfon
+     * @date 2026-09-16
+     */
+    private static int compareBySettledTimeDesc(LocalDateTime left, LocalDateTime right) {
+        if (left == null) {
+            return right == null ? 0 : 1;
+        }
+        if (right == null) {
+            return -1;
+        }
+        return right.compareTo(left);
+    }
+
+    /**
+     * 支付单分页游标。
+     *
+     * <p>内存里只保留当前页，按结算时间倒序拉取，排序键与最终输出一致，因此可直接参与归并。</p>
+     *
+     * @author Henfon
+     * @date 2026-09-16
+     */
+    private final class PaymentCursor {
+
+        private long pageNo = 1L;
+        private List<PaymentOrder> buffer = List.of();
+        private int index;
+        private boolean exhausted;
+
+        /**
+         * 查看当前行但不推进游标。
+         *
+         * @return 当前支付单，已到末尾返回 null
+         * @author Henfon
+         * @date 2026-09-16
+         */
+        PaymentOrder peek() {
+            if (!exhausted && index >= buffer.size()) {
+                loadNextPage();
+            }
+            return index < buffer.size() ? buffer.get(index) : null;
+        }
+
+        /**
+         * 取走当前行并推进游标。
+         *
+         * @return 当前支付单，已到末尾返回 null
+         * @author Henfon
+         * @date 2026-09-16
+         */
+        PaymentOrder next() {
+            PaymentOrder value = peek();
+            if (value != null) {
+                index++;
+            }
+            return value;
+        }
+
+        /**
+         * 拉取下一页。
+         *
+         * @author Henfon
+         * @date 2026-09-16
+         */
+        private void loadNextPage() {
+            Page<PaymentOrder> page = new Page<>(pageNo, EXPORT_PAGE_SIZE, false);
+            pageNo++;
+            buffer = paymentOrderMapper.selectPage(page, new LambdaQueryWrapper<PaymentOrder>()
+                    .in(PaymentOrder::getStatus, List.of(PAYMENT_PENDING, PAYMENT_PROCESSING, PAYMENT_SUCCEEDED))
+                    .last("ORDER BY COALESCE(paid_at, created_at) DESC, paid_at DESC, created_at DESC"))
+                    .getRecords();
+            index = 0;
+            if (buffer.size() < EXPORT_PAGE_SIZE) {
+                exhausted = true;
+            }
+        }
+    }
+
+    /**
+     * 退款单分页游标。
+     *
+     * <p>除自身分页外，还要为当前页批量补上关联的支付单：退款流水要判断关联支付单是否成功，
+     * 逐行去查会变成 N+1，所以按 payment_no 整批取回，只保留当前页需要的部分。</p>
+     *
+     * @author Henfon
+     * @date 2026-09-16
+     */
+    private final class RefundCursor {
+
+        private long pageNo = 1L;
+        private List<PaymentRefundOrder> buffer = List.of();
+        private int index;
+        private boolean exhausted;
+        private Map<String, PaymentOrder> paymentIndex = Map.of();
+
+        /**
+         * 查看当前行但不推进游标。
+         *
+         * @return 当前退款单，已到末尾返回 null
+         * @author Henfon
+         * @date 2026-09-16
+         */
+        PaymentRefundOrder peek() {
+            if (!exhausted && index >= buffer.size()) {
+                loadNextPage();
+            }
+            return index < buffer.size() ? buffer.get(index) : null;
+        }
+
+        /**
+         * 取走当前行并推进游标。
+         *
+         * @return 当前退款单，已到末尾返回 null
+         * @author Henfon
+         * @date 2026-09-16
+         */
+        PaymentRefundOrder next() {
+            PaymentRefundOrder value = peek();
+            if (value != null) {
+                index++;
+            }
+            return value;
+        }
+
+        /**
+         * 当前页对应的支付单索引。
+         *
+         * @return 支付单号到支付单的映射
+         * @author Henfon
+         * @date 2026-09-16
+         */
+        Map<String, PaymentOrder> paymentIndex() {
+            return paymentIndex;
+        }
+
+        /**
+         * 拉取下一页并重建支付单索引。
+         *
+         * @author Henfon
+         * @date 2026-09-16
+         */
+        private void loadNextPage() {
+            Page<PaymentRefundOrder> page = new Page<>(pageNo, EXPORT_PAGE_SIZE, false);
+            pageNo++;
+            buffer = refundOrderMapper.selectPage(page, new LambdaQueryWrapper<PaymentRefundOrder>()
+                    .in(PaymentRefundOrder::getStatus,
+                            List.of(REFUND_PENDING, REFUND_PROCESSING, REFUND_SUCCEEDED, REFUND_FAILED))
+                    .last("ORDER BY COALESCE(refunded_at, requested_at) DESC, refunded_at DESC, requested_at DESC"))
+                    .getRecords();
+            index = 0;
+            paymentIndex = loadRelatedPayments(buffer);
+            if (buffer.size() < EXPORT_PAGE_SIZE) {
+                exhausted = true;
+            }
+        }
+    }
+
+    /**
+     * 批量加载本页退款单关联的支付单。
+     *
+     * @param refunds 本页退款单
+     * @return 支付单号到支付单的映射
+     * @author Henfon
+     * @date 2026-09-16
+     */
+    private Map<String, PaymentOrder> loadRelatedPayments(List<PaymentRefundOrder> refunds) {
+        List<String> paymentNos = refunds.stream().map(PaymentRefundOrder::getPaymentNo)
+                .filter(StringUtils::hasText).distinct().toList();
+        if (paymentNos.isEmpty()) {
+            return Map.of();
+        }
+        List<PaymentOrder> payments = paymentOrderMapper.selectList(new LambdaQueryWrapper<PaymentOrder>()
+                .in(PaymentOrder::getPaymentNo, paymentNos)
+                .in(PaymentOrder::getStatus, List.of(PAYMENT_PENDING, PAYMENT_PROCESSING, PAYMENT_SUCCEEDED)));
+        Map<String, PaymentOrder> result = new HashMap<>();
+        for (PaymentOrder payment : payments) {
+            result.put(payment.getPaymentNo(), payment);
+        }
+        return result;
+    }
+
+    /**
+     * 按筛选条件收集对账流水。
+     *
+     * @param keyword 流水号、订单号或备注关键字
+     * @param type 流水类型
+     * @param status 对账状态
+     * @return 对账流水集合
+     * @author Henfon
+     * @date 2026-09-16
+     */
+    private List<PaymentReconciliationRecord> collect(String keyword, String type, String status) {
         String normalizedKeyword = StringUtils.hasText(keyword) ? keyword.trim().toLowerCase(Locale.ROOT) : null;
         List<PaymentReconciliationRecord> records = new ArrayList<>();
         Map<String, PaymentOrder> paymentByNo = new HashMap<>();
@@ -124,11 +400,7 @@ public class PaymentReconciliationService {
         }
 
         records.sort(Comparator.comparing(this::sortTime, Comparator.nullsLast(Comparator.reverseOrder())));
-        Page<PaymentReconciliationRecord> result = new Page<>(safeCurrent, safeSize, records.size());
-        int from = (int) Math.min((safeCurrent - 1) * safeSize, records.size());
-        int to = (int) Math.min((long) from + safeSize, records.size());
-        result.setRecords(records.subList(from, to));
-        return result;
+        return records;
     }
 
     /**

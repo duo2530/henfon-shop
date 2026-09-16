@@ -3,7 +3,7 @@
 -- =============================================================================
 --
 -- 用途
---   1. 在新环境快速创建完整的空库结构（59 张表）。
+--   1. 在新环境快速创建完整的空库结构（60 张表）。
 --   2. 作为结构与 db/init/ 迁移脚本的一致性审计基准。
 --
 -- 生成方式
@@ -40,6 +40,8 @@
 --   · inventory_purchase_order / inventory_purchase_item / inventory_supplier_stock
 --     三张表在源脚本中未声明 COLLATE，在 MySQL 8.4 下会落到 utf8mb4_0900_ai_ci，
 --     与其余 56 张表的 utf8mb4_unicode_ci 不一致。
+--   · 早期开发库的 content_notification 多出 remark 列，db/init/ 下没有任何脚本声明它，
+--     因此本文件不含该列。052 在回填注释时对这列做了存在性判断，两种库结构均可执行。
 -- =============================================================================
 
 SET NAMES utf8mb4;
@@ -299,45 +301,74 @@ CREATE TABLE IF NOT EXISTS `content_review` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='商品评价表';
 
 -- ----------------------------
+-- 表结构: export_task
+-- ----------------------------
+CREATE TABLE IF NOT EXISTS `export_task` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `task_no` varchar(32) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '任务编号，形如 EXP20260916-0001，插入后由主键回填',
+  `export_type` varchar(32) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '导出类型：PRODUCT/ORDER/MEMBER/COUPON/FINANCE/PRODUCT_RANKING/LOGIN_LOG/OPERATION_LOG/STOCK_LOG',
+  `export_name` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '导出名称，如商品库数据导出',
+  `query_params` varchar(1000) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '提交时的筛选条件 JSON 快照，用于追溯与重跑',
+  `status` varchar(16) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'PENDING' COMMENT '任务状态：PENDING待执行/RUNNING生成中/SUCCESS成功/FAILED失败/EXPIRED已过期',
+  `file_name` varchar(160) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '生成的文件名，含导出时间戳',
+  `object_key` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'Excel 文件在 MinIO 的对象键',
+  `file_size` bigint unsigned DEFAULT NULL COMMENT '文件大小，单位字节',
+  `row_count` int unsigned DEFAULT NULL COMMENT '导出的数据行数，不含表头',
+  `error_message` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '失败原因，列表直接展示给提交人',
+  `requested_by` bigint unsigned NOT NULL COMMENT '提交人管理员ID',
+  `requested_by_name` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '提交人名称快照，避免账号改名后历史任务无法辨认',
+  `created_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) COMMENT '任务提交时间',
+  `started_at` datetime(3) DEFAULT NULL COMMENT '开始生成时间',
+  `finished_at` datetime(3) DEFAULT NULL COMMENT '生成结束时间',
+  `claimed_at` datetime(3) DEFAULT NULL COMMENT '最近一次被认领执行的时间，超时未完成的任务据此判为僵尸任务',
+  `expires_at` datetime(3) DEFAULT NULL COMMENT '文件过期时间，到期后清理 MinIO 对象并置为 EXPIRED',
+  `is_deleted` tinyint unsigned NOT NULL DEFAULT '0' COMMENT '提交人是否已移除记录：1已移除，0正常',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_export_task_no` (`task_no`),
+  KEY `idx_export_task_owner` (`requested_by`,`is_deleted`,`id`),
+  KEY `idx_export_task_status` (`status`,`claimed_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='导出任务表';
+
+-- ----------------------------
 -- 表结构: inventory_purchase_item
 -- ----------------------------
 CREATE TABLE IF NOT EXISTS `inventory_purchase_item` (
-  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
-  `purchase_order_id` bigint unsigned NOT NULL,
-  `product_id` bigint unsigned NOT NULL,
-  `sku_id` bigint unsigned NOT NULL,
-  `quantity` int unsigned NOT NULL,
-  `received_quantity` int unsigned NOT NULL DEFAULT '0',
-  `unit_price` decimal(18,2) NOT NULL DEFAULT '0.00',
-  `created_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-  `updated_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
-  `is_deleted` tinyint unsigned NOT NULL DEFAULT '0',
-  `version` int unsigned NOT NULL DEFAULT '0',
-  `remark` varchar(500) DEFAULT NULL,
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `purchase_order_id` bigint unsigned NOT NULL COMMENT '采购单ID',
+  `product_id` bigint unsigned NOT NULL COMMENT '商品ID',
+  `sku_id` bigint unsigned NOT NULL COMMENT 'SKU ID',
+  `quantity` int unsigned NOT NULL COMMENT '采购数量',
+  `received_quantity` int unsigned NOT NULL DEFAULT '0' COMMENT '已入库数量',
+  `unit_price` decimal(18,2) NOT NULL DEFAULT '0.00' COMMENT '采购单价',
+  `created_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) COMMENT '创建时间',
+  `updated_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3) COMMENT '更新时间',
+  `is_deleted` tinyint unsigned NOT NULL DEFAULT '0' COMMENT '逻辑删除：1是，0否',
+  `version` int unsigned NOT NULL DEFAULT '0' COMMENT '乐观锁版本',
+  `remark` varchar(500) DEFAULT NULL COMMENT '备注',
   PRIMARY KEY (`id`),
   KEY `idx_inventory_purchase_item_order` (`purchase_order_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='库存采购单明细表';
 
 -- ----------------------------
 -- 表结构: inventory_purchase_order
 -- ----------------------------
 CREATE TABLE IF NOT EXISTS `inventory_purchase_order` (
-  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
-  `purchase_no` varchar(64) NOT NULL,
-  `supplier_id` bigint unsigned NOT NULL,
-  `warehouse_id` bigint unsigned NOT NULL,
-  `status` tinyint unsigned NOT NULL DEFAULT '0',
-  `total_amount` decimal(18,2) NOT NULL DEFAULT '0.00',
-  `received_at` datetime(3) DEFAULT NULL,
-  `created_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-  `updated_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
-  `is_deleted` tinyint unsigned NOT NULL DEFAULT '0',
-  `version` int unsigned NOT NULL DEFAULT '0',
-  `remark` varchar(500) DEFAULT NULL,
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `purchase_no` varchar(64) NOT NULL COMMENT '采购单号',
+  `supplier_id` bigint unsigned NOT NULL COMMENT '供应商ID',
+  `warehouse_id` bigint unsigned NOT NULL COMMENT '入库仓库ID',
+  `status` tinyint unsigned NOT NULL DEFAULT '0' COMMENT '采购单状态：0待入库，1已入库',
+  `total_amount` decimal(18,2) NOT NULL DEFAULT '0.00' COMMENT '采购总金额',
+  `received_at` datetime(3) DEFAULT NULL COMMENT '入库完成时间',
+  `created_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) COMMENT '创建时间',
+  `updated_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3) COMMENT '更新时间',
+  `is_deleted` tinyint unsigned NOT NULL DEFAULT '0' COMMENT '逻辑删除：1是，0否',
+  `version` int unsigned NOT NULL DEFAULT '0' COMMENT '乐观锁版本',
+  `remark` varchar(500) DEFAULT NULL COMMENT '备注',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_inventory_purchase_no` (`purchase_no`,`is_deleted`),
   KEY `idx_inventory_purchase_status` (`status`,`created_at`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='库存采购单表';
 
 -- ----------------------------
 -- 表结构: inventory_stock
@@ -477,23 +508,23 @@ CREATE TABLE IF NOT EXISTS `inventory_supplier` (
 -- 表结构: inventory_supplier_stock
 -- ----------------------------
 CREATE TABLE IF NOT EXISTS `inventory_supplier_stock` (
-  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
-  `supplier_id` bigint unsigned NOT NULL,
-  `product_id` bigint unsigned NOT NULL,
-  `sku_id` bigint unsigned NOT NULL,
-  `supply_price` decimal(18,2) NOT NULL DEFAULT '0.00',
-  `min_order_quantity` int unsigned NOT NULL DEFAULT '1',
-  `status` tinyint unsigned NOT NULL DEFAULT '1',
-  `remark` varchar(500) DEFAULT NULL,
-  `created_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-  `updated_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
-  `is_deleted` tinyint unsigned NOT NULL DEFAULT '0',
-  `version` int unsigned NOT NULL DEFAULT '0',
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `supplier_id` bigint unsigned NOT NULL COMMENT '供应商ID',
+  `product_id` bigint unsigned NOT NULL COMMENT '商品ID',
+  `sku_id` bigint unsigned NOT NULL COMMENT 'SKU ID',
+  `supply_price` decimal(18,2) NOT NULL DEFAULT '0.00' COMMENT '供货价',
+  `min_order_quantity` int unsigned NOT NULL DEFAULT '1' COMMENT '最小起订量',
+  `status` tinyint unsigned NOT NULL DEFAULT '1' COMMENT '状态：1启用，0停用',
+  `remark` varchar(500) DEFAULT NULL COMMENT '备注',
+  `created_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) COMMENT '创建时间',
+  `updated_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3) COMMENT '更新时间',
+  `is_deleted` tinyint unsigned NOT NULL DEFAULT '0' COMMENT '逻辑删除：1是，0否',
+  `version` int unsigned NOT NULL DEFAULT '0' COMMENT '乐观锁版本',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_inventory_supplier_stock` (`supplier_id`,`sku_id`,`is_deleted`),
   KEY `idx_inventory_supplier_stock_sku` (`sku_id`,`status`),
   KEY `idx_inventory_supplier_stock_supplier` (`supplier_id`,`status`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci COMMENT='库存供应商供货关系表';
 
 -- ----------------------------
 -- 表结构: inventory_warehouse

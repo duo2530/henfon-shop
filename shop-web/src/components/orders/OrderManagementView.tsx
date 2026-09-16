@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { useAdmin } from '../../context/AdminContext';
+import { useExportCenter } from '../../context/ExportCenterContext';
 import { Order, OrderStatus } from '../../types';
 import { 
   Plus, 
@@ -47,6 +48,16 @@ export const OrderManagementView: React.FC = () => {
     searchQuery,
     logisticsCarriers
   } = useAdmin();
+  const { submit: submitExportTask } = useExportCenter();
+  /** 页面标签页与后端订单状态编码的对应关系，导出时按标签页取全量数据。 */
+  const ORDER_STATUS_CODE: Record<string, number> = {
+    pending_payment: 10,
+    pending_shipment: 20,
+    shipped: 30,
+    completed: 40,
+    cancelled: 50,
+    refunded: 70,
+  };
 
   // Tab filter
   const [activeTab, setActiveTab] = useState<'all' | 'pending_payment' | 'pending_shipment' | 'shipped' | 'completed' | 'cancelled' | 'refunded'>('all');
@@ -248,23 +259,12 @@ export const OrderManagementView: React.FC = () => {
 
   const handleExportOrders = () => {
     if (!requirePermission('order:export', '导出订单报表')) return;
-    const csvContent =
-      'data:text/csv;charset=utf-8,\uFEFF' +
-      '订单号,下单时间,客户姓名,联系电话,支付方式,实付金额,优惠减免,标旗,状态,承运商,运单号,卖家备注,收货地址\n' +
-      filteredOrders
-        .map(
-          (o) =>
-            `"${o.orderNumber}","${o.createdAt}","${o.customerName}","${o.customerPhone}","${o.paymentMethod || '微信支付'}",${o.amount},${o.discountAmount || 0},"${o.flagColor || '无'}","${o.status}","${o.shippingCarrier || ''}","${o.trackingNumber || ''}","${o.sellerNote || ''}","${o.shippingAddress}"`
-        )
-        .join('\n');
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `全渠道订单明细_${new Date().toISOString().split('T')[0]}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    showToast('订单报表明细已成功导出为 CSV', 'success');
+    // 导出改为后台异步生成：按当前订单状态标签与关键字取全量数据，不受当前分页限制。
+    void submitExportTask({
+      exportType: 'ORDER',
+      keyword: (searchTerm || searchQuery).trim() || undefined,
+      orderStatus: ORDER_STATUS_CODE[activeTab],
+    });
   };
 
   const getFlagBadge = (flag?: Order['flagColor']) => {
@@ -311,7 +311,7 @@ export const OrderManagementView: React.FC = () => {
               className="h-[36px] px-3.5 rounded-lg border border-[#E2E8F0] bg-white text-gray-700 hover:bg-gray-50 flex items-center gap-2 text-xs font-semibold shadow-2xs transition-colors cursor-pointer"
             >
               <Download className="w-4 h-4 text-gray-500" />
-              <span>导出订单表</span>
+              <span>导出 Excel</span>
             </button>
           </PermissionGate>
 

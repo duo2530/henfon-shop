@@ -1,5 +1,6 @@
 import React, { FormEvent, useCallback, useEffect, useState } from 'react';
 import { useAdmin } from '../../context/AdminContext';
+import { useExportCenter } from '../../context/ExportCenterContext';
 import {
   BackendInventoryWarehouse,
   BackendInventoryStock,
@@ -68,8 +69,21 @@ const emptyWarehouseForm = (): WarehouseForm => ({
   remark: ''
 });
 
+/**
+ * 库存流水的业务类型。
+ *
+ * 取值与后端 StockLogExportDataset 的 BIZ_TYPE_LABELS 一一对应，改动需两边同步。
+ */
+const STOCK_LOG_BIZ_TYPES: { value: string; label: string }[] = [
+  { value: 'RESERVE', label: '下单预占' },
+  { value: 'RELEASE', label: '取消释放' },
+  { value: 'EXPIRE_RELEASE', label: '超时释放' },
+  { value: 'DEDUCT', label: '支付扣减' }
+];
+
 export const WarehouseStockView: React.FC = () => {
-  const { showToast, confirm } = useAdmin();
+  const { showToast, confirm, requirePermission } = useAdmin();
+  const { submit: submitExportTask } = useExportCenter();
   const [searchTerm, setSearchTerm] = useState('');
   const [typeFilter, setTypeFilter] = useState('all');
   const [warehouses, setWarehouses] = useState<BackendInventoryWarehouse[]>([]);
@@ -85,6 +99,9 @@ export const WarehouseStockView: React.FC = () => {
   const [inventoryStocksLoading, setInventoryStocksLoading] = useState(true);
   const [inventoryStocksError, setInventoryStocksError] = useState<string | null>(null);
   const [stockActionId, setStockActionId] = useState<number | null>(null);
+  const [exportPanelOpen, setExportPanelOpen] = useState(false);
+  const [exportBizType, setExportBizType] = useState('all');
+  const [exportSkuId, setExportSkuId] = useState('');
 
   const loadInventoryStocks = useCallback(async () => {
     setInventoryStocksLoading(true);
@@ -258,6 +275,23 @@ export const WarehouseStockView: React.FC = () => {
     return matchSearch && matchType;
   });
 
+  const handleExportStockLogs = () => {
+    if (!requirePermission('inventory:stock:export', '导出库存流水')) return;
+    const trimmedSkuId = exportSkuId.trim();
+    if (trimmedSkuId && !/^\d+$/.test(trimmedSkuId)) {
+      showToast('SKU ID 只能填数字', 'warning');
+      return;
+    }
+    // 导出的库存变动流水与页面上的库存台账不是同一份数据，字段与取值域都对不上，
+    // 因此这里不套用页面顶部作用于台账的关键字与单据类型，改用导出自己的两个条件。
+    void submitExportTask({
+      exportType: 'STOCK_LOG',
+      bizType: exportBizType === 'all' ? undefined : exportBizType,
+      skuId: trimmedSkuId ? Number(trimmedSkuId) : undefined
+    });
+    setExportPanelOpen(false);
+  };
+
   return (
     <div className="space-y-6 animate-in fade-in-50 duration-200">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -276,6 +310,60 @@ export const WarehouseStockView: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-3">
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setExportPanelOpen((previous) => !previous)}
+              aria-expanded={exportPanelOpen}
+              aria-haspopup="dialog"
+              className="h-[36px] px-3.5 rounded-lg border border-[#E2E8F0] bg-white text-gray-700 hover:bg-gray-50 flex items-center gap-2 text-xs font-semibold shadow-2xs transition-colors cursor-pointer"
+            >
+              <Download className="w-4 h-4 text-gray-500" />
+              <span>导出库存流水</span>
+            </button>
+
+            {exportPanelOpen && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setExportPanelOpen(false)} />
+                <div className="absolute right-0 mt-2 w-64 bg-white rounded-xl shadow-lg border border-[#E2E8F0] z-50 p-4 space-y-3 text-left">
+                  <p className="text-xs text-gray-500 leading-relaxed">
+                    导出库存变动明细，可按下面两个条件收窄；都不填则导出全部。
+                  </p>
+                  <label className="block text-xs text-gray-600">
+                    业务类型
+                    <select
+                      value={exportBizType}
+                      onChange={(event) => setExportBizType(event.target.value)}
+                      className="mt-1 w-full h-9 px-2 rounded-lg border border-[#E2E8F0] text-sm bg-white"
+                    >
+                      <option value="all">全部</option>
+                      {STOCK_LOG_BIZ_TYPES.map((item) => (
+                        <option key={item.value} value={item.value}>{item.label}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="block text-xs text-gray-600">
+                    SKU ID
+                    <input
+                      inputMode="numeric"
+                      value={exportSkuId}
+                      onChange={(event) => setExportSkuId(event.target.value)}
+                      placeholder="留空则不按 SKU 筛选"
+                      className="mt-1 w-full h-9 px-3 rounded-lg border border-[#E2E8F0] text-sm"
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    onClick={handleExportStockLogs}
+                    className="w-full h-9 rounded-lg bg-[#2563EB] text-white hover:bg-blue-700 text-xs font-semibold cursor-pointer"
+                  >
+                    提交导出任务
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+
           <button
             onClick={() => showToast('已创建新入库调拨单向导', 'info')}
             className="h-[36px] px-4 rounded-lg bg-[#2563EB] text-white hover:bg-blue-700 flex items-center justify-center gap-2 text-xs font-semibold shadow-xs"

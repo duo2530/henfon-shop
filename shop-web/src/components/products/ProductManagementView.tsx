@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useAdmin } from '../../context/AdminContext';
+import { useExportCenter } from '../../context/ExportCenterContext';
 import { Product, ProductCategory, ProductStatus } from '../../types';
 import { 
   Plus, 
@@ -74,6 +75,7 @@ export const ProductManagementView: React.FC = () => {
     requirePermission,
     searchQuery
   } = useAdmin();
+  const { submit: submitExportTask } = useExportCenter();
 
   // 商品类目只允许使用服务端返回的数据，接口不可用时不提供虚构类目。
   const categoryOptions = catalogCategories;
@@ -442,25 +444,13 @@ export const ProductManagementView: React.FC = () => {
 
   const handleExportData = () => {
     if (!requirePermission('product:export', '导出商品报表')) return;
-    const csvContent =
-      'data:text/csv;charset=utf-8,\uFEFF' +
-      '商品编号,商品名称,分类,售价,成本价,毛利率,库存,安全库存,销量,标签,状态\n' +
-      filteredProducts
-        .map((p) => {
-          const cost = p.costPrice || p.price * 0.6;
-          const margin = (((p.price - cost) / p.price) * 100).toFixed(1) + '%';
-          const tagStr = (p.tags || []).join(';');
-          return `"${p.sku}","${p.name}","${p.categoryName}",${p.price},${cost},"${margin}",${p.stock},${p.safetyStock || 10},${p.salesCount || 0},"${tagStr}","${p.status === 'active' ? '上架中' : '已下架'}"`;
-        })
-        .join('\n');
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `商品库数据导出_${new Date().toISOString().split('T')[0]}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    showToast('商品库数据已成功导出为 CSV', 'success');
+    // 导出改为后台异步生成：只提交条件，服务端按条件取全量数据，不受当前分页限制。
+    void submitExportTask({
+      exportType: 'PRODUCT',
+      keyword: (searchTerm || searchQuery).trim() || undefined,
+      categoryId: selectedCategory === 'all' ? undefined : categoryId(selectedCategory as ProductCategory),
+      status: selectedStatus === 'all' ? undefined : selectedStatus === 'active' ? 1 : 2,
+    });
   };
 
   const handleConfirmBatchCategory = () => {
@@ -507,7 +497,7 @@ export const ProductManagementView: React.FC = () => {
               className="h-[36px] px-3.5 rounded-lg border border-[#E2E8F0] bg-white text-gray-700 hover:bg-gray-50 flex items-center gap-2 text-xs font-semibold shadow-2xs transition-colors cursor-pointer"
             >
               <Download className="w-4 h-4 text-gray-500" />
-              <span>导出报表</span>
+              <span>导出 Excel</span>
             </button>
           </PermissionGate>
 

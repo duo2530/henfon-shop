@@ -1,6 +1,5 @@
 package com.henfon.shop.reporting.service;
 
-import com.henfon.shop.common.exception.BusinessException;
 import com.henfon.shop.reporting.dto.ReportingMemberAnalysisResponse;
 import com.henfon.shop.reporting.dto.ReportingMemberLevelStatRow;
 import com.henfon.shop.reporting.dto.ReportingProductRankingItem;
@@ -18,11 +17,12 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.when;
 
 /**
- * 商品排行、会员分析和报表导出服务单元测试。
+ * 商品排行、会员分析和渠道统计服务单元测试。
+ *
+ * <p>报表导出能力已迁到 shop-export 模块的异步任务，不再由本服务产出 CSV。</p>
  *
  * @author Henfon
  * @date 2026-09-01
@@ -92,42 +92,6 @@ class ReportingAnalysisServiceTest {
         assertEquals(4L, response.activeMemberCount());
         assertEquals(new BigDecimal("50.00"), response.repurchaseRate());
         assertEquals(new BigDecimal("25.00"), response.averageOrderAmount());
-    }
-
-    /**
-     * 校验商品排行导出包含 UTF-8 BOM 和列标题。
-     *
-     * @author Henfon
-     * @date 2026-09-01
-     */
-    @Test
-    void shouldExportProductRankingCsv() {
-        ReportingDashboardService service = new ReportingDashboardService(reportingMetricsMapper);
-        LocalDate end = LocalDate.now();
-        LocalDate start = end;
-        when(reportingMetricsMapper.listProductRanking(start.atStartOfDay(), end.plusDays(1).atStartOfDay(), 20))
-                .thenReturn(List.of());
-
-        String csv = new String(service.export("PRODUCT_RANKING", start, end, null), java.nio.charset.StandardCharsets.UTF_8);
-
-        assertEquals('\uFEFF', csv.charAt(0));
-        assertEquals(true, csv.contains("商品ID"));
-    }
-
-    /**
-     * 校验不支持的导出类型会返回明确业务错误。
-     *
-     * @author Henfon
-     * @date 2026-09-01
-     */
-    @Test
-    void shouldRejectUnknownExportType() {
-        ReportingDashboardService service = new ReportingDashboardService(reportingMetricsMapper);
-
-        BusinessException exception = assertThrows(BusinessException.class,
-                () -> service.export("UNKNOWN", LocalDate.now(), LocalDate.now(), 20));
-
-        assertEquals("REPORTING_TYPE_INVALID", exception.getCode());
     }
 
     /**

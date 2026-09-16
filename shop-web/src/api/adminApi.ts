@@ -1342,22 +1342,85 @@ export function getReportingChannelStats(startDate?: string, endDate?: string): 
   return request<BackendReportingChannelStat[]>(`/api/admin/reporting/channel-stats${queryString ? `?${queryString}` : ''}`);
 }
 
-export async function downloadReportingExport(params: {
-  reportType: 'PRODUCT_RANKING' | 'MEMBER_ANALYSIS' | 'SALES_TREND';
+export type BackendExportTaskStatus = 'PENDING' | 'RUNNING' | 'SUCCESS' | 'FAILED' | 'EXPIRED';
+
+export interface BackendExportTask {
+  id: number;
+  taskNo: string | null;
+  exportType: string;
+  exportName: string;
+  status: BackendExportTaskStatus;
+  fileName: string | null;
+  fileSize: number | null;
+  rowCount: number | null;
+  errorMessage: string | null;
+  requestedByName: string | null;
+  createdAt: string | null;
+  finishedAt: string | null;
+  expiresAt: string | null;
+  downloadable: boolean;
+}
+
+/** 导出任务提交条件，含义随导出类型而定，未使用的字段保持为空。 */
+export interface ExportTaskRequest {
+  exportType: string;
+  keyword?: string;
+  status?: number;
+  statusText?: string;
+  categoryId?: number;
+  orderStatus?: number;
+  memberLevel?: string;
+  moduleKey?: string;
+  financeType?: string;
+  /** 库存流水业务类型：RESERVE/RELEASE/EXPIRE_RELEASE/DEDUCT。 */
+  bizType?: string;
+  skuId?: number;
+  warehouseId?: number;
   startDate?: string;
   endDate?: string;
-  limit?: number;
-}): Promise<Blob> {
-  const query = new URLSearchParams({ reportType: params.reportType, limit: String(params.limit || 20) });
-  if (params.startDate) query.set('startDate', params.startDate);
-  if (params.endDate) query.set('endDate', params.endDate);
-  const accessToken = getAdminToken();
-  const response = await fetch(`${API_BASE_URL}/api/admin/reporting/export?${query.toString()}`, {
-    headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined,
+  rankLimit?: number;
+}
+
+export function submitExportTask(payload: ExportTaskRequest): Promise<BackendExportTask> {
+  return request<BackendExportTask>('/api/admin/export/tasks', {
+    method: 'POST',
+    body: JSON.stringify(payload),
   });
+}
+
+export function listExportTasks(params: { current?: number; size?: number } = {}): Promise<BackendPage<BackendExportTask>> {
+  const query = new URLSearchParams({ current: String(params.current || 1), size: String(params.size || 20) });
+  return request<BackendPage<BackendExportTask>>(`/api/admin/export/tasks?${query.toString()}`);
+}
+
+export function retryExportTask(taskId: number): Promise<BackendExportTask> {
+  return request<BackendExportTask>(`/api/admin/export/tasks/${taskId}/retry`, { method: 'POST' });
+}
+
+export function deleteExportTask(taskId: number): Promise<void> {
+  return request<void>(`/api/admin/export/tasks/${taskId}`, { method: 'DELETE' });
+}
+
+/**
+ * 下载导出文件。
+ *
+ * 文件走服务端流式转发而不是预签名地址，因此必须携带登录令牌；
+ * 令牌过期时先刷新再重放一次，避免用户看到空文件。
+ */
+export async function downloadExportTaskFile(taskId: number): Promise<Blob> {
+  const send = (token: string | null) => fetch(`${API_BASE_URL}/api/admin/export/tasks/${taskId}/file`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+  });
+  let response = await send(getAdminToken());
+  if (response.status === 401) {
+    const refreshedToken = await refreshAdminToken();
+    if (refreshedToken) {
+      response = await send(refreshedToken);
+    }
+  }
   if (!response.ok) {
     const body = await response.json().catch(() => null) as ApiEnvelope<unknown> | null;
-    throw new Error(body?.message || `导出失败（${response.status}）`);
+    throw new Error(body?.message || `下载失败（${response.status}）`);
   }
   return response.blob();
 }

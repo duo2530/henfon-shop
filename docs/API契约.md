@@ -112,7 +112,15 @@ HTTP 状态：成功 2xx；参数/业务错误 400；认证失败 401；无权�
 - `GET /api/admin/reporting/sales-trend`（兼容 `/dashboard/sales-trend`）：按日期范围返回销售额、订单数、销量；日期范围需符合服务端上限。
 - `GET /api/admin/reporting/product-ranking`（兼容 `/products/ranking`）：按已支付订单查询商品销量排行，支持日期范围和 Top N。
 - `GET /api/admin/reporting/member-analysis`（兼容 `/members/analysis`）：返回会员总数、新增、活跃、复购率、客单价及等级分布。
-- `GET /api/admin/reporting/export`：导出 `PRODUCT_RANKING`、`MEMBER_ANALYSIS` 或 `SALES_TREND` CSV 报表，响应包含 UTF-8 BOM。
+
+### shop-export（导出中心）
+
+管理端 Excel 导出统一走异步任务，`shop-reporting` 原有 CSV 导出接口已移除。
+
+- 任务：`POST /api/admin/export/tasks` 提交（`export:task:create` + 该数据类型的导出权限）、`GET /api/admin/export/tasks` 分页查询（`export:task:query`）、`POST /api/admin/export/tasks/{taskId}/retry` 重试、`DELETE /api/admin/export/tasks/{taskId}` 移除（后两者需 `export:task:create`）。
+- 取件：`GET /api/admin/export/tasks/{taskId}/file`（`export:task:download`），由服务端流式转发对象存储中的文件并回填 `Content-Disposition` 文件名，不使用预签名直链。下载、重试、移除除任务权限外还要校验任务归属与该任务所属类型的导出权限。
+- 数据类型九类，导出权限编码依次为 `catalog:product:export`、`trade:order:export`、`member:user:export`、`marketing:coupon:export`、`payment:transaction:export`、`reporting:product:export`、`system:audit:login:export`、`system:audit:operation:export`、`inventory:stock:export`。
+- 提交返回任务对象，状态依次为 `PENDING`、`RUNNING`、`SUCCESS` 或 `FAILED`；产出为 xlsx（表头样式、冻结首行、自动筛选），单文件上限 200000 行。文件默认保留 7 天（`shop.export.retention-days`），到期清理对象并置 `EXPIRED`。提交时的筛选条件原样存入 `export_task.query_params` 以便追溯。
 
 ## 7. 兼容与变更
 

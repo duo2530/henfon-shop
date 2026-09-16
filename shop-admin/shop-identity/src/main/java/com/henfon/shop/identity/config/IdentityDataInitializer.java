@@ -451,7 +451,52 @@ public class IdentityDataInitializer implements ApplicationRunner {
             }
             menus.add(menu);
         }
+        // 导出中心权限单独授权：查询、创建、下载三分，避免仅有列表查询权限的账号批量取走全量数据。
+        ensureChildButtons(menus, new String[][]{
+                {"导出任务查询", "export:task:query"},
+                {"导出任务创建", "export:task:create"},
+                {"导出文件下载", "export:task:download"}
+        }, settings.getId(), 107);
+        // 各业务数据的导出权限跟随所属模块，拥有查询权限不等于拥有导出权限。
+        ensureChildButtons(menus, new String[][]{
+                {"商品导出", "catalog:product:export"},
+                {"订单导出", "trade:order:export"},
+                {"会员导出", "member:user:export"}
+        }, ecommerce.getId(), 107);
+        ensureChildButtons(menus, new String[][]{{"优惠券导出", "marketing:coupon:export"}},
+                marketing.getId(), 104);
+        ensureChildButtons(menus, new String[][]{{"库存流水导出", "inventory:stock:export"}},
+                inventory.getId(), 106);
+        ensureChildButtons(menus, new String[][]{{"资金流水导出", "payment:transaction:export"}},
+                finance.getId(), 104);
+        ensureChildButtons(menus, new String[][]{{"商品动销导出", "reporting:product:export"}},
+                analytics.getId(), 101);
+        ensureChildButtons(menus, new String[][]{
+                {"登录日志导出", "system:audit:login:export"},
+                {"操作日志导出", "system:audit:operation:export"}
+        }, settings.getId(), 108);
         return menus;
+    }
+
+    /**
+     * 按父节点创建或复用一组按钮权限，返回值追加到菜单集合。
+     *
+     * @param menus 菜单集合
+     * @param buttons 按钮定义，每项为「名称、权限编码」
+     * @param parentId 父菜单ID
+     * @param sort 排序号
+     * @author Henfon
+     * @date 2026-09-16
+     */
+    private void ensureChildButtons(List<SysMenu> menus, String[][] buttons, Long parentId, int sort) {
+        for (String[] button : buttons) {
+            SysMenu menu = ensureMenu(button[0], "BUTTON", button[1], null, sort);
+            if (!parentId.equals(menu.getParentId())) {
+                menu.setParentId(parentId);
+                sysMenuMapper.updateById(menu);
+            }
+            menus.add(menu);
+        }
     }
 
     /**

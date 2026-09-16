@@ -1,8 +1,9 @@
 import React, { FormEvent, useCallback, useEffect, useState } from 'react';
-import { RefreshCw, ShieldCheck } from 'lucide-react';
+import { Download, RefreshCw, ShieldCheck } from 'lucide-react';
 import { BackendLoginLog, BackendOperationLog, BackendPage, listLoginLogs, listOperationLogs } from '../../api/adminApi';
 import { PermissionDenied } from '../common/PermissionGate';
 import { useAdmin } from '../../context/AdminContext';
+import { useExportCenter } from '../../context/ExportCenterContext';
 
 type AuditTab = 'operation' | 'login';
 type LoginStatusFilter = '' | '0' | '1';
@@ -21,7 +22,8 @@ const PAGE_SIZE = 20;
  * @description 提供登录与操作日志的权限隔离、条件筛选、分页和异常重试。
  */
 export const AuditLogPanel: React.FC<AuditLogPanelProps> = ({ mode }) => {
-  const { showToast, hasPermission } = useAdmin();
+  const { showToast, hasPermission, requirePermission } = useAdmin();
+  const { submit: submitExportTask } = useExportCenter();
   const [tab, setTab] = useState<AuditTab>(mode || 'operation');
   const [operationsPage, setOperationsPage] = useState<BackendPage<BackendOperationLog> | null>(null);
   const [loginsPage, setLoginsPage] = useState<BackendPage<BackendLoginLog> | null>(null);
@@ -135,6 +137,25 @@ export const AuditLogPanel: React.FC<AuditLogPanelProps> = ({ mode }) => {
 
   const hasRecords = tab === 'operation' ? operationRecords.length > 0 : loginRecords.length > 0;
 
+  const handleExportLogs = () => {
+    if (tab === 'operation') {
+      if (!requirePermission('system:audit:operation:export', '导出操作审计日志')) return;
+      // 导出改为后台异步生成：按当前筛选条件取全量日志，不受分页限制。
+      void submitExportTask({
+        exportType: 'OPERATION_LOG',
+        keyword: operationFilter.username || undefined,
+        moduleKey: operationFilter.moduleKey || undefined,
+      });
+      return;
+    }
+    if (!requirePermission('system:audit:login:export', '导出登录记录')) return;
+    void submitExportTask({
+      exportType: 'LOGIN_LOG',
+      keyword: loginFilter.username || undefined,
+      status: loginFilter.status,
+    });
+  };
+
   return (
     <section className="bg-white rounded-xl border border-[#E2E8F0] p-5 md:p-6 shadow-xs">
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
@@ -142,7 +163,10 @@ export const AuditLogPanel: React.FC<AuditLogPanelProps> = ({ mode }) => {
           <div className="p-2 bg-indigo-50 text-indigo-600 rounded-lg"><ShieldCheck className="w-5 h-5" /></div>
           <div><h3 className="text-base font-semibold text-gray-900">{mode === 'login' ? '登录记录' : mode === 'operation' ? '操作审计' : '操作审计与登录记录'}</h3><p className="text-xs text-gray-500">关键管理端请求由后端自动采集，支持追踪责任人与异常登录。</p></div>
         </div>
-        <button type="button" onClick={() => void loadLogs()} disabled={loading} className="h-8 px-3 rounded-lg border border-gray-200 text-xs font-semibold text-gray-600 hover:bg-gray-50 disabled:opacity-50 flex items-center gap-1.5"><RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />刷新</button>
+        <div className="flex items-center gap-2">
+          <button type="button" onClick={handleExportLogs} className="h-8 px-3 rounded-lg border border-gray-200 text-xs font-semibold text-gray-600 hover:bg-gray-50 flex items-center gap-1.5"><Download className="w-3.5 h-3.5" />导出 Excel</button>
+          <button type="button" onClick={() => void loadLogs()} disabled={loading} className="h-8 px-3 rounded-lg border border-gray-200 text-xs font-semibold text-gray-600 hover:bg-gray-50 disabled:opacity-50 flex items-center gap-1.5"><RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />刷新</button>
+        </div>
       </div>
 
       {!mode && <div className="flex gap-4 border-b border-gray-100 mb-3">

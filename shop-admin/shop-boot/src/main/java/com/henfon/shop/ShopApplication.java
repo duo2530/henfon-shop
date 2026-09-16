@@ -16,6 +16,7 @@ import org.mybatis.spring.annotation.MapperScan;
 @MapperScan({
         "com.henfon.shop.catalog.mapper",
         "com.henfon.shop.content.mapper",
+        "com.henfon.shop.export.mapper",
         "com.henfon.shop.identity.mapper",
         "com.henfon.shop.inventory.mapper",
         "com.henfon.shop.marketing.mapper",

@@ -28,6 +28,7 @@ public final class RocketMqTopics {
     public static final String AFTER_SALE_CANCELLED = "shop_after_sale_cancelled";
     public static final String AFTER_SALE_COMPLETED = "shop_after_sale_completed";
     public static final String PRODUCT_CHANGED = "shop_product_changed";
+    public static final String EXPORT_TASK_REQUESTED = "shop_export_task_requested";
 
     private RocketMqTopics() {
         // 工具常量类不允许实例化。

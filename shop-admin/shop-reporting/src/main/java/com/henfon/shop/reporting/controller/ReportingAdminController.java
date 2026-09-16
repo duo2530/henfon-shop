@@ -16,9 +16,6 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.MediaType;
-import org.springframework.http.ResponseEntity;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -155,35 +152,5 @@ public class ReportingAdminController {
         // 日期范围及最大窗口由服务层统一校验，保证各报表入口规则一致。
         return ApiResponse.success(reportingDashboardService.queryChannelStats(startDate, endDate),
                 MDC.get("requestId"));
-    }
-
-    /**
-     * 导出报表 CSV 文件。
-     *
-     * @param reportType 报表类型：PRODUCT_RANKING、MEMBER_ANALYSIS 或 SALES_TREND
-     * @param startDate 开始日期
-     * @param endDate 结束日期
-     * @param limit 商品排行条数
-     * @return CSV 文件响应
-     * @author Henfon
-     * @date 2026-09-01
-     */
-    @GetMapping("/export")
-    @PreAuthorize("hasAnyAuthority('reporting:product:query','reporting:overview:query')")
-    public ResponseEntity<byte[]> export(@RequestParam(defaultValue = "PRODUCT_RANKING") String reportType,
-                                         @RequestParam(required = false)
-                                         @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
-                                         @RequestParam(required = false)
-                                         @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate,
-                                         @RequestParam(required = false, defaultValue = "20") Integer limit) {
-        byte[] content = reportingDashboardService.export(reportType, startDate, endDate, limit);
-        // 文件名只保留字母、数字和下划线，避免请求参数进入响应头造成注入。
-        String safeType = reportType == null ? "report" : reportType.trim()
-                .replaceAll("[^A-Za-z0-9_-]", "_").toLowerCase(java.util.Locale.ROOT);
-        String fileName = "report-" + safeType + ".csv";
-        return ResponseEntity.ok()
-                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + fileName + "\"")
-                .contentType(MediaType.parseMediaType("text/csv;charset=UTF-8"))
-                .body(content);
     }
 }

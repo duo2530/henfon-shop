@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useAdmin } from '../../context/AdminContext';
 import { containsMenuTab } from '../../navigation/menuAdapter';
+import { ExportCenter } from './ExportCenter';
 import { 
   Menu, 
   Search, 
@@ -88,6 +89,9 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
 
         {/* Right Side Actions */}
         <div className="flex items-center gap-2 sm:gap-3">
+          {/* Export Center: asynchronous export tasks and file downloads */}
+          <ExportCenter />
+
           {/* Notifications Button */}
           <button
             id="btn-notifications-trigger"

@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { BarChart3, Download, RefreshCw, Search } from 'lucide-react';
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
-import { BackendReportingProductRankingItem, downloadReportingExport, getReportingProductRanking } from '../../api/adminApi';
+import { BackendReportingProductRankingItem, getReportingProductRanking } from '../../api/adminApi';
 import { useAdmin } from '../../context/AdminContext';
+import { useExportCenter } from '../../context/ExportCenterContext';
 
 function formatDate(date: Date): string {
   return date.toISOString().slice(0, 10);
@@ -13,7 +14,8 @@ function money(value: number): string {
 }
 
 export const ProductAnalyticsView: React.FC = () => {
-  const { showToast } = useAdmin();
+  const { requirePermission } = useAdmin();
+  const { submit: submitExportTask } = useExportCenter();
   const [rangeDays, setRangeDays] = useState<7 | 30>(30);
   const [rows, setRows] = useState<BackendReportingProductRankingItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -44,21 +46,19 @@ export const ProductAnalyticsView: React.FC = () => {
   const filtered = categoryFilter === 'all' ? rows : rows.filter((item) => (item.categoryName || '未分类') === categoryFilter);
 
   const exportReport = async () => {
+    if (!requirePermission('reporting:product:export', '导出商品动销报表')) return;
     setExporting(true);
     const endDate = new Date();
     const startDate = new Date(endDate);
     startDate.setDate(startDate.getDate() - rangeDays + 1);
     try {
-      const blob = await downloadReportingExport({ reportType: 'PRODUCT_RANKING', startDate: formatDate(startDate), endDate: formatDate(endDate), limit: 100 });
-      const url = URL.createObjectURL(blob);
-      const anchor = document.createElement('a');
-      anchor.href = url;
-      anchor.download = `商品动销排行-${formatDate(endDate)}.csv`;
-      anchor.click();
-      URL.revokeObjectURL(url);
-      showToast('商品动销排行已导出', 'success');
-    } catch (requestError) {
-      showToast(requestError instanceof Error ? requestError.message : '导出失败，请稍后重试', 'error');
+      // 导出改为后台异步生成，服务端按统计周期取全量排行数据，生成完成后在顶部下载中心取件。
+      await submitExportTask({
+        exportType: 'PRODUCT_RANKING',
+        startDate: formatDate(startDate),
+        endDate: formatDate(endDate),
+        rankLimit: 1000,
+      });
     } finally {
       setExporting(false);
     }
@@ -82,7 +82,7 @@ export const ProductAnalyticsView: React.FC = () => {
           </div>
           <button type="button" onClick={() => void exportReport()} disabled={exporting || loading} className="h-[36px] px-4 rounded-lg bg-[#2563EB] text-white hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-2 text-xs font-semibold shadow-xs">
             {exporting ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
-            <span>{exporting ? '导出中…' : '导出 CSV'}</span>
+            <span>{exporting ? '提交中…' : '导出 Excel'}</span>
           </button>
         </div>
       </div>
