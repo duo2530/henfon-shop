@@ -56,6 +56,12 @@ function dateInput(value?: string): string { return value ? value.replace(' ', '
 /** 补齐时间秒数，确保后端 LocalDateTime 可解析。 */
 function backendDate(value: string): string { return value.length === 16 ? `${value}:00` : value; }
 
+/** 列表展示用时间。后端返回的 LocalDateTime 带毫秒，这里截断到分钟。 */
+function displayDate(value?: string): string {
+  const matched = /^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2})/.exec(value || '');
+  return matched ? `${matched[1]} ${matched[2]}` : value || '—';
+}
+
 /** 创建新活动默认表单。商品明细一律通过商品选择弹窗加入。 */
 function emptyForm(): ActivityForm {
   const start = new Date(Date.now() + 3600000);
@@ -420,7 +426,7 @@ export const FlashSaleManagementView: React.FC = () => {
               <span className="text-[11px] font-semibold text-gray-600 bg-gray-100 px-2 py-0.5 rounded-full shrink-0">{statusText(record.status, record.startAt, record.endAt)}</span>
             </div>
             <div className="mt-4 space-y-2 text-xs text-gray-600">
-              <div className="flex items-center gap-1"><Clock className="w-3.5 h-3.5 text-gray-400" />{record.startAt?.replace('T', ' ')} 至 {record.endAt?.replace('T', ' ')}</div>
+              <div className="flex items-center gap-1"><Clock className="w-3.5 h-3.5 text-gray-400" />{displayDate(record.startAt)} 至 {displayDate(record.endAt)}</div>
               <div className="flex justify-between"><span>活动商品 {record.items.length} 个</span><span>已售 {sold} / {stock} 件</span></div>
               <div className="flex flex-wrap gap-1">
                 {record.items.slice(0, 3).map((item) => <span key={item.id} className="bg-orange-50 text-orange-700 px-1.5 py-0.5 rounded text-[11px]">商品 #{item.productId} ¥{Number(item.activityPrice || 0).toFixed(2)}</span>)}

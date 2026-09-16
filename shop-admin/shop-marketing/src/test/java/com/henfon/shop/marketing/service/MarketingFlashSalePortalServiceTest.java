@@ -5,8 +5,10 @@ import com.henfon.shop.marketing.entity.MarketingFlashSaleItem;
 import com.henfon.shop.catalog.entity.CatalogProduct;
 import com.henfon.shop.catalog.mapper.CatalogProductMapper;
 import com.henfon.shop.catalog.mapper.CatalogSkuMapper;
+import com.henfon.shop.integration.storage.MinioStorageService;
 import com.henfon.shop.marketing.mapper.MarketingFlashSaleItemMapper;
 import com.henfon.shop.marketing.mapper.MarketingFlashSaleMapper;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
@@ -31,8 +33,20 @@ class MarketingFlashSalePortalServiceTest {
     private final MarketingFlashSaleItemMapper itemMapper = mock(MarketingFlashSaleItemMapper.class);
     private final CatalogProductMapper productMapper = mock(CatalogProductMapper.class);
     private final CatalogSkuMapper skuMapper = mock(CatalogSkuMapper.class);
+    private final MinioStorageService minioStorageService = mock(MinioStorageService.class);
     private final MarketingFlashSalePortalService service = new MarketingFlashSalePortalService(activityMapper, itemMapper,
-            productMapper, skuMapper);
+            productMapper, skuMapper, minioStorageService);
+
+    /**
+     * 隔离对象存储，图片地址续签在测试中原样返回。
+     *
+     * @author Henfon
+     * @date 2026-09-16
+     */
+    @BeforeEach
+    void stubStorage() {
+        when(minioStorageService.resolveAccessUrl(any())).thenAnswer(invocation -> invocation.getArgument(0));
+    }
 
     /**
      * 验证活动商品返回剩余库存，并过滤停用和售罄商品。

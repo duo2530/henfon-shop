@@ -5,6 +5,7 @@ import com.henfon.shop.catalog.entity.CatalogProduct;
 import com.henfon.shop.catalog.entity.CatalogSku;
 import com.henfon.shop.catalog.mapper.CatalogProductMapper;
 import com.henfon.shop.catalog.mapper.CatalogSkuMapper;
+import com.henfon.shop.integration.storage.MinioStorageService;
 import com.henfon.shop.marketing.dto.MarketingFlashSalePortalResponse;
 import com.henfon.shop.marketing.entity.MarketingFlashSale;
 import com.henfon.shop.marketing.entity.MarketingFlashSaleItem;
@@ -34,6 +35,7 @@ public class MarketingFlashSalePortalService {
     private final MarketingFlashSaleItemMapper itemMapper;
     private final CatalogProductMapper productMapper;
     private final CatalogSkuMapper skuMapper;
+    private final MinioStorageService minioStorageService;
 
     /**
      * 创建门户秒杀查询服务。
@@ -42,17 +44,20 @@ public class MarketingFlashSalePortalService {
      * @param itemMapper 秒杀活动商品数据访问对象
      * @param productMapper 商品目录数据访问对象
      * @param skuMapper 商品SKU数据访问对象
+     * @param minioStorageService MinIO 文件服务
      * @author Henfon
      * @date 2026-09-01
      */
     public MarketingFlashSalePortalService(MarketingFlashSaleMapper activityMapper,
                                            MarketingFlashSaleItemMapper itemMapper,
                                            CatalogProductMapper productMapper,
-                                           CatalogSkuMapper skuMapper) {
+                                           CatalogSkuMapper skuMapper,
+                                           MinioStorageService minioStorageService) {
         this.activityMapper = activityMapper;
         this.itemMapper = itemMapper;
         this.productMapper = productMapper;
         this.skuMapper = skuMapper;
+        this.minioStorageService = minioStorageService;
     }
 
     /**
@@ -132,8 +137,10 @@ public class MarketingFlashSalePortalService {
         int soldStock = item.getSoldStock() == null ? 0 : item.getSoldStock();
         // 数据库约束保证已售不超过总库存，额外兜底避免异常历史数据向前端返回负库存。
         int remainingStock = Math.max(totalStock - soldStock, 0);
+        // 商品主图在库中可能是历史预签名地址，返回前统一换发当前有效地址，避免门户展示失效图片。
+        String mainImageUrl = minioStorageService.resolveAccessUrl(product.getMainImageUrl());
         return new MarketingFlashSalePortalResponse.Item(item.getId(), item.getProductId(), item.getSkuId(),
-                product.getProductName(), sku == null ? null : sku.getSkuName(), product.getMainImageUrl(),
+                product.getProductName(), sku == null ? null : sku.getSkuName(), mainImageUrl,
                 sku == null ? product.getPrice() : sku.getPrice(), sku == null ? null : sku.getAttributesJson(),
                 item.getActivityPrice(), totalStock, soldStock, remainingStock, item.getLimitPerMember());
     }
