@@ -49,3 +49,6 @@ coverage/
 # 本地生成的图片、报告和缓存
 generated_images/
 .codex-temp/
+
+# WorkBuddy 本地工作区配置与缓存
+.workbuddy/
