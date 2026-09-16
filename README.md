@@ -237,7 +237,7 @@ henfon-shop
 
 #### 会员登录
 
-密码登录 / 短信免密 / 新客注册三合一入口。
+密码登录与邮箱注册两个入口，找回密码走邮箱一次性令牌。
 
 ![会员登录](docs/screenshots/portal-login.png)
 

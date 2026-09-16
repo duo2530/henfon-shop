@@ -31,13 +31,14 @@ class MemberLoginFailureTrackerTest {
     /** 初始化测试对象。 @author Henfon @date 2026-09-04 */
     @BeforeEach
     void setUp() {
-        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
         tracker = new MemberLoginFailureTracker(redisTemplate);
     }
 
     /** 达到五次失败后应锁定账号。 @author Henfon @date 2026-09-04 */
     @Test
     void shouldLockAfterFiveFailures() {
+        // opsForValue 仅在失败计数流程中使用，按用例单独打桩，避免其余用例触发严格模式告警。
+        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
         when(valueOperations.increment(any())).thenReturn(5L);
         assertEquals(5L, tracker.recordFailure(" Alice "));
         verify(valueOperations).set(eq("shop:member:login:locked:alice"), eq("1"), eq(Duration.ofMinutes(15)));

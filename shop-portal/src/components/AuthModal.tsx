@@ -16,36 +16,24 @@ import {
   KeyRound,
   RotateCcw,
   Gift,
-  HelpCircle,
 } from 'lucide-react';
 import { UserProfile, MemberLevel } from '../types/ecommerce';
 import {
   loginPortalMember,
-  loginPortalMemberBySms,
-  sendPortalSmsCode,
   registerPortalMember,
   requestPortalPasswordReset,
   confirmPortalPasswordReset,
   MemberAuthResponse,
 } from '../api/portalApi';
 
-export type AuthMode = 'login-pwd' | 'login-sms' | 'register' | 'forgot-pwd' | 'reset-pwd';
+export type AuthMode = 'login-pwd' | 'register' | 'forgot-pwd' | 'reset-pwd';
 
-/**
- * 规范化短信登录手机号。
- * @author Henfon
- * @date 2026-09-04
- * @description 清理用户输入中的空格和非数字字符，并校验国际手机号长度。
- */
-export function normalizeSmsPhone(countryCode: string, phone: string): string | null {
-  const digits = phone.replace(/\D/g, '');
-  // E.164 号码主体长度为 7~15 位，避免将明显错误的输入提交给后端。
-  if (digits.length < 7 || digits.length > 15) return null;
-  return `${countryCode}${digits}`;
+/** 邮箱格式校验，登录、注册与找回密码共用同一口径。 */
+export function isEmail(value: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
 }
 
-// 短信登录已接入验证码接口；社交授权仍保留演示开关。
-const ENABLE_SMS_LOGIN = true;
+// 社交授权仍保留演示开关。
 const ENABLE_SOCIAL_LOGIN = false;
 
 interface AuthModalProps {
@@ -139,17 +127,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [accountInput, setAccountInput] = useState('');
   const [passwordInput, setPasswordInput] = useState('');
   const [phoneInput, setPhoneInput] = useState('');
-  const [smsCodeInput, setSmsCodeInput] = useState('');
   const [nicknameInput, setNicknameInput] = useState('');
   const [confirmPasswordInput, setConfirmPasswordInput] = useState('');
   const [resetTokenInput, setResetTokenInput] = useState(() => {
     if (typeof window === 'undefined') return '';
     return new URLSearchParams(window.location.search).get('resetToken') || '';
   });
-  const [countryCode, setCountryCode] = useState('+86');
 
-  // SMS Timer state
-  const [countdown, setCountdown] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
@@ -163,14 +147,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         ? ''
         : new URLSearchParams(window.location.search).get('resetToken') || '';
 
-      // 每次重新打开认证窗口都清理上次输入，避免残留验证码、密码或倒计时造成错误登录。
+      // 每次重新打开认证窗口都清理上次输入，避免残留密码造成错误登录。
       setAccountInput('');
       setPasswordInput('');
       setPhoneInput('');
-      setSmsCodeInput('');
       setNicknameInput('');
       setConfirmPasswordInput('');
-      setCountdown(0);
       setIsLoading(false);
       setShowPassword(false);
       setAgreedTerms(true);
@@ -182,37 +164,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     }
   }, [isOpen, initialMode]);
 
-  // Handle countdown
-  useEffect(() => {
-    let timer: NodeJS.Timeout;
-    if (countdown > 0) {
-      timer = setInterval(() => {
-        setCountdown((prev) => prev - 1);
-      }, 1000);
-    }
-    return () => clearInterval(timer);
-  }, [countdown]);
-
   if (!isOpen) return null;
-
-  // 发送短信验证码并在开发环境自动填入服务端返回的验证码。
-  const handleSendSms = async () => {
-    const normalizedPhone = normalizeSmsPhone(countryCode, phoneInput);
-    if (!normalizedPhone) {
-      setErrorMsg('请输入正确的手机号码');
-      return;
-    }
-    setErrorMsg(null);
-    try {
-      const result = await sendPortalSmsCode(normalizedPhone);
-      setCountdown(Math.min(60, result.expiresInSeconds || 60));
-      if (result.verificationCode) setSmsCodeInput(result.verificationCode);
-      setSuccessMsg(result.verificationCode ? `验证码已发送（测试环境已自动填入）` : '验证码已发送，请查收短信');
-      setTimeout(() => setSuccessMsg(null), 5000);
-    } catch (error) {
-      setErrorMsg(error instanceof Error ? error.message : '验证码发送失败，请稍后重试');
-    }
-  };
 
   // Password strength calculation
   const getPasswordStrength = (pass: string) => {
@@ -245,8 +197,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     e.preventDefault();
     setErrorMsg(null);
 
-    // Terms validation for register/sms
-    if ((mode === 'register' || mode === 'login-sms') && !agreedTerms) {
+    // Terms validation for register
+    if (mode === 'register' && !agreedTerms) {
       setErrorMsg('请阅读并勾选同意《用户服务协议》与《隐私政策》');
       return;
     }
@@ -288,12 +240,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       }
 
       if (mode === 'register') {
-        if (!nicknameInput) {
+        if (!nicknameInput.trim()) {
           setErrorMsg('请输入用户昵称');
           return;
         }
-        if (!accountInput) {
-          setErrorMsg('请输入注册邮箱或手机号');
+        // 邮箱是登录凭证与密码找回的唯一通道，注册阶段必须收集，否则账号无法自助找回密码。
+        const email = accountInput.trim();
+        if (!isEmail(email)) {
+          setErrorMsg('请输入正确的邮箱地址');
           return;
         }
         if (passwordInput.length < 6) {
@@ -306,13 +260,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         }
         setIsLoading(true);
         try {
-          const account = accountInput.trim();
+          const phone = phoneInput.trim();
           const targetUser = mapMember(await registerPortalMember({
-            username: account,
+            username: email,
             password: passwordInput,
             nickname: nicknameInput.trim(),
-            email: account.includes('@') ? account : undefined,
-            phone: account.includes('@') ? undefined : account,
+            email,
+            phone: phone || undefined,
           }));
           onLoginSuccess(targetUser, `注册成功！欢迎回来，${targetUser.nickname}`);
           onClose();
@@ -324,26 +278,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         return;
       }
 
-    if (mode === 'login-sms') {
-      if (!phoneInput || !smsCodeInput) {
-        setErrorMsg('请输入手机号和短信验证码');
-        return;
-      }
-      setIsLoading(true);
-      try {
-        const targetUser = mapMember(await loginPortalMemberBySms(`${countryCode}${phoneInput}`, smsCodeInput));
-        onLoginSuccess(targetUser, `登录成功！欢迎回来，${targetUser.nickname}`);
-        onClose();
-      } catch (error) {
-        setErrorMsg(error instanceof Error ? error.message : '短信登录失败，请稍后重试');
-      } finally {
-        setIsLoading(false);
-      }
-      return;
-    }
-
     if (mode === 'forgot-pwd') {
-      if (!accountInput || !accountInput.includes('@')) {
+      if (!isEmail(accountInput)) {
         setErrorMsg('请输入正确的注册邮箱');
         return;
       }
@@ -461,7 +397,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
           <h2 className="text-xl font-black tracking-tight text-white flex items-center gap-2">
             {mode === 'login-pwd' && '欢迎登录Henfon商城'}
-            {mode === 'login-sms' && '手机短信免密登录'}
             {mode === 'register' && '开启您的品质好物之旅'}
             {(mode === 'forgot-pwd' || mode === 'reset-pwd') && '重置与找回登录密码'}
           </h2>
@@ -489,19 +424,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               >
                 密码登录
               </button>
-              {ENABLE_SMS_LOGIN && <button
-                onClick={() => {
-                  setMode('login-sms');
-                  setErrorMsg(null);
-                }}
-                className={`flex-1 py-1.5 rounded-lg transition text-center ${
-                  mode === 'login-sms'
-                    ? 'bg-amber-400 text-zinc-950 shadow-sm font-bold'
-                    : 'text-zinc-400 hover:text-zinc-200'
-                }`}
-              >
-                短信免密
-              </button>}
               <button
                 onClick={() => {
                   setMode('register');
@@ -602,71 +524,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               </>
             )}
 
-            {/* Mode 2: 手机短信快捷登录 */}
-            {mode === 'login-sms' && (
-              <>
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-zinc-700 block">手机号码</label>
-                  <div className="flex gap-2">
-                    <select
-                      value={countryCode}
-                      onChange={(e) => setCountryCode(e.target.value)}
-                      className="py-2.5 px-2.5 bg-zinc-50 border border-zinc-200 rounded-xl text-xs text-zinc-800 focus:outline-none focus:border-zinc-900 shrink-0 font-medium"
-                    >
-                      <option value="+86">+86 (中国)</option>
-                      <option value="+1">+1 (美国/加拿大)</option>
-                      <option value="+852">+852 (中国香港)</option>
-                      <option value="+886">+886 (中国台湾)</option>
-                      <option value="+81">+81 (日本)</option>
-                    </select>
-
-                    <div className="relative flex-1 flex items-center">
-                      <Smartphone className="w-4 h-4 text-zinc-400 absolute left-3.5 pointer-events-none" />
-                      <input
-                        type="tel"
-                        required
-                        value={phoneInput}
-                        onChange={(e) => setPhoneInput(e.target.value.replace(/\D/g, '').slice(0, 15))}
-                        placeholder="请输入11位手机号码"
-                        className="w-full py-2.5 pl-10 pr-3.5 bg-zinc-50 border border-zinc-200 rounded-xl text-xs text-zinc-900 placeholder:text-zinc-400 focus:bg-white focus:border-zinc-900 focus:ring-2 focus:ring-zinc-900/10 focus:outline-none transition"
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-xs font-bold text-zinc-700 block">短信验证码</label>
-                  <div className="flex gap-2">
-                    <div className="relative flex-1 flex items-center">
-                      <KeyRound className="w-4 h-4 text-zinc-400 absolute left-3.5 pointer-events-none" />
-                      <input
-                        type="text"
-                        maxLength={6}
-                        required
-                        value={smsCodeInput}
-                        onChange={(e) => setSmsCodeInput(e.target.value)}
-                        placeholder="6位短信验证码"
-                        className="w-full py-2.5 pl-10 pr-3.5 bg-zinc-50 border border-zinc-200 rounded-xl text-xs text-zinc-900 placeholder:text-zinc-400 focus:bg-white focus:border-zinc-900 focus:ring-2 focus:ring-zinc-900/10 focus:outline-none transition font-mono tracking-wider"
-                      />
-                    </div>
-                    <button
-                      type="button"
-                      disabled={countdown > 0}
-                      onClick={handleSendSms}
-                      className={`px-3.5 py-2.5 rounded-xl text-xs font-bold whitespace-nowrap transition ${
-                        countdown > 0
-                          ? 'bg-zinc-100 text-zinc-400 cursor-not-allowed border border-zinc-200'
-                          : 'bg-zinc-900 hover:bg-zinc-800 text-white shadow-xs'
-                      }`}
-                    >
-                      {countdown > 0 ? `${countdown}s 后重发` : '获取验证码'}
-                    </button>
-                  </div>
-                </div>
-              </>
-            )}
-
-            {/* Mode 3: 注册新用户 */}
+            {/* Mode 2: 注册新用户 */}
             {mode === 'register' && (
               <>
                 <div className="space-y-1">
@@ -685,15 +543,33 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-xs font-bold text-zinc-700 block">注册手机或常用邮箱</label>
+                  <label className="text-xs font-bold text-zinc-700 block">
+                    邮箱 <span className="font-normal text-zinc-500">（用于登录与找回密码）</span>
+                  </label>
                   <div className="relative flex items-center">
                     <Mail className="w-4 h-4 text-zinc-400 absolute left-3.5 pointer-events-none" />
                     <input
-                      type="text"
+                      type="email"
                       required
                       value={accountInput}
                       onChange={(e) => setAccountInput(e.target.value)}
-                      placeholder="用于登录与接收订单发货提醒"
+                      placeholder="name@example.com"
+                      className="w-full py-2.5 pl-10 pr-3.5 bg-zinc-50 border border-zinc-200 rounded-xl text-xs text-zinc-900 placeholder:text-zinc-400 focus:bg-white focus:border-zinc-900 focus:ring-2 focus:ring-zinc-900/10 focus:outline-none transition"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-zinc-700 block">
+                    手机号 <span className="font-normal text-zinc-500">（选填，用于接收订单通知）</span>
+                  </label>
+                  <div className="relative flex items-center">
+                    <Smartphone className="w-4 h-4 text-zinc-400 absolute left-3.5 pointer-events-none" />
+                    <input
+                      type="tel"
+                      value={phoneInput}
+                      onChange={(e) => setPhoneInput(e.target.value.replace(/\D/g, '').slice(0, 15))}
+                      placeholder="可不填，后续也可在个人中心补充"
                       className="w-full py-2.5 pl-10 pr-3.5 bg-zinc-50 border border-zinc-200 rounded-xl text-xs text-zinc-900 placeholder:text-zinc-400 focus:bg-white focus:border-zinc-900 focus:ring-2 focus:ring-zinc-900/10 focus:outline-none transition"
                     />
                   </div>
@@ -774,7 +650,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               </>
             )}
 
-            {/* Mode 4: 找回密码 */}
+            {/* Mode 3: 找回密码 */}
             {mode === 'forgot-pwd' && (
               <>
                 <div className="space-y-1">
@@ -798,7 +674,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               </>
             )}
 
-            {/* Mode 5: 使用邮件令牌重置密码 */}
+            {/* Mode 4: 使用邮件令牌重置密码 */}
             {mode === 'reset-pwd' && (
               <>
                 <div className="space-y-1">
@@ -850,7 +726,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             )}
 
             {/* Terms agreement checkbox */}
-            {(mode === 'register' || mode === 'login-sms') && (
+            {mode === 'register' && (
               <div className="flex items-start gap-2 pt-1 text-xs text-zinc-500">
                 <input
                   type="checkbox"
@@ -892,7 +768,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 <>
                   <span>
                     {mode === 'login-pwd' && '立即安全登录'}
-                    {mode === 'login-sms' && '验证并登录'}
                     {mode === 'register' && '立即注册并领取新人特惠'}
                     {mode === 'forgot-pwd' && '发送重置邮件'}
                     {mode === 'reset-pwd' && '确认重置密码'}

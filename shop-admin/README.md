@@ -81,8 +81,9 @@ mvn -pl shop-identity,shop-trade,shop-boot -am test
 
 门户会员认证接口：
 
-- `POST /api/portal/auth/register`：账号密码注册，JSON 请求体 `{ "username": "alice", "password": "123456", "nickname": "Alice" }`
-- `POST /api/portal/auth/login`：用户名、手机号或邮箱登录，JSON 请求体 `{ "account": "alice", "password": "123456" }`
+- `POST /api/portal/auth/register`：账号密码注册，JSON 请求体 `{ "username": "alice@example.com", "password": "123456", "nickname": "Alice", "email": "alice@example.com", "phone": "13800138000" }`。`email` 为必填（登录凭证与密码找回通道），`phone` 选填
+- `POST /api/portal/auth/login`：用户名、手机号或邮箱登录，JSON 请求体 `{ "account": "alice@example.com", "password": "123456" }`
+- `POST /api/portal/auth/password-reset/request`：按 `{ "email": "alice@example.com" }` 发送一次性重置令牌；`POST /api/portal/auth/password-reset/confirm` 用 `{ "token": "...", "newPassword": "..." }` 完成重置
 - `POST /api/portal/auth/refresh`：使用登录返回的 `refreshToken` 换取新的访问令牌，刷新令牌轮换后旧令牌立即失效。
 - `POST /api/portal/auth/logout`：退出并失效当前访问令牌，可在请求体中传入 `{ "refreshToken": "..." }` 删除刷新令牌。
 - 登录返回的 `accessToken` 应在后续门户请求中通过 `Authorization: Bearer <token>` 携带；会员、购物车、订单和会员优惠券接口会校验 JWT 主体，不再信任客户端伪造的 `memberId`。Refresh Token 和访问令牌黑名单依赖 Redis，请确保 Redis 已启动并正确配置。

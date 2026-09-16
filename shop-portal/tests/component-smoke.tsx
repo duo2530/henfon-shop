@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { ProductCard } from '../src/components/ProductCard';
 import { sanitizeProductRichText } from '../src/components/ProductQuickView';
 import { HeroBanner } from '../src/components/HeroBanner';
-import { normalizeSmsPhone } from '../src/components/AuthModal';
+import { isEmail, AuthModal } from '../src/components/AuthModal';
 import type { Product } from '../src/types/ecommerce';
 
 const baseProduct: Product = {
@@ -74,10 +74,28 @@ assert.match(remoteBannerMarkup, /夏日清凉专题/);
 assert.match(remoteBannerMarkup, /限时活动/);
 assert.match(remoteBannerMarkup, /立即查看/);
 
-// 认证手机号输入应统一清理格式并拒绝超出 E.164 长度范围的异常号码。
-assert.equal(normalizeSmsPhone('+86', ' 138-0013-8000 '), '+8613800138000');
-assert.equal(normalizeSmsPhone('+86', '123'), null);
-assert.equal(normalizeSmsPhone('+86', '1234567890123456'), null);
+// 注册邮箱是登录凭证与密码找回通道，格式校验需拒绝缺域名、缺 @ 等输入。
+assert.equal(isEmail('buyer@example.com'), true);
+assert.equal(isEmail(' buyer@example.com '), true);
+assert.equal(isEmail('buyer@example'), false);
+assert.equal(isEmail('13800138000'), false);
+
+// 登录弹层只保留密码登录与注册两个入口，不再提供短信免密登录。
+const loginMarkup = renderToStaticMarkup(
+  <AuthModal isOpen onClose={() => undefined} onLoginSuccess={() => undefined} />,
+);
+assert.match(loginMarkup, /密码登录/);
+assert.match(loginMarkup, /新客注册/);
+assert.doesNotMatch(loginMarkup, /短信免密|短信验证码/);
+
+// 注册表单必须收集邮箱（登录凭证与密码找回通道），手机号降为选填。
+const registerMarkup = renderToStaticMarkup(
+  <AuthModal isOpen initialMode="register" onClose={() => undefined} onLoginSuccess={() => undefined} />,
+);
+assert.match(registerMarkup, /type="email"/);
+assert.match(registerMarkup, /邮箱/);
+assert.match(registerMarkup, /手机号/);
+assert.match(registerMarkup, /选填/);
 
 // 商品富文本应移除脚本和危险协议，同时保留常规排版标签。
 const richText = sanitizeProductRichText('<p>安全介绍</p><script>alert(1)</script><a href="javascript:alert(1)" onclick="evil()">查看</a>');
