@@ -879,11 +879,19 @@ export function deleteSystemDataRule(id: number): Promise<void> {
   return request<void>(`/api/admin/system/data-rules/${id}`, { method: 'DELETE' });
 }
 
-export function listCatalogProducts(params: { current?: number; size?: number; keyword?: string; status?: number } = {}): Promise<BackendPage<BackendCatalogProduct>> {
+export function listCatalogProducts(params: { current?: number; size?: number; keyword?: string; status?: number; categoryId?: number } = {}): Promise<BackendPage<BackendCatalogProduct>> {
   const query = new URLSearchParams({ current: String(params.current || 1), size: String(params.size || 200) });
   if (params.keyword) query.set('keyword', params.keyword);
   if (params.status !== undefined) query.set('status', String(params.status));
+  if (params.categoryId !== undefined) query.set('categoryId', String(params.categoryId));
   return request<BackendPage<BackendCatalogProduct>>(`/api/admin/catalog/products?${query.toString()}`);
+}
+
+/** 按商品ID批量查询，用于活动编辑时回显已选商品信息。 */
+export function listCatalogProductsByIds(ids: number[]): Promise<BackendCatalogProduct[]> {
+  const safeIds = Array.from(new Set(ids.filter((id) => Number.isFinite(id) && id > 0)));
+  if (safeIds.length === 0) return Promise.resolve([]);
+  return request<BackendCatalogProduct[]>(`/api/admin/catalog/products/batch?ids=${safeIds.join(',')}`);
 }
 
 export function listCatalogCategories(): Promise<BackendCatalogCategory[]> {

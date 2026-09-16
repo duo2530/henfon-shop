@@ -16,6 +16,7 @@ import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Objects;
 
 /**
  * 商品目录应用服务。
@@ -76,6 +77,36 @@ public class CatalogProductService {
         productPage.getRecords().forEach(product -> product.setMainImageUrl(
                 minioStorageService.resolveAccessUrl(product.getMainImageUrl())));
         return productPage;
+    }
+
+    /**
+     * 按主键批量查询商品。
+     *
+     * <p>调用方（如秒杀活动编辑）只持有商品主键，需要拿回名称与主图。主键去重后
+     * 限制在 200 个以内，避免超长 IN 查询。</p>
+     *
+     * @param ids 商品ID集合
+     * @return 命中的商品列表，未命中的ID自动忽略
+     * @author Henfon
+     * @date 2026-09-16
+     */
+    public List<CatalogProduct> listByIds(List<Long> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return List.of();
+        }
+        List<Long> safeIds = ids.stream()
+                .filter(Objects::nonNull)
+                .distinct()
+                .limit(200)
+                .toList();
+        if (safeIds.isEmpty()) {
+            return List.of();
+        }
+        List<CatalogProduct> products = catalogProductMapper.selectBatchIds(safeIds);
+        // 与分页查询保持一致：主图统一换发当前有效的预签名地址。
+        products.forEach(product -> product.setMainImageUrl(
+                minioStorageService.resolveAccessUrl(product.getMainImageUrl())));
+        return products;
     }
 
     /**

@@ -89,6 +89,23 @@ public class CatalogAdminController {
     }
 
     /**
+     * 按ID批量查询商品。
+     *
+     * <p>用于活动配置等场景回显已选商品的名称、主图与价格。明细表只保存商品主键，
+     * 不存在则自动忽略该ID，返回顺序不保证与入参一致。</p>
+     *
+     * @param ids 商品ID集合
+     * @return 商品列表
+     * @author Henfon
+     * @date 2026-09-16
+     */
+    @GetMapping("/products/batch")
+    @PreAuthorize("hasAuthority('catalog:product:query')")
+    public ApiResponse<List<CatalogProduct>> listProductsByIds(@RequestParam List<Long> ids) {
+        return ApiResponse.success(catalogProductService.listByIds(ids), requestId());
+    }
+
+    /**
      * 保存商品。
      *
      * @param request 商品保存请求
