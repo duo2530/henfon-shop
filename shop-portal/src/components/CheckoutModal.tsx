@@ -291,6 +291,13 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
   const handlePayOrder = async () => {
     if (!selectedAddress || isSubmitting) return;
+    // 秒杀商品必须独占结算：服务端要求订单内所有商品都在活动里，普通商品混进来会把
+    // 订单级 flashSaleId 丢掉，最终报的是「商品价格已变化」，和真实原因对不上。
+    const flashSaleIds = new Set(items.map((it) => it.flashSaleId).filter(Boolean));
+    if (flashSaleIds.size > 1 || (flashSaleIds.size === 1 && items.length > 1)) {
+      onPaymentFailure?.('秒杀商品需要单独结算，请取消勾选其他商品后重试');
+      return;
+    }
     setIsSubmitting(true);
 
     const orderNumber = `AO${Date.now()}`;

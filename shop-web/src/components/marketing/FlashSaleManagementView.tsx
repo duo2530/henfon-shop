@@ -108,12 +108,14 @@ function editForm(record: FlashSaleRecord): ActivityForm {
 /** 返回活动状态文本，启用状态下结合排期时间展示实时阶段。 */
 function statusText(status: number, startAt?: string, endAt?: string): string {
   if (status === 0) return '草稿';
-  if (status === 2) return '已停用';
   const now = Date.now();
   const start = startAt ? new Date(startAt).getTime() : NaN;
   const end = endAt ? new Date(endAt).getTime() : NaN;
-  if (Number.isFinite(start) && now < start) return '即将开始';
+  // 后端调度器把自然过期的活动也写成 2，时间判断必须排在状态判断之前，
+  // 否则「已结束」会显示成运营手动停用。
   if (Number.isFinite(end) && now > end) return '已结束';
+  if (status === 2) return '已停用';
+  if (Number.isFinite(start) && now < start) return '即将开始';
   return '进行中';
 }
 

@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.henfon.shop.common.exception.BusinessException;
+import com.henfon.shop.common.marketing.FlashSaleReservationService;
 import com.henfon.shop.trade.dto.TradeAfterSaleAuditRequest;
 import com.henfon.shop.trade.dto.TradeAfterSaleCreateRequest;
 import com.henfon.shop.trade.dto.TradeOrderRefundRequest;
@@ -16,6 +17,7 @@ import com.henfon.shop.trade.mapper.TradeOrderItemMapper;
 import com.henfon.shop.trade.mapper.TradeOrderMapper;
 import com.henfon.shop.integration.messaging.RocketMqTopics;
 import com.henfon.shop.inventory.service.InventoryStockService;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -50,6 +52,7 @@ public class TradeAfterSaleService {
     private final TradeOrderService tradeOrderService;
     private final TradeEventOutboxService tradeEventOutboxService;
     private final InventoryStockService inventoryStockService;
+    private final ObjectProvider<FlashSaleReservationService> flashSaleReservationServiceProvider;
 
     /**
      * 创建售后服务。
@@ -58,6 +61,9 @@ public class TradeAfterSaleService {
      * @param orderMapper 订单数据访问对象
      * @param orderItemMapper 订单明细数据访问对象
      * @param tradeOrderService 订单服务
+     * @param tradeEventOutboxService 领域事件 Outbox 服务
+     * @param inventoryStockService 库存台账服务
+     * @param flashSaleReservationServiceProvider 秒杀预占服务，营销模块未启用时为空
      * @author Henfon
      * @date 2026-08-30
      */
@@ -65,13 +71,15 @@ public class TradeAfterSaleService {
     public TradeAfterSaleService(TradeAfterSaleMapper afterSaleMapper, TradeOrderMapper orderMapper,
                                  TradeOrderItemMapper orderItemMapper, TradeOrderService tradeOrderService,
                                  TradeEventOutboxService tradeEventOutboxService,
-                                 InventoryStockService inventoryStockService) {
+                                 InventoryStockService inventoryStockService,
+                                 ObjectProvider<FlashSaleReservationService> flashSaleReservationServiceProvider) {
         this.afterSaleMapper = afterSaleMapper;
         this.orderMapper = orderMapper;
         this.orderItemMapper = orderItemMapper;
         this.tradeOrderService = tradeOrderService;
         this.tradeEventOutboxService = tradeEventOutboxService;
         this.inventoryStockService = inventoryStockService;
+        this.flashSaleReservationServiceProvider = flashSaleReservationServiceProvider;
     }
 
     /**
@@ -86,7 +94,7 @@ public class TradeAfterSaleService {
      */
     public TradeAfterSaleService(TradeAfterSaleMapper afterSaleMapper, TradeOrderMapper orderMapper,
                                  TradeOrderItemMapper orderItemMapper, TradeOrderService tradeOrderService) {
-        this(afterSaleMapper, orderMapper, orderItemMapper, tradeOrderService, null, null);
+        this(afterSaleMapper, orderMapper, orderItemMapper, tradeOrderService, null, null, null);
     }
 
     /**
@@ -228,6 +236,15 @@ public class TradeAfterSaleService {
                     throw new BusinessException("TRADE_AFTER_SALE_ITEM_INVALID", "退货订单明细缺少有效SKU或数量");
                 }
                 inventoryStockService.inboundReturn(returnItem.getSkuId(), returnItem.getQuantity(), afterSale.getAfterSaleNo());
+            }
+        }
+        // 退货入库时同步释放秒杀活动名额：普通库存已回补，活动已售量若不减，这个名额就永久消失。
+        // release 只处理未释放的预占且重复调用安全；退货粒度本身就是整条订单明细
+        // （售后单没有数量字段，不支持部分数量退货），秒杀单又恒为单明细单件，整单释放即等价。
+        if (flashSaleReservationServiceProvider != null) {
+            FlashSaleReservationService flashSaleReservationService = flashSaleReservationServiceProvider.getIfAvailable();
+            if (flashSaleReservationService != null) {
+                flashSaleReservationService.release(afterSale.getOrderId());
             }
         }
         TradeOrder order = tradeOrderService.findById(afterSale.getOrderId());

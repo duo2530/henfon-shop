@@ -7,8 +7,10 @@ import com.henfon.shop.trade.mapper.TradeOrderMapper;
 import com.henfon.shop.trade.entity.TradeOrder;
 import com.henfon.shop.trade.entity.TradeOrderItem;
 import com.henfon.shop.trade.dto.TradeOrderRefundRequest;
+import com.henfon.shop.common.marketing.FlashSaleReservationService;
 import com.henfon.shop.inventory.service.InventoryStockService;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.ObjectProvider;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -70,7 +72,7 @@ class TradeAfterSaleServiceTest {
     void shouldInboundStockWhenConfirmReturn() {
         InventoryStockService inventory = mock(InventoryStockService.class);
         TradeAfterSaleService inboundService = new TradeAfterSaleService(afterSaleMapper, orderMapper,
-                orderItemMapper, tradeOrderService, null, inventory);
+                orderItemMapper, tradeOrderService, null, inventory, null);
         TradeAfterSale afterSale = new TradeAfterSale();
         afterSale.setId(11L);
         afterSale.setOrderId(21L);
@@ -108,7 +110,7 @@ class TradeAfterSaleServiceTest {
     void shouldInboundAllItemsWhenConfirmWholeOrderReturn() {
         InventoryStockService inventory = mock(InventoryStockService.class);
         TradeAfterSaleService inboundService = new TradeAfterSaleService(afterSaleMapper, orderMapper,
-                orderItemMapper, tradeOrderService, null, inventory);
+                orderItemMapper, tradeOrderService, null, inventory, null);
         TradeAfterSale afterSale = new TradeAfterSale();
         afterSale.setId(12L);
         afterSale.setOrderId(22L);
@@ -128,5 +130,46 @@ class TradeAfterSaleServiceTest {
 
         verify(inventory).inboundReturn(51L, 1, "AS-12");
         verify(inventory).inboundReturn(52L, 3, "AS-12");
+    }
+
+    /**
+     * 退货入库确认时释放秒杀活动名额，避免售后完成后活动已售量虚高、名额永久占用。
+     *
+     * @author Henfon
+     * @date 2026-09-17
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void shouldReleaseFlashSaleReservationWhenConfirmReturn() {
+        InventoryStockService inventory = mock(InventoryStockService.class);
+        FlashSaleReservationService flashSale = mock(FlashSaleReservationService.class);
+        ObjectProvider<FlashSaleReservationService> provider = mock(ObjectProvider.class);
+        when(provider.getIfAvailable()).thenReturn(flashSale);
+        TradeAfterSaleService returnService = new TradeAfterSaleService(afterSaleMapper, orderMapper,
+                orderItemMapper, tradeOrderService, null, inventory, provider);
+        TradeAfterSale afterSale = new TradeAfterSale();
+        afterSale.setId(13L);
+        afterSale.setOrderId(23L);
+        afterSale.setOrderItemId(33L);
+        afterSale.setAfterSaleType(2);
+        afterSale.setStatus(20);
+        afterSale.setRefundAmount(new BigDecimal("20.00"));
+        afterSale.setAfterSaleNo("AS-13");
+        TradeOrderItem item = new TradeOrderItem();
+        item.setId(33L);
+        item.setOrderId(23L);
+        item.setSkuId(43L);
+        item.setQuantity(1);
+        TradeOrder order = new TradeOrder();
+        order.setId(23L);
+        order.setOrderStatus(20);
+        when(afterSaleMapper.selectById(13L)).thenReturn(afterSale);
+        when(orderItemMapper.selectOne(any())).thenReturn(item);
+        when(tradeOrderService.findById(23L)).thenReturn(order);
+        when(afterSaleMapper.updateById(any(TradeAfterSale.class))).thenReturn(1);
+
+        returnService.confirmReturn(13L, "退货入库");
+
+        verify(flashSale).release(23L);
     }
 }

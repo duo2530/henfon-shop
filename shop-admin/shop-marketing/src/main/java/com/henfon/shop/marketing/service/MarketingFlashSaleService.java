@@ -13,6 +13,7 @@ import com.henfon.shop.catalog.mapper.CatalogProductMapper;
 import com.henfon.shop.catalog.mapper.CatalogSkuMapper;
 import com.henfon.shop.identity.entity.MemberUser;
 import com.henfon.shop.identity.mapper.MemberUserMapper;
+import com.henfon.shop.inventory.service.InventoryStockService;
 import com.henfon.shop.marketing.dto.MarketingFlashSaleDetailResponse;
 import com.henfon.shop.marketing.dto.MarketingFlashSaleItemRow;
 import com.henfon.shop.marketing.dto.MarketingFlashSaleReservationRow;
@@ -67,6 +68,8 @@ public class MarketingFlashSaleService implements FlashSaleReservationService {
     private final CatalogSkuMapper skuMapper;
     private final MemberUserMapper memberUserMapper;
     private final TradeOrderMapper tradeOrderMapper;
+    private final InventoryStockService inventoryStockService;
+    private final FlashSalePortalCache portalCache;
 
     /**
      * 创建秒杀活动服务。
@@ -78,13 +81,17 @@ public class MarketingFlashSaleService implements FlashSaleReservationService {
      * @param skuMapper 商品SKU数据访问对象
      * @param memberUserMapper 会员数据访问对象，用于详情页回填会员名称
      * @param tradeOrderMapper 订单数据访问对象，用于详情页回填订单编号
+     * @param inventoryStockService 库存台账服务，用于按可用库存校验活动配额
+     * @param portalCache 门户秒杀列表缓存，配置变更后需要主动清除
      * @author Henfon
      * @date 2026-08-31
      */
     public MarketingFlashSaleService(MarketingFlashSaleMapper activityMapper, MarketingFlashSaleItemMapper itemMapper,
                                      MarketingFlashSaleReservationMapper reservationMapper,
                                      CatalogProductMapper productMapper, CatalogSkuMapper skuMapper,
-                                     MemberUserMapper memberUserMapper, TradeOrderMapper tradeOrderMapper) {
+                                     MemberUserMapper memberUserMapper, TradeOrderMapper tradeOrderMapper,
+                                     InventoryStockService inventoryStockService,
+                                     FlashSalePortalCache portalCache) {
         this.activityMapper = activityMapper;
         this.itemMapper = itemMapper;
         this.reservationMapper = reservationMapper;
@@ -92,6 +99,8 @@ public class MarketingFlashSaleService implements FlashSaleReservationService {
         this.skuMapper = skuMapper;
         this.memberUserMapper = memberUserMapper;
         this.tradeOrderMapper = tradeOrderMapper;
+        this.inventoryStockService = inventoryStockService;
+        this.portalCache = portalCache;
     }
 
     /**
@@ -135,7 +144,8 @@ public class MarketingFlashSaleService implements FlashSaleReservationService {
             }
             MarketingFlashSaleItem item = matchActivityItem(activityId, requestItem.productId(), requestItem.skuId());
             if (item == null) {
-                throw new BusinessException("MARKETING_FLASH_SALE_ITEM_INVALID", "商品不在当前秒杀活动中");
+                throw new BusinessException("MARKETING_FLASH_SALE_ITEM_INVALID",
+                        "商品 #" + requestItem.productId() + " 不在当前秒杀活动中，秒杀订单不能混入其他商品");
             }
             if (requestItem.unitPrice() == null || item.getActivityPrice() == null
                     || item.getActivityPrice().setScale(2).compareTo(requestItem.unitPrice().setScale(2)) != 0) {
@@ -685,15 +695,17 @@ public class MarketingFlashSaleService implements FlashSaleReservationService {
         if (status == null || status == 0) {
             return "草稿";
         }
+        LocalDateTime now = LocalDateTime.now();
+        // 调度器收口自然过期的活动时同样写 status=2，所以时间判断要排在状态判断之前，
+        // 否则已结束的活动会被展示成运营手动停用。
+        if (activity.getEndAt() != null && now.isAfter(activity.getEndAt())) {
+            return "已结束";
+        }
         if (status == 2) {
             return "已停用";
         }
-        LocalDateTime now = LocalDateTime.now();
         if (activity.getStartAt() != null && now.isBefore(activity.getStartAt())) {
             return "即将开始";
-        }
-        if (activity.getEndAt() != null && now.isAfter(activity.getEndAt())) {
-            return "已结束";
         }
         return "进行中";
     }
@@ -775,6 +787,18 @@ public class MarketingFlashSaleService implements FlashSaleReservationService {
     }
 
     /**
+     * 空值归零。
+     *
+     * @param value 待处理值
+     * @return 非空值或 0
+     * @author Henfon
+     * @date 2026-09-17
+     */
+    private static int zeroIfNull(Integer value) {
+        return value == null ? 0 : value;
+    }
+
+    /**
      * 保存秒杀活动及其商品明细。
      *
      * @param request 活动保存请求
@@ -832,6 +856,8 @@ public class MarketingFlashSaleService implements FlashSaleReservationService {
             item.setStatus(requestItem.status());
             itemMapper.insert(item);
         }
+        // 明细是整体重写，门户缓存必须立即失效，否则门户还会按旧价格、旧库存展示。
+        portalCache.evict();
         return activity.getId();
     }
 
@@ -849,10 +875,16 @@ public class MarketingFlashSaleService implements FlashSaleReservationService {
             throw new BusinessException("MARKETING_FLASH_SALE_STATUS_INVALID", "活动状态必须为 0、1 或 2");
         }
         MarketingFlashSale activity = requireActivity(id);
+        if (Integer.valueOf(1).equals(status)) {
+            // 启用是对外承诺库存的时刻，按最新可用量复校一次，避免保存后被普通订单买空仍照常上线。
+            validateActivityAvailableStock(activity);
+        }
         activity.setStatus(status);
         if (activityMapper.updateById(activity) == 0) {
             throw new BusinessException("MARKETING_FLASH_SALE_CONCURRENT", "活动已被其他操作修改，请刷新后重试");
         }
+        // 启停直接决定活动是否出现在门户，缓存必须立即失效。
+        portalCache.evict();
     }
 
     /**
@@ -871,6 +903,8 @@ public class MarketingFlashSaleService implements FlashSaleReservationService {
         itemMapper.delete(new LambdaQueryWrapper<MarketingFlashSaleItem>()
                 .eq(MarketingFlashSaleItem::getActivityId, id));
         activityMapper.deleteById(id);
+        // 删除后门户不应再展示该活动，缓存立即失效。
+        portalCache.evict();
     }
 
     /**
@@ -923,16 +957,67 @@ public class MarketingFlashSaleService implements FlashSaleReservationService {
      * @date 2026-09-12
      */
     private void validateAvailableStock(MarketingFlashSaleSaveRequest.Item item, int soldStock) {
-        int availableStock;
-        if (item.skuId() == null) {
-            CatalogProduct product = productMapper.selectById(item.productId());
-            availableStock = product == null || product.getCurrentStock() == null ? 0 : product.getCurrentStock();
-        } else {
-            CatalogSku sku = skuMapper.selectById(item.skuId());
-            availableStock = sku == null || sku.getStock() == null ? 0 : sku.getStock();
-        }
+        int availableStock = resolveAvailableStock(item.productId(), item.skuId());
         if (item.totalStock() - soldStock > availableStock) {
-            throw new BusinessException("MARKETING_FLASH_SALE_STOCK_INVALID", "活动库存不能超过商品当前可用库存");
+            throw new BusinessException("MARKETING_FLASH_SALE_STOCK_INVALID",
+                    "活动库存不能超过商品当前可用库存（可用 " + availableStock + "）");
+        }
+    }
+
+    /**
+     * 解析活动明细对应的可用库存上限。
+     *
+     * <p>口径必须与下单扣减一致，取 inventory 台账的可用量：catalog 的 stock 字段是期初总库存，
+     * 订单只改 inventory_stock，用它会随销量积累持续高估。明细未指定 SKU 时语义是该商品任意 SKU
+     * 参与，而下单扣减针对请求里的具体 SKU，因此上限取商品下全部启用 SKU 的可用量之和。</p>
+     *
+     * @param productId 商品ID
+     * @param skuId SKU ID，可为空
+     * @return 可用库存
+     * @author Henfon
+     * @date 2026-09-17
+     */
+    private int resolveAvailableStock(Long productId, Long skuId) {
+        if (skuId != null) {
+            return inventoryStockService.availableStock(skuId);
+        }
+        List<CatalogSku> skus = skuMapper.selectList(new LambdaQueryWrapper<CatalogSku>()
+                .eq(CatalogSku::getProductId, productId)
+                .eq(CatalogSku::getStatus, 1));
+        if (skus == null || skus.isEmpty()) {
+            // 商品没有启用 SKU 时不存在可售单位，活动配额只能配 0。
+            return 0;
+        }
+        return inventoryStockService.availableStockBySkuIds(skus.stream().map(CatalogSku::getId).toList())
+                .values().stream().mapToInt(Integer::intValue).sum();
+    }
+
+    /**
+     * 校验活动剩余名额不超过明细对应商品的当前可用库存。
+     *
+     * <p>保存到启用之间库存可能被普通订单买走，而启用才是对外承诺库存的时刻，所以启用前再校一次。
+     * 剩余量已为 0 的明细跳过，避免历史售罄明细卡住启用操作。</p>
+     *
+     * @param activity 活动
+     * @author Henfon
+     * @date 2026-09-17
+     */
+    private void validateActivityAvailableStock(MarketingFlashSale activity) {
+        List<MarketingFlashSaleItem> items = itemMapper.selectList(new LambdaQueryWrapper<MarketingFlashSaleItem>()
+                .eq(MarketingFlashSaleItem::getActivityId, activity.getId()));
+        if (items == null) {
+            return;
+        }
+        for (MarketingFlashSaleItem item : items) {
+            int remaining = zeroIfNull(item.getTotalStock()) - zeroIfNull(item.getSoldStock());
+            if (remaining <= 0) {
+                continue;
+            }
+            int available = resolveAvailableStock(item.getProductId(), item.getSkuId());
+            if (remaining > available) {
+                throw new BusinessException("MARKETING_FLASH_SALE_STOCK_INVALID",
+                        "商品 " + item.getProductId() + " 的活动剩余库存超过当前可用库存（可用 " + available + "）");
+            }
         }
     }
 

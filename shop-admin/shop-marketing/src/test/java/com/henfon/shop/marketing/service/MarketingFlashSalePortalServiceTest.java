@@ -6,6 +6,7 @@ import com.henfon.shop.catalog.entity.CatalogProduct;
 import com.henfon.shop.catalog.mapper.CatalogProductMapper;
 import com.henfon.shop.catalog.mapper.CatalogSkuMapper;
 import com.henfon.shop.integration.storage.MinioStorageService;
+import com.henfon.shop.marketing.dto.MarketingFlashSalePortalResponse;
 import com.henfon.shop.marketing.mapper.MarketingFlashSaleItemMapper;
 import com.henfon.shop.marketing.mapper.MarketingFlashSaleMapper;
 import org.junit.jupiter.api.BeforeEach;
@@ -19,6 +20,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
@@ -34,8 +37,9 @@ class MarketingFlashSalePortalServiceTest {
     private final CatalogProductMapper productMapper = mock(CatalogProductMapper.class);
     private final CatalogSkuMapper skuMapper = mock(CatalogSkuMapper.class);
     private final MinioStorageService minioStorageService = mock(MinioStorageService.class);
+    private final FlashSalePortalCache portalCache = mock(FlashSalePortalCache.class);
     private final MarketingFlashSalePortalService service = new MarketingFlashSalePortalService(activityMapper, itemMapper,
-            productMapper, skuMapper, minioStorageService);
+            productMapper, skuMapper, minioStorageService, portalCache);
 
     /**
      * 隔离对象存储，图片地址续签在测试中原样返回。
@@ -46,6 +50,8 @@ class MarketingFlashSalePortalServiceTest {
     @BeforeEach
     void stubStorage() {
         when(minioStorageService.resolveAccessUrl(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        // Mockito 对 List 返回值默认返回空集合而不是 null，不显式声明会把缓存误判成命中。
+        when(portalCache.get()).thenReturn(null);
     }
 
     /**
@@ -107,5 +113,25 @@ class MarketingFlashSalePortalServiceTest {
         when(itemMapper.selectList(any())).thenReturn(List.of());
 
         assertTrue(service.activeFlashSales().isEmpty());
+    }
+
+    /**
+     * 验证缓存命中时直接返回缓存内容，不再访问数据库，也不重复写缓存。
+     *
+     * @author Henfon
+     * @date 2026-09-17
+     */
+    @Test
+    void shouldReturnCachedActivitiesWithoutDatabaseQuery() {
+        MarketingFlashSalePortalResponse cached = new MarketingFlashSalePortalResponse(10L, "FLASH-001", "午间秒杀",
+                LocalDateTime.now(), LocalDateTime.now().plusMinutes(30), 2, List.of());
+        when(portalCache.get()).thenReturn(List.of(cached));
+
+        var result = service.activeFlashSales();
+
+        assertEquals(1, result.size());
+        assertEquals("FLASH-001", result.get(0).activityCode());
+        verify(activityMapper, never()).selectList(any());
+        verify(portalCache, never()).put(any());
     }
 }

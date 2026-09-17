@@ -20,6 +20,9 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -401,6 +404,52 @@ public class InventoryStockService {
             throw new BusinessException("INVENTORY_CONCURRENT_UPDATE", "库存已被其他操作修改，请刷新后重试");
         }
         return stock;
+    }
+
+    /**
+     * 批量查询指定 SKU 的可用库存。
+     *
+     * <p>口径与下单预占一致，只取默认仓库台账。活动库存校验必须与扣减同源，
+     * 否则会把总库存当成可用库存，放行超出实际可售量的活动配额。</p>
+     *
+     * @param skuIds SKU ID 集合
+     * @return SKU ID 到可用库存的映射，没有台账的 SKU 不出现在结果中
+     * @author Henfon
+     * @date 2026-09-17
+     */
+    public Map<Long, Integer> availableStockBySkuIds(Collection<Long> skuIds) {
+        if (skuIds == null || skuIds.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        List<InventoryStock> stocks = stockMapper.selectList(new LambdaQueryWrapper<InventoryStock>()
+                .eq(InventoryStock::getWarehouseId, defaultWarehouse().getId())
+                .in(InventoryStock::getSkuId, skuIds));
+        if (stocks == null || stocks.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        Map<Long, Integer> result = new HashMap<>();
+        for (InventoryStock stock : stocks) {
+            if (stock.getSkuId() != null && stock.getAvailableStock() != null) {
+                result.put(stock.getSkuId(), stock.getAvailableStock());
+            }
+        }
+        return result;
+    }
+
+    /**
+     * 查询单个 SKU 的可用库存。
+     *
+     * @param skuId SKU ID
+     * @return 可用库存，没有台账时返回 0
+     * @author Henfon
+     * @date 2026-09-17
+     */
+    public int availableStock(Long skuId) {
+        if (skuId == null) {
+            return 0;
+        }
+        Integer available = availableStockBySkuIds(Collections.singletonList(skuId)).get(skuId);
+        return available == null ? 0 : available;
     }
 
     /**

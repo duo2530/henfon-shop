@@ -1059,7 +1059,9 @@ public class TradeOrderService {
             boolean flashSaleOrder = request.flashSaleId() != null;
             if (!flashSaleOrder && (actualPrice == null || item.unitPrice() == null || actualPrice.setScale(2, RoundingMode.HALF_UP)
                     .compareTo(item.unitPrice().setScale(2, RoundingMode.HALF_UP)) != 0)) {
-                throw new BusinessException("TRADE_PRICE_CHANGED", "商品价格已变化，请刷新后重试");
+                // 秒杀价低于商品原价，未带 flashSaleId 的秒杀商品同样会走到这里，
+                // 文案要同时覆盖「价格确实变了」和「秒杀商品混进了普通结算」两种成因。
+                throw new BusinessException("TRADE_PRICE_CHANGED", "商品价格已变化，请刷新后重试；秒杀商品需单独结算");
             }
             if (stock == null || stock < item.quantity()) {
                 throw new BusinessException("TRADE_STOCK_NOT_ENOUGH", "商品库存不足，请减少购买数量");

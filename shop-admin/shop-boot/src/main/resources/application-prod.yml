@@ -55,6 +55,11 @@ shop:
     flash-sale-warmup-scan-ms: ${SHOP_FLASH_SALE_WARMUP_SCAN_MS:60000}
     flash-sale-warmup-initial-delay-ms: ${SHOP_FLASH_SALE_WARMUP_INITIAL_DELAY_MS:15000}
     flash-sale-warmup-minutes: ${SHOP_FLASH_SALE_WARMUP_MINUTES:30}
+    # 门户秒杀与下单接口限流：生产默认开启，阈值按单 IP 峰值请求数调整，
+    # 同一出口 IP 的用户较多时（企业网、移动网络）需要上调。
+    flash-sale-rate-limit-enabled: ${SHOP_FLASH_SALE_RATE_LIMIT_ENABLED:true}
+    flash-sale-rate-limit-limit: ${SHOP_FLASH_SALE_RATE_LIMIT_LIMIT:300}
+    flash-sale-rate-limit-window-seconds: ${SHOP_FLASH_SALE_RATE_LIMIT_WINDOW_SECONDS:60}
   notification:
     email:
       enabled: ${SHOP_EMAIL_NOTIFICATION_ENABLED:false}

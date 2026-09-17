@@ -36,6 +36,7 @@ public class MarketingFlashSalePortalService {
     private final CatalogProductMapper productMapper;
     private final CatalogSkuMapper skuMapper;
     private final MinioStorageService minioStorageService;
+    private final FlashSalePortalCache portalCache;
 
     /**
      * 创建门户秒杀查询服务。
@@ -45,6 +46,7 @@ public class MarketingFlashSalePortalService {
      * @param productMapper 商品目录数据访问对象
      * @param skuMapper 商品SKU数据访问对象
      * @param minioStorageService MinIO 文件服务
+     * @param portalCache 门户秒杀列表缓存
      * @author Henfon
      * @date 2026-09-01
      */
@@ -52,22 +54,41 @@ public class MarketingFlashSalePortalService {
                                            MarketingFlashSaleItemMapper itemMapper,
                                            CatalogProductMapper productMapper,
                                            CatalogSkuMapper skuMapper,
-                                           MinioStorageService minioStorageService) {
+                                           MinioStorageService minioStorageService,
+                                           FlashSalePortalCache portalCache) {
         this.activityMapper = activityMapper;
         this.itemMapper = itemMapper;
         this.productMapper = productMapper;
         this.skuMapper = skuMapper;
         this.minioStorageService = minioStorageService;
+        this.portalCache = portalCache;
     }
 
     /**
-     * 查询当前时间窗口内仍有可售商品的秒杀活动。
+     * 查询当前时间窗口内仍有可售商品的秒杀活动，优先走缓存。
      *
      * @return 门户秒杀活动列表
      * @author Henfon
      * @date 2026-09-01
      */
     public List<MarketingFlashSalePortalResponse> activeFlashSales() {
+        List<MarketingFlashSalePortalResponse> cached = portalCache.get();
+        if (cached != null) {
+            return cached;
+        }
+        List<MarketingFlashSalePortalResponse> result = loadActiveFlashSales();
+        portalCache.put(result);
+        return result;
+    }
+
+    /**
+     * 回源查询进行中且仍有可售商品的秒杀活动。
+     *
+     * @return 门户秒杀活动列表
+     * @author Henfon
+     * @date 2026-09-17
+     */
+    private List<MarketingFlashSalePortalResponse> loadActiveFlashSales() {
         LocalDateTime now = LocalDateTime.now();
         List<MarketingFlashSale> activities = activityMapper.selectList(new LambdaQueryWrapper<MarketingFlashSale>()
                 .eq(MarketingFlashSale::getStatus, 1)

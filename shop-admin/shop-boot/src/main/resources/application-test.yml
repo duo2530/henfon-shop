@@ -50,6 +50,9 @@ shop:
     flash-sale-warmup-scan-ms: ${SHOP_TEST_FLASH_SALE_WARMUP_SCAN_MS:60000}
     flash-sale-warmup-initial-delay-ms: ${SHOP_TEST_FLASH_SALE_WARMUP_INITIAL_DELAY_MS:15000}
     flash-sale-warmup-minutes: ${SHOP_TEST_FLASH_SALE_WARMUP_MINUTES:30}
+    flash-sale-rate-limit-enabled: ${SHOP_TEST_FLASH_SALE_RATE_LIMIT_ENABLED:false}
+    flash-sale-rate-limit-limit: ${SHOP_TEST_FLASH_SALE_RATE_LIMIT_LIMIT:120}
+    flash-sale-rate-limit-window-seconds: ${SHOP_TEST_FLASH_SALE_RATE_LIMIT_WINDOW_SECONDS:60}
   notification:
     email:
       enabled: ${SHOP_TEST_EMAIL_NOTIFICATION_ENABLED:false}
