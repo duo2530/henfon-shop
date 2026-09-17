@@ -8,6 +8,8 @@ import com.henfon.shop.marketing.mapper.MarketingFlashSaleMapper;
 import com.henfon.shop.marketing.mapper.MarketingFlashSaleReservationMapper;
 import com.henfon.shop.catalog.mapper.CatalogProductMapper;
 import com.henfon.shop.catalog.mapper.CatalogSkuMapper;
+import com.henfon.shop.identity.mapper.MemberUserMapper;
+import com.henfon.shop.trade.mapper.TradeOrderMapper;
 import com.henfon.shop.common.exception.BusinessException;
 import com.henfon.shop.common.marketing.FlashSaleReservationItem;
 import org.junit.jupiter.api.Test;
@@ -38,8 +40,10 @@ class MarketingFlashSaleServiceTest {
     private final MarketingFlashSaleReservationMapper reservationMapper = mock(MarketingFlashSaleReservationMapper.class);
     private final CatalogProductMapper productMapper = mock(CatalogProductMapper.class);
     private final CatalogSkuMapper skuMapper = mock(CatalogSkuMapper.class);
+    private final MemberUserMapper memberUserMapper = mock(MemberUserMapper.class);
+    private final TradeOrderMapper tradeOrderMapper = mock(TradeOrderMapper.class);
     private final MarketingFlashSaleService service = new MarketingFlashSaleService(activityMapper, itemMapper,
-            reservationMapper, productMapper, skuMapper);
+            reservationMapper, productMapper, skuMapper, memberUserMapper, tradeOrderMapper);
 
     /**
      * 验证同一订单重复预占时直接幂等返回，不重复扣减库存。

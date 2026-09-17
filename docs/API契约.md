@@ -92,7 +92,7 @@ HTTP 状态：成功 2xx；参数/业务错误 400；认证失败 401；无权�
 
 - 门户：`GET /api/portal/marketing/coupons|member-coupons`、`GET /api/portal/marketing/flash-sales`、`POST /coupons/{couponId}/claim`、`POST /coupons/redeem|rollback`。秒杀查询只返回当前时间窗口内启用且仍有可售库存的活动，并携带活动价、限购和剩余库存；领取时校验单会员领取上限和发行总量；核销时服务端校验优惠券适用类目；订单取消可主动回滚，订单全额退款成功事件会自动幂等回滚已核销优惠券。
 - 管理优惠券：`GET/POST /api/admin/marketing/coupons`（分页/保存）、`PUT /{id}/status`、`DELETE /{id}`。
-- 管理秒杀：`GET /api/admin/marketing/flash-sales`、`GET /{id}/items`、`POST /`、`PUT /{id}/status`、`DELETE /{id}`。
+- 管理秒杀：`GET /api/admin/marketing/flash-sales`（分页）、`GET /{id}`（活动详情，含库存与预占聚合统计）、`GET /{id}/items`（列表页筛选用的原始明细）、`GET /{id}/items/page`（分页明细，补齐商品与规格名称、原价与折扣率）、`GET /{id}/reservations`（预占记录分页，`statusText` 取 `reserved`/`released`，越界取值直接报错而不退化为全部）、`POST /`、`PUT /{id}/status`、`DELETE /{id}`。三个详情类接口接受 `marketing:flash:query` 或 `marketing:flash:detail`。
 
 ### shop-content（Banner、评价、通知）
 
@@ -119,7 +119,7 @@ HTTP 状态：成功 2xx；参数/业务错误 400；认证失败 401；无权�
 
 - 任务：`POST /api/admin/export/tasks` 提交（`export:task:create` + 该数据类型的导出权限）、`GET /api/admin/export/tasks` 分页查询（`export:task:query`）、`POST /api/admin/export/tasks/{taskId}/retry` 重试、`DELETE /api/admin/export/tasks/{taskId}` 移除（后两者需 `export:task:create`）。
 - 取件：`GET /api/admin/export/tasks/{taskId}/file`（`export:task:download`），由服务端流式转发对象存储中的文件并回填 `Content-Disposition` 文件名，不使用预签名直链。下载、重试、移除除任务权限外还要校验任务归属与该任务所属类型的导出权限。
-- 数据类型九类，导出权限编码依次为 `catalog:product:export`、`trade:order:export`、`member:user:export`、`marketing:coupon:export`、`payment:transaction:export`、`reporting:product:export`、`system:audit:login:export`、`system:audit:operation:export`、`inventory:stock:export`。
+- 数据类型十一类（对应十个权限编码，秒杀的商品明细与预占记录共用一个），导出权限编码依次为 `catalog:product:export`、`trade:order:export`、`member:user:export`、`marketing:coupon:export`、`payment:transaction:export`、`reporting:product:export`、`system:audit:login:export`、`system:audit:operation:export`、`inventory:stock:export`、`marketing:flash:export`。条件新增 `activityId`：`FLASH_SALE_ITEM` 与 `FLASH_SALE_RESERVATION` 两类均以其收窄范围，缺省时任务失败并提示从活动详情页发起。
 - 提交返回任务对象，状态依次为 `PENDING`、`RUNNING`、`SUCCESS` 或 `FAILED`；产出为 xlsx（表头样式、冻结首行、自动筛选），单文件上限 200000 行。文件默认保留 7 天（`shop.export.retention-days`），到期清理对象并置 `EXPIRED`。提交时的筛选条件原样存入 `export_task.query_params` 以便追溯。
 
 ## 7. 兼容与变更

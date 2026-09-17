@@ -38,7 +38,13 @@ public enum ExportType {
     OPERATION_LOG("系统操作审计日志", "操作日志", "system:audit:operation:export"),
 
     /** 库存流水明细。 */
-    STOCK_LOG("库存流水明细", "库存流水", "inventory:stock:export");
+    STOCK_LOG("库存流水明细", "库存流水", "inventory:stock:export"),
+
+    /** 单个秒杀活动的商品明细。 */
+    FLASH_SALE_ITEM("秒杀活动商品明细", "秒杀商品", "marketing:flash:export"),
+
+    /** 单个秒杀活动的库存预占记录。 */
+    FLASH_SALE_RESERVATION("秒杀活动预占记录", "秒杀预占", "marketing:flash:export");
 
     private final String displayName;
 

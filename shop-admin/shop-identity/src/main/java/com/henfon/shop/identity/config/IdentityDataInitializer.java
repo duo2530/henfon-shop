@@ -406,6 +406,14 @@ public class IdentityDataInitializer implements ApplicationRunner {
             }
             menus.add(menu);
         }
+        // 秒杀活动详情是列表页操作列上的「详情」入口，不占独立菜单项，因此登记为按钮权限而不是 MENU：
+        // 侧边栏只渲染 MENU，故多出的权限点不会在导航里显示。
+        // normalizeMenu 会把早期版本误建成的 MENU 记录原地改写成 BUTTON（ensureMenu 只增不改，
+        // 不做这一步旧库会长期残留一个指向已删路由的孤儿菜单页）。
+        SysMenu flashDetailButton = ensureMenu("秒杀活动详情", "BUTTON", "marketing:flash:detail", null, 106);
+        normalizeMenu(flashDetailButton, "秒杀活动详情", "BUTTON", "marketing:flash:detail", null, 106,
+                marketing.getId(), null, null);
+        menus.add(flashDetailButton);
         // 审计日志分别作为独立菜单页面，权限编码继续复用后端查询接口的鉴权规则。
         SysMenu loginLogs = ensureMenu("登录记录", "MENU", "system:audit:login", "/settings/login-logs", 2,
                 settings.getId(), "LoginLogManagementView", "LogIn");
@@ -465,6 +473,9 @@ public class IdentityDataInitializer implements ApplicationRunner {
         }, ecommerce.getId(), 107);
         ensureChildButtons(menus, new String[][]{{"优惠券导出", "marketing:coupon:export"}},
                 marketing.getId(), 104);
+        // 秒杀明细与预占记录两类导出共用一个权限点：详情页只有一个导出入口，拆成两个权限只会增加授权负担。
+        ensureChildButtons(menus, new String[][]{{"秒杀活动导出", "marketing:flash:export"}},
+                marketing.getId(), 105);
         ensureChildButtons(menus, new String[][]{{"库存流水导出", "inventory:stock:export"}},
                 inventory.getId(), 106);
         ensureChildButtons(menus, new String[][]{{"资金流水导出", "payment:transaction:export"}},

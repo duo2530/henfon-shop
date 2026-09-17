@@ -2,6 +2,9 @@ package com.henfon.shop.marketing.controller;
 
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.henfon.shop.common.api.ApiResponse;
+import com.henfon.shop.marketing.dto.MarketingFlashSaleDetailResponse;
+import com.henfon.shop.marketing.dto.MarketingFlashSaleItemRow;
+import com.henfon.shop.marketing.dto.MarketingFlashSaleReservationRow;
 import com.henfon.shop.marketing.dto.MarketingFlashSaleSaveRequest;
 import com.henfon.shop.marketing.entity.MarketingFlashSale;
 import com.henfon.shop.marketing.entity.MarketingFlashSaleItem;
@@ -77,6 +80,64 @@ public class MarketingFlashSaleAdminController {
     @PreAuthorize("hasAuthority('marketing:flash:query')")
     public ApiResponse<List<MarketingFlashSaleItem>> listItems(@PathVariable Long id) {
         return ApiResponse.success(flashSaleService.listItems(id), MDC.get("requestId"));
+    }
+
+    /**
+     * 查询活动详情与汇总统计。
+     *
+     * @param id 活动ID
+     * @return 活动详情
+     * @author Henfon
+     * @date 2026-09-17
+     */
+    @GetMapping("/{id}")
+    @PreAuthorize("hasAnyAuthority('marketing:flash:query', 'marketing:flash:detail')")
+    public ApiResponse<MarketingFlashSaleDetailResponse> detail(@PathVariable Long id) {
+        return ApiResponse.success(flashSaleService.detail(id), MDC.get("requestId"));
+    }
+
+    /**
+     * 分页查询活动商品明细，附带商品与规格名称。
+     *
+     * <p>与 {@code GET /{id}/items} 的区别：后者返回列表页筛选用的原始明细，
+     * 这里按页返回并补齐名称与折扣，供详情页展示与导出复用。</p>
+     *
+     * @param id 活动ID
+     * @param current 当前页
+     * @param size 页大小
+     * @return 活动商品明细分页结果
+     * @author Henfon
+     * @date 2026-09-17
+     */
+    @GetMapping("/{id}/items/page")
+    @PreAuthorize("hasAnyAuthority('marketing:flash:query', 'marketing:flash:detail')")
+    public ApiResponse<IPage<MarketingFlashSaleItemRow>> pageItems(
+            @PathVariable Long id,
+            @RequestParam(defaultValue = "1") long current,
+            @RequestParam(defaultValue = "20") long size) {
+        return ApiResponse.success(flashSaleService.pageItems(id, current, size), MDC.get("requestId"));
+    }
+
+    /**
+     * 分页查询活动预占记录。
+     *
+     * @param id 活动ID
+     * @param statusText 预占状态，取 reserved/released，为空表示不限
+     * @param current 当前页
+     * @param size 页大小
+     * @return 预占记录分页结果
+     * @author Henfon
+     * @date 2026-09-17
+     */
+    @GetMapping("/{id}/reservations")
+    @PreAuthorize("hasAnyAuthority('marketing:flash:query', 'marketing:flash:detail')")
+    public ApiResponse<IPage<MarketingFlashSaleReservationRow>> pageReservations(
+            @PathVariable Long id,
+            @RequestParam(required = false) String statusText,
+            @RequestParam(defaultValue = "1") long current,
+            @RequestParam(defaultValue = "20") long size) {
+        return ApiResponse.success(flashSaleService.pageReservations(id, statusText, current, size),
+                MDC.get("requestId"));
     }
 
     /**

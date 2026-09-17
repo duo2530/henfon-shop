@@ -11,7 +11,8 @@ import java.time.LocalDate;
  * @param keyword 关键字，含义随导出类型而定
  * @param status 数值型状态，含义随导出类型而定
  * @param statusText 文本型状态，含义随导出类型而定：财务对账为 reconciled/pending_settle/discrepancy，
- *                   优惠券为页面按有效期推导的 active/scheduled/expired
+ *                   优惠券为页面按有效期推导的 active/scheduled/expired，
+ *                   秒杀预占记录为 reserved/released
  * @param categoryId 商品类目ID
  * @param orderStatus 订单状态
  * @param memberLevel 会员等级
@@ -20,6 +21,7 @@ import java.time.LocalDate;
  * @param bizType 库存流水业务类型，取 RESERVE/RELEASE/EXPIRE_RELEASE/DEDUCT
  * @param skuId 库存流水 SKU 标识
  * @param warehouseId 库存流水仓库标识
+ * @param activityId 秒杀活动ID，秒杀类的两个导出均以此为必需条件
  * @param startDate 开始日期
  * @param endDate 结束日期
  * @param rankLimit 排行类导出的条数上限
@@ -37,6 +39,7 @@ public record ExportQuery(String keyword,
                           String bizType,
                           Long skuId,
                           Long warehouseId,
+                          Long activityId,
                           LocalDate startDate,
                           LocalDate endDate,
                           Integer rankLimit) {
@@ -49,6 +52,7 @@ public record ExportQuery(String keyword,
      * @date 2026-09-16
      */
     public static ExportQuery empty() {
-        return new ExportQuery(null, null, null, null, null, null, null, null, null, null, null, null, null, null);
+        return new ExportQuery(null, null, null, null, null, null, null, null, null, null, null, null, null, null,
+                null);
     }
 }

@@ -10,7 +10,7 @@ import java.time.LocalDate;
  * @param exportType 导出类型，取 ExportType 枚举名
  * @param keyword 关键字，含义随导出类型而定
  * @param status 数值型状态，含义随导出类型而定
- * @param statusText 文本型状态，供财务对账与优惠券有效期状态使用
+ * @param statusText 文本型状态，供财务对账、优惠券有效期状态与秒杀预占状态使用
  * @param categoryId 商品类目ID
  * @param orderStatus 订单状态
  * @param memberLevel 会员等级
@@ -19,6 +19,7 @@ import java.time.LocalDate;
  * @param bizType 库存流水业务类型，取 RESERVE/RELEASE/EXPIRE_RELEASE/DEDUCT
  * @param skuId 库存流水 SKU 标识
  * @param warehouseId 库存流水仓库标识
+ * @param activityId 秒杀活动ID，从活动详情页发起导出时必填
  * @param startDate 开始日期
  * @param endDate 结束日期
  * @param rankLimit 排行类导出的条数上限
@@ -37,6 +38,7 @@ public record ExportSubmitRequest(@NotBlank(message = "导出类型不能为空"
                                   String bizType,
                                   Long skuId,
                                   Long warehouseId,
+                                  Long activityId,
                                   LocalDate startDate,
                                   LocalDate endDate,
                                   Integer rankLimit) {
@@ -50,6 +52,6 @@ public record ExportSubmitRequest(@NotBlank(message = "导出类型不能为空"
      */
     public ExportQuery toQuery() {
         return new ExportQuery(keyword, status, statusText, categoryId, orderStatus, memberLevel, moduleKey,
-                financeType, bizType, skuId, warehouseId, startDate, endDate, rankLimit);
+                financeType, bizType, skuId, warehouseId, activityId, startDate, endDate, rankLimit);
     }
 }

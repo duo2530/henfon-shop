@@ -1,5 +1,5 @@
 import React, { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertCircle, Clock, Edit3, ImageOff, PackagePlus, Plus, RefreshCw, Trash2, X, Zap } from 'lucide-react';
+import { AlertCircle, Clock, Edit3, Eye, ImageOff, PackagePlus, Plus, RefreshCw, Trash2, X, Zap } from 'lucide-react';
 import {
   BackendCatalogSku,
   BackendMarketingFlashSale,
@@ -14,6 +14,7 @@ import {
   updateMarketingFlashSaleStatus,
 } from '../../api/adminApi';
 import { ProductPickerModal, ProductPickerSelection } from '../common/ProductPickerModal';
+import { FlashSaleDetailView } from './FlashSaleDetailView';
 import { PermissionDenied } from '../common/PermissionGate';
 import { useAdmin } from '../../context/AdminContext';
 import { formatMinute } from '../../utils/datetime';
@@ -141,6 +142,10 @@ export const FlashSaleManagementView: React.FC = () => {
   const canSave = hasPermission('marketing:flash:save');
   const canStatus = hasPermission('marketing:flash:status');
   const canDelete = hasPermission('marketing:flash:delete');
+  // 详情是列表页内的视图，不占独立菜单；未授权时不给出打不开的入口。
+  const canViewDetail = hasPermission('marketing:flash:detail');
+  // 非空时整个列表让位给详情视图，清空即回到列表，列表筛选与页码状态因此不会被重置。
+  const [detailActivityId, setDetailActivityId] = useState<number | null>(null);
   const [records, setRecords] = useState<FlashSaleRecord[]>([]);
   const [page, setPage] = useState<BackendPage<BackendMarketingFlashSale> | null>(null);
   const [current, setCurrent] = useState(1);
@@ -318,6 +323,11 @@ export const FlashSaleManagementView: React.FC = () => {
 
   if (!canQuery) return <PermissionDenied title="暂无秒杀活动查看权限" />;
 
+  // 详情视图替换整个列表：返回时只清掉活动ID，列表的筛选条件与页码原样保留。
+  if (detailActivityId !== null) {
+    return <FlashSaleDetailView activityId={detailActivityId} onBack={() => setDetailActivityId(null)} />;
+  }
+
   const submitForm = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!form.activityCode.trim() || !form.activityName.trim()) return showToast('请填写活动编码和活动名称', 'warning');
@@ -437,6 +447,7 @@ export const FlashSaleManagementView: React.FC = () => {
             <div className="mt-4 pt-3 border-t border-gray-100 flex justify-between items-center">
               <span className="text-xs text-gray-500">单会员限购 {record.limitPerMember} 件</span>
               <span className="flex items-center gap-2">
+                {canViewDetail && <button type="button" onClick={() => setDetailActivityId(record.id)} className="text-xs text-gray-700 inline-flex items-center gap-1"><Eye className="w-3.5 h-3.5" />详情</button>}
                 {canSave && <button type="button" onClick={() => void openEdit(record)} className="text-xs text-orange-600 inline-flex items-center gap-1"><Edit3 className="w-3.5 h-3.5" />编辑</button>}
                 {canStatus && <button type="button" onClick={() => void toggleStatus(record)} className="text-xs text-gray-600">{record.status === 1 ? '停用' : '启用'}</button>}
                 {canDelete && <button type="button" onClick={() => void remove(record)} className="text-xs text-red-600 inline-flex items-center gap-1"><Trash2 className="w-3.5 h-3.5" />删除</button>}

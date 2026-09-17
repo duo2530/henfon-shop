@@ -11,24 +11,37 @@ import com.henfon.shop.catalog.entity.CatalogProduct;
 import com.henfon.shop.catalog.entity.CatalogSku;
 import com.henfon.shop.catalog.mapper.CatalogProductMapper;
 import com.henfon.shop.catalog.mapper.CatalogSkuMapper;
+import com.henfon.shop.identity.entity.MemberUser;
+import com.henfon.shop.identity.mapper.MemberUserMapper;
+import com.henfon.shop.marketing.dto.MarketingFlashSaleDetailResponse;
+import com.henfon.shop.marketing.dto.MarketingFlashSaleItemRow;
+import com.henfon.shop.marketing.dto.MarketingFlashSaleReservationRow;
+import com.henfon.shop.marketing.dto.MarketingFlashSaleReservationSummary;
 import com.henfon.shop.marketing.dto.MarketingFlashSaleSaveRequest;
+import com.henfon.shop.marketing.dto.MarketingFlashSaleStockSummary;
 import com.henfon.shop.marketing.entity.MarketingFlashSale;
 import com.henfon.shop.marketing.entity.MarketingFlashSaleItem;
 import com.henfon.shop.marketing.mapper.MarketingFlashSaleItemMapper;
 import com.henfon.shop.marketing.mapper.MarketingFlashSaleMapper;
 import com.henfon.shop.marketing.mapper.MarketingFlashSaleReservationMapper;
 import com.henfon.shop.marketing.entity.MarketingFlashSaleReservation;
+import com.henfon.shop.trade.entity.TradeOrder;
+import com.henfon.shop.trade.mapper.TradeOrderMapper;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -44,11 +57,16 @@ public class MarketingFlashSaleService implements FlashSaleReservationService {
 
     private static final Logger log = LoggerFactory.getLogger(MarketingFlashSaleService.class);
 
+    /** 详情页与导出共用的单页上限，防止一次拉取过大的明细集合。 */
+    private static final long MAX_PAGE_SIZE = 500L;
+
     private final MarketingFlashSaleMapper activityMapper;
     private final MarketingFlashSaleItemMapper itemMapper;
     private final MarketingFlashSaleReservationMapper reservationMapper;
     private final CatalogProductMapper productMapper;
     private final CatalogSkuMapper skuMapper;
+    private final MemberUserMapper memberUserMapper;
+    private final TradeOrderMapper tradeOrderMapper;
 
     /**
      * 创建秒杀活动服务。
@@ -58,17 +76,22 @@ public class MarketingFlashSaleService implements FlashSaleReservationService {
      * @param reservationMapper 秒杀预占数据访问对象
      * @param productMapper 商品目录数据访问对象
      * @param skuMapper 商品SKU数据访问对象
+     * @param memberUserMapper 会员数据访问对象，用于详情页回填会员名称
+     * @param tradeOrderMapper 订单数据访问对象，用于详情页回填订单编号
      * @author Henfon
      * @date 2026-08-31
      */
     public MarketingFlashSaleService(MarketingFlashSaleMapper activityMapper, MarketingFlashSaleItemMapper itemMapper,
                                      MarketingFlashSaleReservationMapper reservationMapper,
-                                     CatalogProductMapper productMapper, CatalogSkuMapper skuMapper) {
+                                     CatalogProductMapper productMapper, CatalogSkuMapper skuMapper,
+                                     MemberUserMapper memberUserMapper, TradeOrderMapper tradeOrderMapper) {
         this.activityMapper = activityMapper;
         this.itemMapper = itemMapper;
         this.reservationMapper = reservationMapper;
         this.productMapper = productMapper;
         this.skuMapper = skuMapper;
+        this.memberUserMapper = memberUserMapper;
+        this.tradeOrderMapper = tradeOrderMapper;
     }
 
     /**
@@ -314,6 +337,441 @@ public class MarketingFlashSaleService implements FlashSaleReservationService {
         return itemMapper.selectList(new LambdaQueryWrapper<MarketingFlashSaleItem>()
                 .eq(MarketingFlashSaleItem::getActivityId, activityId)
                 .orderByAsc(MarketingFlashSaleItem::getId));
+    }
+
+    /**
+     * 查询活动详情与汇总统计。
+     *
+     * <p>库存与预占两份统计各走一条聚合查询，不把明细和预占记录读进内存累加；活动不存在时
+     * 与其它管理端接口一致地抛出业务异常，而不是返回空详情。</p>
+     *
+     * @param id 活动ID
+     * @return 活动详情
+     * @author Henfon
+     * @date 2026-09-17
+     */
+    public MarketingFlashSaleDetailResponse detail(Long id) {
+        MarketingFlashSale activity = requireActivity(id);
+        MarketingFlashSaleStockSummary stock = itemMapper.summarizeStock(id);
+        MarketingFlashSaleReservationSummary reservation = reservationMapper.summarize(id);
+        long itemCount = stock == null ? 0L : zeroIfNull(stock.getItemCount());
+        long totalStock = stock == null ? 0L : zeroIfNull(stock.getTotalStock());
+        long soldStock = stock == null ? 0L : zeroIfNull(stock.getSoldStock());
+        return new MarketingFlashSaleDetailResponse(activity.getId(), activity.getActivityCode(),
+                activity.getActivityName(), activity.getStartAt(), activity.getEndAt(),
+                activity.getLimitPerMember(), activity.getStatus(), activityStatusText(activity),
+                activity.getCreatedAt(), activity.getUpdatedAt(),
+                itemCount, totalStock, soldStock, Math.max(totalStock - soldStock, 0L),
+                sellThroughRate(soldStock, totalStock),
+                reservation == null ? 0L : zeroIfNull(reservation.getReservedQuantity()),
+                reservation == null ? 0L : zeroIfNull(reservation.getReleasedQuantity()),
+                reservation == null ? 0L : zeroIfNull(reservation.getParticipantCount()),
+                reservation == null ? 0L : zeroIfNull(reservation.getReservationCount()),
+                reservation == null ? 0L : zeroIfNull(reservation.getOrderCount()),
+                reservation == null ? null : reservation.getEarliestReservedAt(),
+                reservation == null ? null : reservation.getLatestReservedAt());
+    }
+
+    /**
+     * 分页查询活动商品明细，并按批补齐商品与规格名称。
+     *
+     * <p>详情页与导出共用这一个查询，保证两处看到的名称、原价口径完全一致。</p>
+     *
+     * @param activityId 活动ID
+     * @param current 页码
+     * @param size 页大小
+     * @return 活动商品明细分页
+     * @author Henfon
+     * @date 2026-09-17
+     */
+    public IPage<MarketingFlashSaleItemRow> pageItems(Long activityId, long current, long size) {
+        requireActivity(activityId);
+        long safeCurrent = Math.max(current, 1);
+        long safeSize = Math.min(Math.max(size, 1), MAX_PAGE_SIZE);
+        IPage<MarketingFlashSaleItem> page = itemMapper.selectPage(new Page<>(safeCurrent, safeSize),
+                new LambdaQueryWrapper<MarketingFlashSaleItem>()
+                        .eq(MarketingFlashSaleItem::getActivityId, activityId)
+                        .orderByAsc(MarketingFlashSaleItem::getId));
+        Page<MarketingFlashSaleItemRow> result = new Page<>(safeCurrent, safeSize, page.getTotal());
+        result.setRecords(toItemRows(page.getRecords()));
+        return result;
+    }
+
+    /**
+     * 分页查询活动预占记录。
+     *
+     * <p>预占记录只存会员、订单与活动明细标识，这里统一补齐会员昵称、订单编号、商品与规格名称，
+     * 页面无需再逐行回查。活动明细被覆盖保存后旧记录已逻辑删除，此时对应商品信息为空，
+     * 数量与状态仍然照常展示。</p>
+     *
+     * @param activityId 活动ID
+     * @param statusText 预占状态，取 reserved/released，为空表示不限
+     * @param current 页码
+     * @param size 页大小
+     * @return 预占记录分页
+     * @author Henfon
+     * @date 2026-09-17
+     */
+    public IPage<MarketingFlashSaleReservationRow> pageReservations(Long activityId, String statusText,
+                                                                   long current, long size) {
+        requireActivity(activityId);
+        long safeCurrent = Math.max(current, 1);
+        long safeSize = Math.min(Math.max(size, 1), MAX_PAGE_SIZE);
+        Integer status = parseReservationStatus(statusText);
+        IPage<MarketingFlashSaleReservation> page = reservationMapper.selectPage(new Page<>(safeCurrent, safeSize),
+                new LambdaQueryWrapper<MarketingFlashSaleReservation>()
+                        .eq(MarketingFlashSaleReservation::getActivityId, activityId)
+                        .eq(status != null, MarketingFlashSaleReservation::getStatus, status)
+                        .orderByDesc(MarketingFlashSaleReservation::getId));
+        Page<MarketingFlashSaleReservationRow> result = new Page<>(safeCurrent, safeSize, page.getTotal());
+        result.setRecords(toReservationRows(page.getRecords()));
+        return result;
+    }
+
+    /**
+     * 解析预占状态文本。
+     *
+     * <p>无法识别的取值直接报错而不是当作「全部」：静默放宽会让筛选条件悄悄失效，
+     * 页面显示「预占中」却混进已释放记录，比直接失败更难排查。</p>
+     *
+     * @param statusText 状态文本
+     * @return 状态数值，为空表示不限
+     * @author Henfon
+     * @date 2026-09-17
+     */
+    private Integer parseReservationStatus(String statusText) {
+        if (!StringUtils.hasText(statusText)) {
+            return null;
+        }
+        return switch (statusText.trim().toLowerCase(Locale.ROOT)) {
+            case "reserved" -> 0;
+            case "released" -> 1;
+            default -> throw new BusinessException("MARKETING_FLASH_SALE_STATUS_INVALID",
+                    "预占状态只支持 reserved 或 released");
+        };
+    }
+
+    /**
+     * 批量组装活动商品明细行。
+     *
+     * @param items 活动商品明细
+     * @return 明细行列表
+     * @author Henfon
+     * @date 2026-09-17
+     */
+    private List<MarketingFlashSaleItemRow> toItemRows(List<MarketingFlashSaleItem> items) {
+        if (items == null || items.isEmpty()) {
+            return List.of();
+        }
+        Map<Long, CatalogProduct> products = loadProducts(items);
+        Map<Long, CatalogSku> skus = loadSkus(items);
+        return items.stream().map(item -> toItemRow(item, products, skus)).toList();
+    }
+
+    /**
+     * 批量组装预占记录行。
+     *
+     * @param reservations 预占记录
+     * @return 预占记录行列表
+     * @author Henfon
+     * @date 2026-09-17
+     */
+    private List<MarketingFlashSaleReservationRow> toReservationRows(List<MarketingFlashSaleReservation> reservations) {
+        if (reservations == null || reservations.isEmpty()) {
+            return List.of();
+        }
+        Map<Long, MarketingFlashSaleItem> itemById = loadActivityItems(reservations);
+        List<MarketingFlashSaleItem> items = new ArrayList<>(itemById.values());
+        Map<Long, CatalogProduct> products = loadProducts(items);
+        Map<Long, CatalogSku> skus = loadSkus(items);
+        Map<Long, MemberUser> members = loadMembers(reservations);
+        Map<Long, TradeOrder> orders = loadOrders(reservations);
+        return reservations.stream()
+                .map(reservation -> toReservationRow(reservation, itemById.get(reservation.getActivityItemId()),
+                        products, skus, members, orders))
+                .toList();
+    }
+
+    /**
+     * 按活动明细标识批量加载明细。
+     *
+     * @param reservations 预占记录
+     * @return 明细ID到明细的映射
+     * @author Henfon
+     * @date 2026-09-17
+     */
+    private Map<Long, MarketingFlashSaleItem> loadActivityItems(List<MarketingFlashSaleReservation> reservations) {
+        List<Long> itemIds = reservations.stream().map(MarketingFlashSaleReservation::getActivityItemId)
+                .filter(Objects::nonNull).distinct().toList();
+        if (itemIds.isEmpty()) {
+            return Map.of();
+        }
+        Map<Long, MarketingFlashSaleItem> result = new HashMap<>();
+        for (MarketingFlashSaleItem item : itemMapper.selectBatchIds(itemIds)) {
+            result.put(item.getId(), item);
+        }
+        return result;
+    }
+
+    /**
+     * 按商品标识批量加载商品。
+     *
+     * @param items 活动商品明细
+     * @return 商品ID到商品的映射
+     * @author Henfon
+     * @date 2026-09-17
+     */
+    private Map<Long, CatalogProduct> loadProducts(List<MarketingFlashSaleItem> items) {
+        List<Long> productIds = items.stream().map(MarketingFlashSaleItem::getProductId)
+                .filter(Objects::nonNull).distinct().toList();
+        if (productIds.isEmpty()) {
+            return Map.of();
+        }
+        Map<Long, CatalogProduct> result = new HashMap<>();
+        for (CatalogProduct product : productMapper.selectBatchIds(productIds)) {
+            result.put(product.getId(), product);
+        }
+        return result;
+    }
+
+    /**
+     * 按 SKU 标识批量加载规格。
+     *
+     * @param items 活动商品明细
+     * @return SKU ID到SKU的映射
+     * @author Henfon
+     * @date 2026-09-17
+     */
+    private Map<Long, CatalogSku> loadSkus(List<MarketingFlashSaleItem> items) {
+        List<Long> skuIds = items.stream().map(MarketingFlashSaleItem::getSkuId)
+                .filter(Objects::nonNull).distinct().toList();
+        if (skuIds.isEmpty()) {
+            return Map.of();
+        }
+        Map<Long, CatalogSku> result = new HashMap<>();
+        for (CatalogSku sku : skuMapper.selectBatchIds(skuIds)) {
+            result.put(sku.getId(), sku);
+        }
+        return result;
+    }
+
+    /**
+     * 按会员标识批量加载会员。
+     *
+     * @param reservations 预占记录
+     * @return 会员ID到会员的映射
+     * @author Henfon
+     * @date 2026-09-17
+     */
+    private Map<Long, MemberUser> loadMembers(List<MarketingFlashSaleReservation> reservations) {
+        List<Long> memberIds = reservations.stream().map(MarketingFlashSaleReservation::getMemberId)
+                .filter(Objects::nonNull).distinct().toList();
+        if (memberIds.isEmpty()) {
+            return Map.of();
+        }
+        Map<Long, MemberUser> result = new HashMap<>();
+        for (MemberUser member : memberUserMapper.selectBatchIds(memberIds)) {
+            result.put(member.getId(), member);
+        }
+        return result;
+    }
+
+    /**
+     * 按订单标识批量加载订单。
+     *
+     * @param reservations 预占记录
+     * @return 订单ID到订单的映射
+     * @author Henfon
+     * @date 2026-09-17
+     */
+    private Map<Long, TradeOrder> loadOrders(List<MarketingFlashSaleReservation> reservations) {
+        List<Long> orderIds = reservations.stream().map(MarketingFlashSaleReservation::getOrderId)
+                .filter(Objects::nonNull).distinct().toList();
+        if (orderIds.isEmpty()) {
+            return Map.of();
+        }
+        Map<Long, TradeOrder> result = new HashMap<>();
+        for (TradeOrder order : tradeOrderMapper.selectBatchIds(orderIds)) {
+            result.put(order.getId(), order);
+        }
+        return result;
+    }
+
+    /**
+     * 活动商品明细转详情行。
+     *
+     * @param item 活动商品明细
+     * @param products 商品映射
+     * @param skus SKU映射
+     * @return 详情行
+     * @author Henfon
+     * @date 2026-09-17
+     */
+    private static MarketingFlashSaleItemRow toItemRow(MarketingFlashSaleItem item, Map<Long, CatalogProduct> products,
+                                                      Map<Long, CatalogSku> skus) {
+        CatalogProduct product = item.getProductId() == null ? null : products.get(item.getProductId());
+        CatalogSku sku = item.getSkuId() == null ? null : skus.get(item.getSkuId());
+        // 原价口径与活动保存校验一致：指定 SKU 取 SKU 价格，否则取商品价格。
+        BigDecimal originalPrice = sku != null ? sku.getPrice() : product == null ? null : product.getPrice();
+        int totalStock = item.getTotalStock() == null ? 0 : item.getTotalStock();
+        int soldStock = item.getSoldStock() == null ? 0 : item.getSoldStock();
+        return new MarketingFlashSaleItemRow(item.getId(), item.getProductId(),
+                product == null ? null : product.getProductCode(),
+                product == null ? null : product.getProductName(),
+                item.getSkuId(), sku == null ? null : sku.getSkuCode(), sku == null ? null : sku.getSkuName(),
+                item.getActivityPrice(), originalPrice, discountRate(item.getActivityPrice(), originalPrice),
+                totalStock, soldStock, Math.max(totalStock - soldStock, 0), item.getLimitPerMember(),
+                item.getStatus(), itemStatusText(item.getStatus()), item.getCreatedAt(), item.getUpdatedAt());
+    }
+
+    /**
+     * 预占记录转详情行。
+     *
+     * @param reservation 预占记录
+     * @param item 对应的活动明细，可能已随活动编辑被逻辑删除
+     * @param products 商品映射
+     * @param skus SKU映射
+     * @param members 会员映射
+     * @param orders 订单映射
+     * @return 详情行
+     * @author Henfon
+     * @date 2026-09-17
+     */
+    private static MarketingFlashSaleReservationRow toReservationRow(MarketingFlashSaleReservation reservation,
+                                                                    MarketingFlashSaleItem item,
+                                                                    Map<Long, CatalogProduct> products,
+                                                                    Map<Long, CatalogSku> skus,
+                                                                    Map<Long, MemberUser> members,
+                                                                    Map<Long, TradeOrder> orders) {
+        MemberUser member = reservation.getMemberId() == null ? null : members.get(reservation.getMemberId());
+        TradeOrder order = reservation.getOrderId() == null ? null : orders.get(reservation.getOrderId());
+        CatalogProduct product = item == null || item.getProductId() == null ? null : products.get(item.getProductId());
+        CatalogSku sku = item == null || item.getSkuId() == null ? null : skus.get(item.getSkuId());
+        return new MarketingFlashSaleReservationRow(reservation.getId(), reservation.getCreatedAt(),
+                reservation.getMemberId(), member == null ? null : member.getMemberNo(),
+                memberDisplayName(member), member == null ? null : member.getPhone(),
+                reservation.getOrderId(), order == null ? null : order.getOrderNo(),
+                item == null ? null : item.getProductId(), product == null ? null : product.getProductName(),
+                item == null ? null : item.getSkuId(), sku == null ? null : sku.getSkuName(),
+                reservation.getQuantity(), reservation.getStatus(),
+                reservationStatusText(reservation.getStatus()), reservation.getReleasedAt());
+    }
+
+    /**
+     * 会员展示名称：优先昵称，回退用户名。
+     *
+     * @param member 会员
+     * @return 展示名称，会员缺失时为空
+     * @author Henfon
+     * @date 2026-09-17
+     */
+    private static String memberDisplayName(MemberUser member) {
+        if (member == null) {
+            return null;
+        }
+        return StringUtils.hasText(member.getNickname()) ? member.getNickname() : member.getUsername();
+    }
+
+    /**
+     * 活动配置状态结合排期时间推导展示状态。
+     *
+     * @param activity 活动
+     * @return 展示状态文案
+     * @author Henfon
+     * @date 2026-09-17
+     */
+    private static String activityStatusText(MarketingFlashSale activity) {
+        Integer status = activity.getStatus();
+        if (status == null || status == 0) {
+            return "草稿";
+        }
+        if (status == 2) {
+            return "已停用";
+        }
+        LocalDateTime now = LocalDateTime.now();
+        if (activity.getStartAt() != null && now.isBefore(activity.getStartAt())) {
+            return "即将开始";
+        }
+        if (activity.getEndAt() != null && now.isAfter(activity.getEndAt())) {
+            return "已结束";
+        }
+        return "进行中";
+    }
+
+    /**
+     * 活动商品启用状态文案。
+     *
+     * @param status 状态值
+     * @return 状态文案
+     * @author Henfon
+     * @date 2026-09-17
+     */
+    private static String itemStatusText(Integer status) {
+        if (status == null) {
+            return "未知";
+        }
+        return status == 1 ? "启用" : "停用";
+    }
+
+    /**
+     * 预占状态文案。
+     *
+     * @param status 状态值
+     * @return 状态文案
+     * @author Henfon
+     * @date 2026-09-17
+     */
+    private static String reservationStatusText(Integer status) {
+        if (status == null) {
+            return "未知";
+        }
+        return status == 1 ? "已释放" : "预占中";
+    }
+
+    /**
+     * 计算售罄率，单位为百分数，保留一位小数。
+     *
+     * @param soldStock 已售库存
+     * @param totalStock 总库存
+     * @return 售罄率，总库存为 0 时返回 0
+     * @author Henfon
+     * @date 2026-09-17
+     */
+    private static BigDecimal sellThroughRate(long soldStock, long totalStock) {
+        if (totalStock <= 0L) {
+            return BigDecimal.ZERO.setScale(1, RoundingMode.HALF_UP);
+        }
+        return BigDecimal.valueOf(soldStock).multiply(BigDecimal.valueOf(100))
+                .divide(BigDecimal.valueOf(totalStock), 1, RoundingMode.HALF_UP);
+    }
+
+    /**
+     * 计算活动价相对原价的折扣率，单位为百分数，保留一位小数。
+     *
+     * @param activityPrice 活动价
+     * @param originalPrice 原价
+     * @return 折扣率，原价缺失或非正数时为空
+     * @author Henfon
+     * @date 2026-09-17
+     */
+    private static BigDecimal discountRate(BigDecimal activityPrice, BigDecimal originalPrice) {
+        if (activityPrice == null || originalPrice == null || originalPrice.compareTo(BigDecimal.ZERO) <= 0) {
+            return null;
+        }
+        return activityPrice.multiply(BigDecimal.valueOf(100))
+                .divide(originalPrice, 1, RoundingMode.HALF_UP);
+    }
+
+    /**
+     * 空值归零。
+     *
+     * @param value 待处理值
+     * @return 非空值或 0
+     * @author Henfon
+     * @date 2026-09-17
+     */
+    private static long zeroIfNull(Long value) {
+        return value == null ? 0L : value;
     }
 
     /**

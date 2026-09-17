@@ -338,6 +338,74 @@ export interface BackendMarketingFlashSaleItem {
   version?: number;
 }
 
+/** 秒杀活动详情，库存与预占统计由服务端聚合返回。 */
+export interface BackendMarketingFlashSaleDetail {
+  id: number;
+  activityCode: string;
+  activityName: string;
+  startAt: string;
+  endAt: string;
+  limitPerMember: number;
+  status: number;
+  statusText: string;
+  createdAt?: string;
+  updatedAt?: string;
+  itemCount: number;
+  totalStock: number;
+  soldStock: number;
+  remainingStock: number;
+  sellThroughRate: number;
+  reservedQuantity: number;
+  releasedQuantity: number;
+  participantCount: number;
+  reservationCount: number;
+  orderCount: number;
+  earliestReservedAt?: string | null;
+  latestReservedAt?: string | null;
+}
+
+/** 秒杀活动商品明细行，商品与规格名称由服务端补齐。 */
+export interface BackendMarketingFlashSaleItemRow {
+  id: number;
+  productId: number;
+  productCode?: string | null;
+  productName?: string | null;
+  skuId?: number | null;
+  skuCode?: string | null;
+  skuName?: string | null;
+  activityPrice: number;
+  originalPrice?: number | null;
+  discountRate?: number | null;
+  totalStock: number;
+  soldStock: number;
+  remainingStock: number;
+  limitPerMember: number;
+  status: number;
+  statusText: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+/** 秒杀预占记录行，会员、订单与商品信息由服务端补齐。 */
+export interface BackendMarketingFlashSaleReservationRow {
+  id: number;
+  createdAt: string;
+  memberId: number;
+  memberNo?: string | null;
+  memberName?: string | null;
+  memberPhone?: string | null;
+  orderId: number;
+  orderNo?: string | null;
+  productId?: number | null;
+  productName?: string | null;
+  skuId?: number | null;
+  skuName?: string | null;
+  quantity: number;
+  status: number;
+  statusText: string;
+  releasedAt?: string | null;
+}
+
 export interface BackendPaymentInvoice {
   id: number;
   invoiceNo: string;
@@ -1253,6 +1321,24 @@ export function listMarketingFlashSaleItems(id: number): Promise<BackendMarketin
   return request<BackendMarketingFlashSaleItem[]>(`/api/admin/marketing/flash-sales/${id}/items`);
 }
 
+/** 查询秒杀活动详情，含库存与预占统计。 */
+export function getMarketingFlashSaleDetail(id: number): Promise<BackendMarketingFlashSaleDetail> {
+  return request<BackendMarketingFlashSaleDetail>(`/api/admin/marketing/flash-sales/${id}`);
+}
+
+/** 分页查询活动商品明细，附带商品与规格名称。 */
+export function listMarketingFlashSaleItemRows(id: number, params: { current?: number; size?: number } = {}): Promise<BackendPage<BackendMarketingFlashSaleItemRow>> {
+  const query = new URLSearchParams({ current: String(params.current || 1), size: String(params.size || 20) });
+  return request<BackendPage<BackendMarketingFlashSaleItemRow>>(`/api/admin/marketing/flash-sales/${id}/items/page?${query.toString()}`);
+}
+
+/** 分页查询活动预占记录，statusText 取 reserved/released。 */
+export function listMarketingFlashSaleReservations(id: number, params: { current?: number; size?: number; statusText?: string } = {}): Promise<BackendPage<BackendMarketingFlashSaleReservationRow>> {
+  const query = new URLSearchParams({ current: String(params.current || 1), size: String(params.size || 20) });
+  if (params.statusText) query.set('statusText', params.statusText);
+  return request<BackendPage<BackendMarketingFlashSaleReservationRow>>(`/api/admin/marketing/flash-sales/${id}/reservations?${query.toString()}`);
+}
+
 export function saveMarketingFlashSale(payload: {
   id?: number;
   activityCode: string;
@@ -1376,6 +1462,8 @@ export interface ExportTaskRequest {
   bizType?: string;
   skuId?: number;
   warehouseId?: number;
+  /** 秒杀活动ID，秒杀商品明细与预占记录导出的必需条件。 */
+  activityId?: number;
   startDate?: string;
   endDate?: string;
   rankLimit?: number;
