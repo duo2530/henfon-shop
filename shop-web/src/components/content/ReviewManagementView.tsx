@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useAdmin } from '../../context/AdminContext';
 import { listContentReviews, replyContentReview, updateContentReviewStatus } from '../../api/adminApi';
+import { formatDateTime } from '../../utils/datetime';
 import { 
   Star, 
   MessageSquare, 
@@ -78,7 +79,7 @@ export const ReviewManagementView: React.FC = () => {
         images: parseReviewImages(review.imageUrls),
         reply: review.replyContent || '',
         status: reviewStatus(review.status),
-        createdAt: review.createdAt || review.reviewedAt || '',
+        createdAt: formatDateTime(review.createdAt || review.reviewedAt, ''),
         likes: review.helpfulCount || 0,
       })));
     } catch (error) {

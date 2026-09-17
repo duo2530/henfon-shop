@@ -2,6 +2,7 @@ import React, { FormEvent, useEffect, useState } from 'react';
 import { Edit3, ExternalLink, Image as ImageIcon, Loader2, Plus, RefreshCw, Save, Trash2, X } from 'lucide-react';
 import { BackendContentBanner, deleteContentBanner, listContentBanners, saveContentBanner, updateContentBannerStatus } from '../../api/adminApi';
 import { useAdmin } from '../../context/AdminContext';
+import { formatDate } from '../../utils/datetime';
 
 interface BannerForm {
   id?: number;
@@ -24,7 +25,10 @@ function toForm(banner: BackendContentBanner): BannerForm {
   return { id: banner.id, bannerTitle: banner.bannerTitle, bannerTag: banner.bannerTag || '', subtitle: banner.subtitle || '', imageUrl: banner.imageUrl, linkType: banner.linkType || 'NONE', linkTarget: banner.linkTarget || '', sortNo: banner.sortNo || 0, status: banner.status, startAt: banner.startAt ? banner.startAt.slice(0, 16) : '', endAt: banner.endAt ? banner.endAt.slice(0, 16) : '', remark: banner.remark || '' };
 }
 
-function displayDate(value?: string): string { return value ? value.slice(0, 10) : '长期'; }
+/** 轮播投放期只展示到天，未设置结束时间视为长期投放。 */
+function displayDate(value?: string): string {
+  return formatDate(value, '长期');
+}
 
 /**
  * Banner 后台管理页面，真实读取和写入内容中心接口。

@@ -15,6 +15,7 @@ import {
   Department,
   DataRule
 } from '../types';
+import { formatDateTime } from '../utils/datetime';
 import {
   AdminUser,
   BackendLogisticsCarrier,
@@ -235,7 +236,7 @@ function backendOrdersToFrontend(records: BackendTradeOrder[]): Order[] {
   return records.map((record) => ({
     id: String(record.id),
     orderNumber: record.orderNo,
-    createdAt: record.createdAt || '',
+    createdAt: formatDateTime(record.createdAt, ''),
     customerName: record.memberName || record.receiverName,
     customerPhone: record.receiverPhone,
     amount: Number(record.paidAmount || record.payableAmount || 0),

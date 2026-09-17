@@ -1,5 +1,6 @@
 import { BackendCatalogCategory, BackendCatalogProduct } from '../api/adminApi';
 import { Product, ProductCategory } from '../types';
+import { formatDate } from '../utils/datetime';
 
 const categoryCodeMap: Record<string, ProductCategory> = {
   ELECTRONICS: 'electronics',
@@ -45,7 +46,7 @@ export function backendProductsToFrontend(source: BackendCatalogProduct[], categ
       imageUrl: product.mainImageUrl || '',
       sku: product.defaultSkuCode || product.productCode,
       salesCount: Number(product.salesCount || 0),
-      createdAt: product.createdAt?.slice(0, 10) || '',
+      createdAt: formatDate(product.createdAt, ''),
       description: product.description || product.shortDescription || '',
       tags: splitTags(product.tagsCsv)
     };

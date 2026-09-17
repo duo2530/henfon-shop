@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState, useMemo } from 'react';
 import { useAdmin } from '../../context/AdminContext';
 import { useExportCenter } from '../../context/ExportCenterContext';
 import { listPaymentReconciliation, actionPaymentReconciliation, BackendPaymentReconciliationRecord } from '../../api/adminApi';
+import { formatDateTime } from '../../utils/datetime';
 import { 
   DollarSign, 
   ArrowUpRight, 
@@ -40,7 +41,7 @@ function toFinanceTransaction(record: BackendPaymentReconciliationRecord): Finan
     fee: Number(record.fee || 0),
     netAmount: Number(record.netAmount || 0),
     status: record.status,
-    settledAt: record.settledAt || '-',
+    settledAt: formatDateTime(record.settledAt, '-'),
     accountNumber: record.accountNumber || '-',
     notes: record.notes,
   };

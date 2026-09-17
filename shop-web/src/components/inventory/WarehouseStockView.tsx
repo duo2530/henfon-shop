@@ -13,6 +13,7 @@ import {
   saveInventoryWarehouse,
   updateInventoryWarehouseStatus
 } from '../../api/adminApi';
+import { formatDateTime } from '../../utils/datetime';
 import { 
   Boxes, 
   ArrowDownToLine, 
@@ -260,7 +261,7 @@ export const WarehouseStockView: React.FC = () => {
       quantity: stock.availableStock,
       operator: '—',
       status: 'completed',
-      createdAt: stock.updatedAt || '—',
+      createdAt: formatDateTime(stock.updatedAt, '—'),
       remarks: stock.remark
     };
   });
@@ -495,7 +496,7 @@ export const WarehouseStockView: React.FC = () => {
             <table className="w-full text-left border-collapse">
               <thead className="bg-white border-b border-[#E2E8F0] text-xs font-semibold text-gray-500"><tr><th className="py-3 px-4">锁定单号</th><th className="py-3 px-4">订单号</th><th className="py-3 px-4">SKU</th><th className="py-3 px-4 text-right">数量</th><th className="py-3 px-4 text-center">状态</th><th className="py-3 px-4 text-right">创建时间</th></tr></thead>
               <tbody className="divide-y divide-gray-100 text-sm">
-                {stockLocks.map((lock) => <tr key={lock.id} className="hover:bg-[#F8FAFC]"><td className="py-3 px-4 text-xs font-mono font-semibold text-gray-800">{lock.lockNo}</td><td className="py-3 px-4 text-xs font-mono text-gray-600">{lock.orderNo || `订单 #${lock.orderId}`}</td><td className="py-3 px-4 text-xs font-mono text-gray-600">{lock.skuId}</td><td className="py-3 px-4 text-right text-xs font-mono font-bold text-gray-800">{lock.quantity}</td><td className="py-3 px-4 text-center"><span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${lock.status === 0 ? 'bg-amber-50 text-amber-700' : lock.status === 1 ? 'bg-emerald-50 text-emerald-700' : lock.status === 2 ? 'bg-blue-50 text-blue-700' : 'bg-gray-100 text-gray-600'}`}>{lock.status === 0 ? '已预占' : lock.status === 1 ? '已释放' : lock.status === 2 ? '已扣减' : `状态 ${lock.status}`}</span></td><td className="py-3 px-4 text-right text-xs font-mono text-gray-500">{lock.createdAt || '—'}</td></tr>)}
+                {stockLocks.map((lock) => <tr key={lock.id} className="hover:bg-[#F8FAFC]"><td className="py-3 px-4 text-xs font-mono font-semibold text-gray-800">{lock.lockNo}</td><td className="py-3 px-4 text-xs font-mono text-gray-600">{lock.orderNo || `订单 #${lock.orderId}`}</td><td className="py-3 px-4 text-xs font-mono text-gray-600">{lock.skuId}</td><td className="py-3 px-4 text-right text-xs font-mono font-bold text-gray-800">{lock.quantity}</td><td className="py-3 px-4 text-center"><span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${lock.status === 0 ? 'bg-amber-50 text-amber-700' : lock.status === 1 ? 'bg-emerald-50 text-emerald-700' : lock.status === 2 ? 'bg-blue-50 text-blue-700' : 'bg-gray-100 text-gray-600'}`}>{lock.status === 0 ? '已预占' : lock.status === 1 ? '已释放' : lock.status === 2 ? '已扣减' : `状态 ${lock.status}`}</span></td><td className="py-3 px-4 text-right text-xs font-mono text-gray-500">{formatDateTime(lock.createdAt, '—')}</td></tr>)}
               </tbody>
             </table>
           </div>

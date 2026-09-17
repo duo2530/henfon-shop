@@ -16,6 +16,7 @@ import {
 import { ProductPickerModal, ProductPickerSelection } from '../common/ProductPickerModal';
 import { PermissionDenied } from '../common/PermissionGate';
 import { useAdmin } from '../../context/AdminContext';
+import { formatMinute } from '../../utils/datetime';
 
 type StatusFilter = '' | '0' | '1' | '2';
 type ItemForm = {
@@ -57,9 +58,9 @@ function dateInput(value?: string): string { return value ? value.replace(' ', '
 function backendDate(value: string): string { return value.length === 16 ? `${value}:00` : value; }
 
 /** 列表展示用时间。后端返回的 LocalDateTime 带毫秒，这里截断到分钟。 */
+/** 活动起止时间精确到分钟展示，统一走共享格式化。 */
 function displayDate(value?: string): string {
-  const matched = /^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2})/.exec(value || '');
-  return matched ? `${matched[1]} ${matched[2]}` : value || '—';
+  return formatMinute(value);
 }
 
 /** 创建新活动默认表单。商品明细一律通过商品选择弹窗加入。 */

@@ -4,6 +4,7 @@ import { BackendLoginLog, BackendOperationLog, BackendPage, listLoginLogs, listO
 import { PermissionDenied } from '../common/PermissionGate';
 import { useAdmin } from '../../context/AdminContext';
 import { useExportCenter } from '../../context/ExportCenterContext';
+import { formatDateTime } from '../../utils/datetime';
 
 type AuditTab = 'operation' | 'login';
 type LoginStatusFilter = '' | '0' | '1';
@@ -198,9 +199,9 @@ export const AuditLogPanel: React.FC<AuditLogPanelProps> = ({ mode }) => {
         ) : !hasRecords ? (
           <p className="py-8 text-center text-xs text-gray-400">暂无日志记录，请调整筛选条件后重试</p>
         ) : tab === 'operation' ? (
-          <table className="w-full text-xs"><thead><tr className="text-left text-gray-500 border-b"><th className="py-2 pr-3">时间</th><th className="py-2 pr-3">用户</th><th className="py-2 pr-3">模块/操作</th><th className="py-2 pr-3">请求</th><th className="py-2">结果</th></tr></thead><tbody>{operationRecords.map((item) => <tr key={item.id} className="border-b border-gray-50"><td className="py-2 pr-3 whitespace-nowrap">{item.createdAt || '-'}</td><td className="py-2 pr-3">{item.username || '-'}</td><td className="py-2 pr-3">{item.moduleKey || '-'} / {item.operation || '-'}</td><td className="py-2 pr-3 font-mono">{item.requestMethod || '-'} {item.requestUri || '-'}</td><td className={`py-2 font-semibold ${item.responseStatus && item.responseStatus >= 400 ? 'text-red-600' : 'text-emerald-600'}`}>{item.responseStatus || '-'}</td></tr>)}</tbody></table>
+          <table className="w-full text-xs"><thead><tr className="text-left text-gray-500 border-b"><th className="py-2 pr-3">时间</th><th className="py-2 pr-3">用户</th><th className="py-2 pr-3">模块/操作</th><th className="py-2 pr-3">请求</th><th className="py-2">结果</th></tr></thead><tbody>{operationRecords.map((item) => <tr key={item.id} className="border-b border-gray-50"><td className="py-2 pr-3 whitespace-nowrap">{formatDateTime(item.createdAt, '-')}</td><td className="py-2 pr-3">{item.username || '-'}</td><td className="py-2 pr-3">{item.moduleKey || '-'} / {item.operation || '-'}</td><td className="py-2 pr-3 font-mono">{item.requestMethod || '-'} {item.requestUri || '-'}</td><td className={`py-2 font-semibold ${item.responseStatus && item.responseStatus >= 400 ? 'text-red-600' : 'text-emerald-600'}`}>{item.responseStatus || '-'}</td></tr>)}</tbody></table>
         ) : (
-          <table className="w-full text-xs"><thead><tr className="text-left text-gray-500 border-b"><th className="py-2 pr-3">时间</th><th className="py-2 pr-3">用户</th><th className="py-2 pr-3">状态</th><th className="py-2 pr-3">IP</th><th className="py-2">失败原因</th></tr></thead><tbody>{loginRecords.map((item) => <tr key={item.id} className="border-b border-gray-50"><td className="py-2 pr-3 whitespace-nowrap">{item.loginAt || '-'}</td><td className="py-2 pr-3">{item.username || '-'}</td><td className={`py-2 pr-3 font-semibold ${item.loginStatus === 1 ? 'text-emerald-600' : 'text-red-600'}`}>{item.loginStatus === 1 ? '成功' : '失败'}</td><td className="py-2 pr-3">{item.loginIp || '-'}</td><td className="py-2">{item.failureReason || '-'}</td></tr>)}</tbody></table>
+          <table className="w-full text-xs"><thead><tr className="text-left text-gray-500 border-b"><th className="py-2 pr-3">时间</th><th className="py-2 pr-3">用户</th><th className="py-2 pr-3">状态</th><th className="py-2 pr-3">IP</th><th className="py-2">失败原因</th></tr></thead><tbody>{loginRecords.map((item) => <tr key={item.id} className="border-b border-gray-50"><td className="py-2 pr-3 whitespace-nowrap">{formatDateTime(item.loginAt, '-')}</td><td className="py-2 pr-3">{item.username || '-'}</td><td className={`py-2 pr-3 font-semibold ${item.loginStatus === 1 ? 'text-emerald-600' : 'text-red-600'}`}>{item.loginStatus === 1 ? '成功' : '失败'}</td><td className="py-2 pr-3">{item.loginIp || '-'}</td><td className="py-2">{item.failureReason || '-'}</td></tr>)}</tbody></table>
         )}
       </div>
 

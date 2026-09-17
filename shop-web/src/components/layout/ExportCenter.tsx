@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { AlertCircle, CheckCircle2, Clock, Download, Loader2, RefreshCw, RotateCcw, Trash2 } from 'lucide-react';
 import { BackendExportTask, BackendExportTaskStatus } from '../../api/adminApi';
 import { useExportCenter } from '../../context/ExportCenterContext';
+import { formatMinute } from '../../utils/datetime';
 
 /** 状态展示文案与配色，集中在这里保证列表和角标口径一致。 */
 const STATUS_META: Record<BackendExportTaskStatus, { label: string; className: string }> = {
@@ -19,13 +20,11 @@ function formatFileSize(size: number | null): string {
   return `${(size / 1024 / 1024).toFixed(2)} MB`;
 }
 
-/** 兼容后端返回的 ISO 日期时间与「空格分隔」两种写法。 */
+/** 下载中心空间紧张，时间压缩为「MM-DD HH:mm」展示。 */
 function formatTime(value: string | null): string {
   if (!value) return '';
-  const date = new Date(value.includes('T') ? value : value.replace(' ', 'T'));
-  if (Number.isNaN(date.getTime())) return value;
-  const pad = (input: number) => String(input).padStart(2, '0');
-  return `${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  const formatted = formatMinute(value, '');
+  return /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(formatted) ? formatted.slice(5) : value;
 }
 
 const StatusIcon: React.FC<{ status: BackendExportTaskStatus }> = ({ status }) => {

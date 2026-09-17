@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useAdmin } from '../../context/AdminContext';
 import { Download, CheckCircle, Clock, Search, Send } from 'lucide-react';
 import { BackendPaymentInvoice, listPaymentInvoices, updatePaymentInvoiceStatus, uploadStorageFile } from '../../api/adminApi';
+import { formatDateTime } from '../../utils/datetime';
 
 export interface InvoiceRecord {
   id: string;
@@ -38,8 +39,8 @@ function toInvoiceRecord(invoice: BackendPaymentInvoice): InvoiceRecord {
     amount: Number(invoice.amount || 0),
     applicantEmail: invoice.email || '-',
     status,
-    createdAt: invoice.createdAt || invoice.requestedAt || '-',
-    issuedAt: invoice.issuedAt,
+    createdAt: formatDateTime(invoice.createdAt || invoice.requestedAt, '-'),
+    issuedAt: formatDateTime(invoice.issuedAt, '-'),
     invoiceUrl: invoice.invoiceUrl,
   };
 }

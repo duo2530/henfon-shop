@@ -8,6 +8,7 @@ import {
   saveMarketingCoupon,
   updateMarketingCouponStatus,
 } from '../../api/adminApi';
+import { formatDate } from '../../utils/datetime';
 import { 
   Ticket, 
   Plus, 
@@ -69,8 +70,8 @@ function mapBackendCoupon(record: BackendMarketingCoupon): CouponItem {
     claimedQuantity: Number(record.claimedQuantity || 0),
     usedQuantity: record.usedQuantity == null ? undefined : Number(record.usedQuantity),
     status,
-    startDate: record.startAt?.slice(0, 10) || '',
-    endDate: record.endAt?.slice(0, 10) || '',
+    startDate: formatDate(record.startAt, ''),
+    endDate: formatDate(record.endAt, ''),
     scope: record.categoryCode ? 'category' : 'all',
     scopeTargetName: record.categoryCode,
   };

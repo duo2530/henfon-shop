@@ -1,5 +1,6 @@
 import { BackendDataRule, BackendDepartment, BackendMemberUser, BackendMenu, BackendRole, BackendSystemUser } from '../api/adminApi';
 import { DataRule, Department, MenuItem, Role, SystemUser, User } from '../types';
+import { formatDate, formatDateTime } from '../utils/datetime';
 import { backendMenusToTree } from './menuAdapter';
 
 export interface PermissionNode {
@@ -43,7 +44,7 @@ export function backendRolesToFrontend(source: BackendRole[], permissionKeysByRo
     dataScope: toDataScope(role.dataScope),
     permissionKeys: permissionKeysByRole.get(role.id) || [],
     userCount: 0,
-    createdAt: role.createdAt?.slice(0, 10) || '',
+    createdAt: formatDate(role.createdAt, ''),
     description: role.description || ''
   }));
 }
@@ -103,8 +104,8 @@ export function backendUsersToFrontend(source: BackendSystemUser[], deptNames: M
     phone: user.phone || '-',
     email: user.email || '-',
     status: toStatus(user.status),
-    createdAt: user.createdAt?.slice(0, 10) || '',
-    lastLoginTime: user.lastLoginAt?.replace('T', ' ') || '-',
+    createdAt: formatDate(user.createdAt, ''),
+    lastLoginTime: formatDateTime(user.lastLoginAt, '-'),
     lastLoginIp: user.lastLoginIp || '-',
     dataScope: 'self'
   }));
@@ -118,13 +119,13 @@ export function backendMembersToFrontend(source: BackendMemberUser[]): User[] {
     phone: member.phone || '-',
     avatar: member.avatarUrl,
     email: member.email || '-',
-    registeredAt: member.registeredAt?.replace('T', ' ') || '-',
+    registeredAt: formatDateTime(member.registeredAt, '-'),
     totalSpent: Number(member.totalSpent || 0),
     orderCount: Number(member.orderCount || 0),
     status: member.status === 1 ? 'active' : 'suspended',
     tier: (['regular', 'silver', 'gold', 'platinum'].includes(member.memberLevel.toLowerCase())
       ? member.memberLevel.toLowerCase() : 'regular') as User['tier'],
-    lastActive: member.lastLoginAt?.replace('T', ' ') || '-',
+    lastActive: formatDateTime(member.lastLoginAt, '-'),
     balance: Number(member.balance || 0),
     points: Number(member.points || 0),
     tags: splitList(member.tagsCsv),
@@ -146,6 +147,6 @@ export function backendDataRulesToFrontend(source: BackendDataRule[], roleByRule
     fieldMasks: splitList(rule.fieldMasks),
     filterCondition: rule.filterExpression || '',
     status: toStatus(rule.status),
-    updatedAt: rule.updatedAt?.replace('T', ' ') || ''
+    updatedAt: formatDateTime(rule.updatedAt, '')
   }));
 }
