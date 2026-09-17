@@ -256,7 +256,10 @@ export interface BackendContentBanner {
   bannerTitle: string;
   bannerTag?: string;
   subtitle?: string;
+  /** 持久化的图片引用，新数据为 MinIO 对象键。 */
   imageUrl: string;
+  /** 后端按当前配置重签的临时访问地址，仅用于展示，不回传保存。 */
+  imageAccessUrl?: string;
   linkType: string;
   linkTarget?: string;
   sortNo: number;

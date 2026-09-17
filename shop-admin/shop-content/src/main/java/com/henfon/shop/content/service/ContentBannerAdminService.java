@@ -28,16 +28,19 @@ public class ContentBannerAdminService {
     private static final int DISABLED = 0;
 
     private final ContentBannerMapper bannerMapper;
+    private final ContentImageUrlResolver imageUrlResolver;
 
     /**
      * 创建 Banner 后台管理服务。
      *
      * @param bannerMapper Banner 数据访问对象
+     * @param imageUrlResolver 图片地址解析器
      * @author Henfon
      * @date 2026-08-30
      */
-    public ContentBannerAdminService(ContentBannerMapper bannerMapper) {
+    public ContentBannerAdminService(ContentBannerMapper bannerMapper, ContentImageUrlResolver imageUrlResolver) {
         this.bannerMapper = bannerMapper;
+        this.imageUrlResolver = imageUrlResolver;
     }
 
     /**
@@ -62,7 +65,25 @@ public class ContentBannerAdminService {
                         .or().like(ContentBanner::getBannerTag, keyword))
                 .orderByAsc(ContentBanner::getSortNo)
                 .orderByDesc(ContentBanner::getCreatedAt);
-        return bannerMapper.selectPage(new Page<>(safeCurrent, safeSize), wrapper);
+        IPage<ContentBanner> result = bannerMapper.selectPage(new Page<>(safeCurrent, safeSize), wrapper);
+        if (result != null && result.getRecords() != null) {
+            // 列表页要直接渲染缩略图，按当前配置补一份可访问地址，存储值保持对象键不动。
+            result.getRecords().forEach(this::fillImageAccessUrl);
+        }
+        return result;
+    }
+
+    /**
+     * 为 Banner 补充当前有效的图片访问地址。
+     *
+     * @param banner Banner 实体
+     * @author Henfon
+     * @date 2026-09-17
+     */
+    private void fillImageAccessUrl(ContentBanner banner) {
+        if (banner != null && StringUtils.hasText(banner.getImageUrl())) {
+            banner.setImageAccessUrl(imageUrlResolver.accessUrl(banner.getImageUrl()));
+        }
     }
 
     /**
@@ -81,7 +102,8 @@ public class ContentBannerAdminService {
         banner.setBannerTitle(request.bannerTitle().trim());
         banner.setBannerTag(trimToNull(request.bannerTag()));
         banner.setSubtitle(trimToNull(request.subtitle()));
-        banner.setImageUrl(request.imageUrl().trim());
+        // 上传接口返回的是 24 小时过期的预签名地址，入库前统一归一化为对象键，读取时再重签。
+        banner.setImageUrl(imageUrlResolver.normalizeReference(request.imageUrl()));
         banner.setLinkType(normalizeLinkType(request.linkType()));
         banner.setLinkTarget(trimToNull(request.linkTarget()));
         banner.setSortNo(request.sortNo() == null ? 0 : request.sortNo());

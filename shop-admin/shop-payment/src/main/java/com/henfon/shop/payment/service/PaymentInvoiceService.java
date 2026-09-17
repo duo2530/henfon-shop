@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.henfon.shop.common.exception.BusinessException;
+import com.henfon.shop.integration.storage.ImageReferenceResolver;
 import com.henfon.shop.payment.dto.PaymentInvoiceCreateRequest;
 import com.henfon.shop.payment.dto.PaymentInvoiceResponse;
 import com.henfon.shop.payment.dto.PaymentInvoiceStatusRequest;
@@ -11,6 +12,7 @@ import com.henfon.shop.payment.entity.PaymentInvoice;
 import com.henfon.shop.payment.mapper.PaymentInvoiceMapper;
 import com.henfon.shop.trade.entity.TradeOrder;
 import com.henfon.shop.trade.service.TradeOrderService;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -38,9 +40,27 @@ public class PaymentInvoiceService {
 
     private final PaymentInvoiceMapper invoiceMapper;
     private final TradeOrderService tradeOrderService;
+    private final ImageReferenceResolver imageReferenceResolver;
 
     /**
      * 创建发票申请服务。
+     *
+     * @param invoiceMapper 发票数据访问对象
+     * @param tradeOrderService 订单应用服务
+     * @param imageReferenceResolver 存储引用解析器，负责发票附件归一化与重签
+     * @author Henfon
+     * @date 2026-08-31
+     */
+    @Autowired
+    public PaymentInvoiceService(PaymentInvoiceMapper invoiceMapper, TradeOrderService tradeOrderService,
+                                 ImageReferenceResolver imageReferenceResolver) {
+        this.invoiceMapper = invoiceMapper;
+        this.tradeOrderService = tradeOrderService;
+        this.imageReferenceResolver = imageReferenceResolver;
+    }
+
+    /**
+     * 创建发票申请服务（兼容未接入对象存储的调用方，附件地址按原样落库）。
      *
      * @param invoiceMapper 发票数据访问对象
      * @param tradeOrderService 订单应用服务
@@ -48,8 +68,7 @@ public class PaymentInvoiceService {
      * @date 2026-08-31
      */
     public PaymentInvoiceService(PaymentInvoiceMapper invoiceMapper, TradeOrderService tradeOrderService) {
-        this.invoiceMapper = invoiceMapper;
-        this.tradeOrderService = tradeOrderService;
+        this(invoiceMapper, tradeOrderService, null);
     }
 
     /**
@@ -122,7 +141,7 @@ public class PaymentInvoiceService {
         PaymentInvoice invoice = invoiceMapper.selectOne(new LambdaQueryWrapper<PaymentInvoice>()
                 .eq(PaymentInvoice::getOrderId, orderId).eq(PaymentInvoice::getMemberId, memberId)
                 .last("LIMIT 1"));
-        return invoice == null ? null : PaymentInvoiceResponse.from(invoice);
+        return invoice == null ? null : PaymentInvoiceResponse.from(resignInvoiceUrl(invoice));
     }
 
     /**
@@ -144,14 +163,17 @@ public class PaymentInvoiceService {
         long safeCurrent = Math.max(current, 1);
         long safeSize = Math.min(Math.max(size, 1), 200);
         String normalizedKeyword = StringUtils.hasText(keyword) ? keyword.trim() : null;
-        return invoiceMapper.selectPage(new Page<>(safeCurrent, safeSize), new LambdaQueryWrapper<PaymentInvoice>()
-                .eq(orderId != null, PaymentInvoice::getOrderId, orderId)
-                .eq(memberId != null, PaymentInvoice::getMemberId, memberId)
-                .and(normalizedKeyword != null, wrapper -> wrapper.like(PaymentInvoice::getInvoiceNo, normalizedKeyword)
-                        .or().like(PaymentInvoice::getOrderNo, normalizedKeyword)
-                        .or().like(PaymentInvoice::getTitle, normalizedKeyword))
-                .eq(status != null, PaymentInvoice::getStatus, status)
-                .orderByDesc(PaymentInvoice::getCreatedAt));
+        IPage<PaymentInvoice> page = invoiceMapper.selectPage(new Page<>(safeCurrent, safeSize),
+                new LambdaQueryWrapper<PaymentInvoice>()
+                        .eq(orderId != null, PaymentInvoice::getOrderId, orderId)
+                        .eq(memberId != null, PaymentInvoice::getMemberId, memberId)
+                        .and(normalizedKeyword != null, wrapper -> wrapper.like(PaymentInvoice::getInvoiceNo, normalizedKeyword)
+                                .or().like(PaymentInvoice::getOrderNo, normalizedKeyword)
+                                .or().like(PaymentInvoice::getTitle, normalizedKeyword))
+                        .eq(status != null, PaymentInvoice::getStatus, status)
+                        .orderByDesc(PaymentInvoice::getCreatedAt));
+        page.getRecords().forEach(this::resignInvoiceUrl);
+        return page;
     }
 
     /**
@@ -171,7 +193,7 @@ public class PaymentInvoiceService {
         }
         validateStatusPayload(target, request);
         invoice.setStatus(target);
-        invoice.setInvoiceUrl(normalize(request.invoiceUrl()));
+        invoice.setInvoiceUrl(normalizeInvoiceUrl(request.invoiceUrl()));
         invoice.setFailureReason(normalize(request.failureReason()));
         if (target == STATUS_ISSUED) {
             invoice.setIssuedAt(LocalDateTime.now());
@@ -182,7 +204,43 @@ public class PaymentInvoiceService {
         if (invoiceMapper.updateById(invoice) == 0) {
             throw new BusinessException("PAYMENT_INVOICE_CONCURRENT_UPDATE", "发票申请已被其他操作修改");
         }
-        return PaymentInvoiceResponse.from(invoice);
+        return PaymentInvoiceResponse.from(resignInvoiceUrl(invoice));
+    }
+
+    /**
+     * 将发票附件地址归一化为稳定对象键，便于持久化。
+     *
+     * <p>上传接口返回的是 24 小时过期的预签名地址，直接落库会让次日下载发票 403。</p>
+     *
+     * @param invoiceUrl 发票附件地址
+     * @return 稳定存储引用
+     * @author Henfon
+     * @date 2026-09-17
+     */
+    private String normalizeInvoiceUrl(String invoiceUrl) {
+        if (!StringUtils.hasText(invoiceUrl)) {
+            return normalize(invoiceUrl);
+        }
+        if (imageReferenceResolver == null) {
+            return invoiceUrl.trim();
+        }
+        return imageReferenceResolver.normalizeReference(invoiceUrl);
+    }
+
+    /**
+     * 将发票附件引用重签为当前有效的访问地址。
+     *
+     * @param invoice 发票实体，可为空
+     * @return 重签后的发票实体
+     * @author Henfon
+     * @date 2026-09-17
+     */
+    private PaymentInvoice resignInvoiceUrl(PaymentInvoice invoice) {
+        if (imageReferenceResolver == null || invoice == null) {
+            return invoice;
+        }
+        invoice.setInvoiceUrl(imageReferenceResolver.accessUrl(invoice.getInvoiceUrl()));
+        return invoice;
     }
 
     /**

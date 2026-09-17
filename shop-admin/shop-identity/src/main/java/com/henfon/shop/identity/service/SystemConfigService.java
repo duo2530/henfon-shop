@@ -26,9 +26,10 @@ import java.util.Map;
 @Service
 public class SystemConfigService {
 
-    private static final String DEFAULT_STORE_NAME = "极简臻品官方旗舰店";
+    // 首次查询时写入的占位店铺信息，不含任何虚构品牌，运营可在「系统设置」页改为真实值。
+    private static final String DEFAULT_STORE_NAME = "Henfon商城";
     private static final String DEFAULT_CONTACT_PHONE = "400-888-9999";
-    private static final String DEFAULT_CONTACT_EMAIL = "support@brandmall.com";
+    private static final String DEFAULT_CONTACT_EMAIL = "support@henfon.com";
     private static final int DEFAULT_LOW_STOCK_THRESHOLD = 10;
 
     private final SysConfigMapper sysConfigMapper;

@@ -16,8 +16,8 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
+import java.util.Collections;
 import java.util.List;
-import java.util.stream.Collectors;
 
 /**
  * 门户内容查询服务。
@@ -30,6 +30,7 @@ public class ContentPortalService {
     private final ContentBannerMapper bannerMapper;
     private final ContentReviewMapper reviewMapper;
     private final TradeOrderService tradeOrderService;
+    private final ContentImageUrlResolver imageUrlResolver;
 
     /**
      * 创建门户内容服务。
@@ -37,14 +38,16 @@ public class ContentPortalService {
      * @param bannerMapper Banner 数据访问对象
      * @param reviewMapper 评价数据访问对象
      * @param tradeOrderService 订单应用服务
+     * @param imageUrlResolver 图片地址解析器
      * @author Henfon
      * @date 2026-08-29
      */
     public ContentPortalService(ContentBannerMapper bannerMapper, ContentReviewMapper reviewMapper,
-                                TradeOrderService tradeOrderService) {
+                                TradeOrderService tradeOrderService, ContentImageUrlResolver imageUrlResolver) {
         this.bannerMapper = bannerMapper;
         this.reviewMapper = reviewMapper;
         this.tradeOrderService = tradeOrderService;
+        this.imageUrlResolver = imageUrlResolver;
     }
 
     /**
@@ -56,11 +59,21 @@ public class ContentPortalService {
      */
     public List<ContentBanner> banners() {
         LocalDateTime now = LocalDateTime.now();
-        return bannerMapper.selectList(new LambdaQueryWrapper<ContentBanner>()
+        List<ContentBanner> banners = bannerMapper.selectList(new LambdaQueryWrapper<ContentBanner>()
                 .eq(ContentBanner::getStatus, 1)
                 .and(q -> q.isNull(ContentBanner::getStartAt).or().le(ContentBanner::getStartAt, now))
                 .and(q -> q.isNull(ContentBanner::getEndAt).or().ge(ContentBanner::getEndAt, now))
                 .orderByAsc(ContentBanner::getSortNo));
+        if (banners == null) {
+            return Collections.emptyList();
+        }
+        // 门户直接拿 imageUrl 渲染，这里把持久化的对象键换成当前有效的访问地址。
+        banners.forEach(banner -> {
+            if (banner != null) {
+                banner.setImageUrl(imageUrlResolver.accessUrl(banner.getImageUrl()));
+            }
+        });
+        return banners;
     }
 
     /**
@@ -84,7 +97,11 @@ public class ContentPortalService {
                 .orderByDesc(ContentReview::getReviewedAt)
                 .last("LIMIT " + safeLimit));
         // 统一将数据访问层的 null 结果转换为空列表，简化控制器和调用方处理。
-        return reviews == null ? java.util.Collections.emptyList() : reviews;
+        if (reviews == null) {
+            return Collections.emptyList();
+        }
+        reviews.forEach(this::resignReviewImages);
+        return reviews;
     }
 
     /**
@@ -104,11 +121,32 @@ public class ContentPortalService {
         // 门户只返回审核通过的评价，并限制单页大小避免评价内容接口被滥用。
         long safeCurrent = Math.max(current, 1);
         long safeSize = Math.min(Math.max(size, 1), 50);
-        return reviewMapper.selectPage(new Page<>(safeCurrent, safeSize), new LambdaQueryWrapper<ContentReview>()
-                .eq(ContentReview::getProductId, productId)
-                .eq(ContentReview::getStatus, 1)
-                .orderByDesc(ContentReview::getReviewedAt)
-                .orderByDesc(ContentReview::getCreatedAt));
+        IPage<ContentReview> result = reviewMapper.selectPage(new Page<>(safeCurrent, safeSize),
+                new LambdaQueryWrapper<ContentReview>()
+                        .eq(ContentReview::getProductId, productId)
+                        .eq(ContentReview::getStatus, 1)
+                        .orderByDesc(ContentReview::getReviewedAt)
+                        .orderByDesc(ContentReview::getCreatedAt));
+        if (result != null && result.getRecords() != null) {
+            result.getRecords().forEach(this::resignReviewImages);
+        }
+        return result;
+    }
+
+    /**
+     * 将评价晒单图片重签为当前有效的访问地址。
+     *
+     * <p>评价是长期留档内容，存储里放的是对象键，展示时必须按当前配置重新签名，
+     * 否则 24 小时后晒单图全部失效。</p>
+     *
+     * @param review 评价实体
+     * @author Henfon
+     * @date 2026-09-17
+     */
+    private void resignReviewImages(ContentReview review) {
+        if (review != null && StringUtils.hasText(review.getImageUrls())) {
+            review.setImageUrls(imageUrlResolver.resignJsonArray(review.getImageUrls()));
+        }
     }
 
     /**
@@ -137,7 +175,8 @@ public class ContentPortalService {
         review.setRating(request.rating());
         review.setReviewContent(request.reviewContent().trim());
         review.setVariantSummary(StringUtils.hasText(request.variantSummary()) ? request.variantSummary().trim() : null);
-        review.setImageUrls(serializeImageUrls(request.imageUrls()));
+        // 会员上传拿到的是预签名地址，入库前归一化为对象键，展示时再重签。
+        review.setImageUrls(imageUrlResolver.normalizeJsonArray(request.imageUrls()));
         review.setHelpfulCount(0);
         review.setStatus(0);
         reviewMapper.insert(review);
@@ -180,22 +219,4 @@ public class ContentPortalService {
         return review;
     }
 
-    /**
-     * 将评价图片地址安全序列化为 JSON 数组字符串。
-     *
-     * @param imageUrls 图片地址列表
-     * @return JSON 数组字符串
-     * @author Henfon
-     * @date 2026-09-01
-     */
-    private String serializeImageUrls(List<String> imageUrls) {
-        if (imageUrls == null || imageUrls.isEmpty()) {
-            return null;
-        }
-        return imageUrls.stream()
-                .filter(StringUtils::hasText)
-                .map(String::trim)
-                .map(url -> "\"" + url.replace("\\", "\\\\").replace("\"", "\\\"") + "\"")
-                .collect(Collectors.joining(",", "[", "]"));
-    }
 }

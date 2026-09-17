@@ -17,6 +17,20 @@ interface HeroBannerProps {
   onNavigateBanner?: (linkType: string, linkTarget?: string) => void;
 }
 
+/**
+ * 按跳转类型推导按钮文案。
+ * 返回 null 表示这个 Banner 没有可执行的跳转（无跳转或缺少目标），此时不渲染按钮。
+ */
+function bannerActionText(linkType?: string, linkTarget?: string): string | null {
+  const type = (linkType || 'NONE').toUpperCase();
+  if (type === 'NONE' || !(linkTarget || '').trim()) return null;
+  if (type === 'PRODUCT') return '立即查看';
+  if (type === 'CATEGORY') return '逛逛该分类';
+  if (type === 'COUPON') return '去领券';
+  if (type === 'URL') return '了解详情';
+  return null;
+}
+
 export const HeroBanner: React.FC<HeroBannerProps> = ({
   onExploreCategory,
   onSelectProduct,
@@ -78,7 +92,7 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({
         productId: banner.linkTarget || '',
         linkType: banner.linkType || 'PRODUCT',
         category: 'all',
-        ctaText: '立即查看',
+        ctaText: bannerActionText(banner.linkType, banner.linkTarget),
         bgGradient: 'from-zinc-900 via-zinc-800 to-zinc-950',
         image: banner.imageUrl,
         price: '',
@@ -126,24 +140,28 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({
             </p>
 
             <div className="flex items-center gap-4 flex-wrap">
-              <button
-                onClick={() => {
-                  if (slide.id.startsWith('remote-') && onNavigateBanner) {
-                    onNavigateBanner(slide.linkType || 'NONE', slide.productId);
-                    return;
-                  }
-                  onSelectProduct(slide.productId);
-                }}
-                className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-white text-zinc-950 font-semibold text-sm hover:bg-zinc-100 transition shadow-lg group"
-              >
-                <span>{slide.ctaText}</span>
-                <ArrowRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
-              </button>
+              {slide.ctaText && (
+                <button
+                  onClick={() => {
+                    if (slide.id.startsWith('remote-') && onNavigateBanner) {
+                      onNavigateBanner(slide.linkType || 'NONE', slide.productId);
+                      return;
+                    }
+                    onSelectProduct(slide.productId);
+                  }}
+                  className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-white text-zinc-950 font-semibold text-sm hover:bg-zinc-100 transition shadow-lg group"
+                >
+                  <span>{slide.ctaText}</span>
+                  <ArrowRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
+                </button>
+              )}
 
-              <div className="flex items-baseline gap-2">
-                <span className="text-2xl font-black text-amber-400">{slide.price}</span>
-                <span className="text-xs text-zinc-400 line-through">{slide.originalPrice}</span>
-              </div>
+              {(slide.price || slide.originalPrice) && (
+                <div className="flex items-baseline gap-2">
+                  <span className="text-2xl font-black text-amber-400">{slide.price}</span>
+                  <span className="text-xs text-zinc-400 line-through">{slide.originalPrice}</span>
+                </div>
+              )}
             </div>
           </div>
 

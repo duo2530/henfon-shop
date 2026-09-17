@@ -16,6 +16,7 @@ import com.henfon.shop.trade.mapper.TradeAfterSaleMapper;
 import com.henfon.shop.trade.mapper.TradeOrderItemMapper;
 import com.henfon.shop.trade.mapper.TradeOrderMapper;
 import com.henfon.shop.integration.messaging.RocketMqTopics;
+import com.henfon.shop.integration.storage.ImageReferenceResolver;
 import com.henfon.shop.inventory.service.InventoryStockService;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -53,6 +54,7 @@ public class TradeAfterSaleService {
     private final TradeEventOutboxService tradeEventOutboxService;
     private final InventoryStockService inventoryStockService;
     private final ObjectProvider<FlashSaleReservationService> flashSaleReservationServiceProvider;
+    private final ImageReferenceResolver imageReferenceResolver;
 
     /**
      * 创建售后服务。
@@ -64,6 +66,7 @@ public class TradeAfterSaleService {
      * @param tradeEventOutboxService 领域事件 Outbox 服务
      * @param inventoryStockService 库存台账服务
      * @param flashSaleReservationServiceProvider 秒杀预占服务，营销模块未启用时为空
+     * @param imageReferenceResolver 存储引用解析器，负责凭证图片归一化与重签
      * @author Henfon
      * @date 2026-08-30
      */
@@ -72,7 +75,8 @@ public class TradeAfterSaleService {
                                  TradeOrderItemMapper orderItemMapper, TradeOrderService tradeOrderService,
                                  TradeEventOutboxService tradeEventOutboxService,
                                  InventoryStockService inventoryStockService,
-                                 ObjectProvider<FlashSaleReservationService> flashSaleReservationServiceProvider) {
+                                 ObjectProvider<FlashSaleReservationService> flashSaleReservationServiceProvider,
+                                 ImageReferenceResolver imageReferenceResolver) {
         this.afterSaleMapper = afterSaleMapper;
         this.orderMapper = orderMapper;
         this.orderItemMapper = orderItemMapper;
@@ -80,6 +84,29 @@ public class TradeAfterSaleService {
         this.tradeEventOutboxService = tradeEventOutboxService;
         this.inventoryStockService = inventoryStockService;
         this.flashSaleReservationServiceProvider = flashSaleReservationServiceProvider;
+        this.imageReferenceResolver = imageReferenceResolver;
+    }
+
+    /**
+     * 创建售后服务（兼容未配置对象存储的调用方，凭证地址按原样落库）。
+     *
+     * @param afterSaleMapper 售后单数据访问对象
+     * @param orderMapper 订单数据访问对象
+     * @param orderItemMapper 订单明细数据访问对象
+     * @param tradeOrderService 订单服务
+     * @param tradeEventOutboxService 领域事件 Outbox 服务
+     * @param inventoryStockService 库存台账服务
+     * @param flashSaleReservationServiceProvider 秒杀预占服务，营销模块未启用时为空
+     * @author Henfon
+     * @date 2026-08-30
+     */
+    public TradeAfterSaleService(TradeAfterSaleMapper afterSaleMapper, TradeOrderMapper orderMapper,
+                                 TradeOrderItemMapper orderItemMapper, TradeOrderService tradeOrderService,
+                                 TradeEventOutboxService tradeEventOutboxService,
+                                 InventoryStockService inventoryStockService,
+                                 ObjectProvider<FlashSaleReservationService> flashSaleReservationServiceProvider) {
+        this(afterSaleMapper, orderMapper, orderItemMapper, tradeOrderService, tradeEventOutboxService,
+                inventoryStockService, flashSaleReservationServiceProvider, null);
     }
 
     /**
@@ -132,6 +159,7 @@ public class TradeAfterSaleService {
             tradeEventOutboxService.recordAfterSaleEvent(afterSale, "AFTER_SALE_CREATED",
                     RocketMqTopics.AFTER_SALE_CREATED);
         }
+        resignEvidenceUrls(afterSale);
         return afterSale;
     }
 
@@ -144,9 +172,11 @@ public class TradeAfterSaleService {
      * @date 2026-08-30
      */
     public List<TradeAfterSale> listByMember(Long memberId) {
-        return afterSaleMapper.selectList(new LambdaQueryWrapper<TradeAfterSale>()
+        List<TradeAfterSale> afterSales = afterSaleMapper.selectList(new LambdaQueryWrapper<TradeAfterSale>()
                 .eq(TradeAfterSale::getMemberId, memberId)
                 .orderByDesc(TradeAfterSale::getCreatedAt));
+        resignEvidenceUrls(afterSales);
+        return afterSales;
     }
 
     /**
@@ -163,10 +193,13 @@ public class TradeAfterSaleService {
     public IPage<TradeAfterSale> page(Integer status, Long orderId, long current, long size) {
         long safeCurrent = Math.max(current, 1);
         long safeSize = Math.min(Math.max(size, 1), 200);
-        return afterSaleMapper.selectPage(new Page<>(safeCurrent, safeSize), new LambdaQueryWrapper<TradeAfterSale>()
-                .eq(status != null, TradeAfterSale::getStatus, status)
-                .eq(orderId != null, TradeAfterSale::getOrderId, orderId)
-                .orderByDesc(TradeAfterSale::getCreatedAt));
+        IPage<TradeAfterSale> page = afterSaleMapper.selectPage(new Page<>(safeCurrent, safeSize),
+                new LambdaQueryWrapper<TradeAfterSale>()
+                        .eq(status != null, TradeAfterSale::getStatus, status)
+                        .eq(orderId != null, TradeAfterSale::getOrderId, orderId)
+                        .orderByDesc(TradeAfterSale::getCreatedAt));
+        resignEvidenceUrls(page.getRecords());
+        return page;
     }
 
     /**
@@ -551,7 +584,10 @@ public class TradeAfterSaleService {
     }
 
     /**
-     * 将售后凭证地址序列化为 JSON 数组字符串。
+     * 将售后凭证地址归一化后序列化为 JSON 数组字符串。
+     *
+     * <p>上传接口返回的是 24 小时过期的预签名地址，直接落库会导致次日凭证图片 403，
+     * 因此写入前统一转成对象键。</p>
      *
      * @param evidenceUrls 凭证地址列表
      * @return JSON 数组字符串
@@ -562,11 +598,43 @@ public class TradeAfterSaleService {
         if (evidenceUrls == null || evidenceUrls.isEmpty()) {
             return null;
         }
+        if (imageReferenceResolver != null) {
+            return imageReferenceResolver.normalizeJsonArray(evidenceUrls);
+        }
+        // 未接入对象存储的部署按原始地址落库。
         return evidenceUrls.stream()
                 .filter(StringUtils::hasText)
                 .map(String::trim)
                 .map(url -> "\"" + url.replace("\\", "\\\\").replace("\"", "\\\"") + "\"")
                 .collect(Collectors.joining(",", "[", "]"));
+    }
+
+    /**
+     * 将售后单中的凭证引用重签为当前有效的访问地址。
+     *
+     * @param afterSale 售后单，可为空
+     * @author Henfon
+     * @date 2026-09-17
+     */
+    private void resignEvidenceUrls(TradeAfterSale afterSale) {
+        if (imageReferenceResolver == null || afterSale == null) {
+            return;
+        }
+        afterSale.setEvidenceUrls(imageReferenceResolver.resignJsonArray(afterSale.getEvidenceUrls()));
+    }
+
+    /**
+     * 批量将售后单中的凭证引用重签为当前有效的访问地址。
+     *
+     * @param afterSales 售后单列表，可为空
+     * @author Henfon
+     * @date 2026-09-17
+     */
+    private void resignEvidenceUrls(List<TradeAfterSale> afterSales) {
+        if (imageReferenceResolver == null || afterSales == null) {
+            return;
+        }
+        afterSales.forEach(this::resignEvidenceUrls);
     }
 
     /**

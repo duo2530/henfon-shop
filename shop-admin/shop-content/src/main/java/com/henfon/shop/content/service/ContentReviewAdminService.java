@@ -28,30 +28,23 @@ public class ContentReviewAdminService {
 
     private final ContentReviewMapper reviewMapper;
     private final ContentNotificationService notificationService;
+    private final ContentImageUrlResolver imageUrlResolver;
 
     /**
      * 创建评价后台审核服务。
      *
      * @param reviewMapper 评价数据访问对象
-     * @author Henfon
-     * @date 2026-08-30
-     */
-    public ContentReviewAdminService(ContentReviewMapper reviewMapper) {
-        this(reviewMapper, null);
-    }
-
-    /**
-     * 创建带会员通知能力的评价审核服务。
-     *
-     * @param reviewMapper 评价数据访问对象
      * @param notificationService 会员通知服务
+     * @param imageUrlResolver 图片地址解析器
      * @author Henfon
      * @date 2026-09-04
      */
     @Autowired
-    public ContentReviewAdminService(ContentReviewMapper reviewMapper, ContentNotificationService notificationService) {
+    public ContentReviewAdminService(ContentReviewMapper reviewMapper, ContentNotificationService notificationService,
+                                     ContentImageUrlResolver imageUrlResolver) {
         this.reviewMapper = reviewMapper;
         this.notificationService = notificationService;
+        this.imageUrlResolver = imageUrlResolver;
     }
 
     /**
@@ -77,7 +70,25 @@ public class ContentReviewAdminService {
                         .like(ContentReview::getMemberName, keyword)
                         .or().like(ContentReview::getReviewContent, keyword))
                 .orderByDesc(ContentReview::getCreatedAt);
-        return reviewMapper.selectPage(new Page<>(safeCurrent, safeSize), wrapper);
+        IPage<ContentReview> result = reviewMapper.selectPage(new Page<>(safeCurrent, safeSize), wrapper);
+        if (result != null && result.getRecords() != null) {
+            // 审核页要直接看晒单图，这里重签一次，存储值保持对象键不动。
+            result.getRecords().forEach(this::resignImages);
+        }
+        return result;
+    }
+
+    /**
+     * 将评价晒单图片重签为当前有效的访问地址。
+     *
+     * @param review 评价实体
+     * @author Henfon
+     * @date 2026-09-17
+     */
+    private void resignImages(ContentReview review) {
+        if (review != null && StringUtils.hasText(review.getImageUrls())) {
+            review.setImageUrls(imageUrlResolver.resignJsonArray(review.getImageUrls()));
+        }
     }
 
     /**

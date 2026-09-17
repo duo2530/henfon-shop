@@ -62,7 +62,7 @@ class SystemConfigServiceTest {
 
         SystemConfigResponse response = systemConfigService.get(9L);
 
-        assertEquals("极简臻品官方旗舰店", response.storeName());
+        assertEquals("Henfon商城", response.storeName());
         assertEquals(10, response.lowStockThreshold());
         verify(sysConfigMapper).insert(any(SysConfig.class));
     }

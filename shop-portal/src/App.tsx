@@ -52,6 +52,7 @@ import {
   confirmPortalOrder,
   fetchPortalProductDetail,
   fetchPortalProducts,
+  mapCategory,
   logoutPortalMember,
   updatePortalMemberProfile,
   savePortalAddress,
@@ -2257,7 +2258,9 @@ export default function App() {
                 const category = portalCategories.find((item) =>
                   String(item.id) === target || item.categoryCode === target || item.categoryName === target);
                 if (category) {
-                  setSelectedCategory(category.categoryCode || category.categoryName);
+                  // 商品列表按前端 slug 过滤，这里必须与商品映射走同一份归一化，
+                  // 直接塞后端的 categoryCode 会筛不到任何商品。
+                  setSelectedCategory(mapCategory(category.categoryName));
                   setProductPage(1);
                   return;
                 }

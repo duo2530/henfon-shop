@@ -3,15 +3,18 @@ package com.henfon.shop.content.service;
 import com.henfon.shop.common.exception.BusinessException;
 import com.henfon.shop.content.entity.ContentReview;
 import com.henfon.shop.content.dto.ContentReviewFollowupRequest;
+import com.henfon.shop.content.dto.ContentReviewSubmitRequest;
 import com.henfon.shop.content.mapper.ContentBannerMapper;
 import com.henfon.shop.content.mapper.ContentReviewMapper;
 import com.henfon.shop.trade.service.TradeOrderService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.Collections;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -38,6 +41,20 @@ class ContentPortalServiceTest {
     @Mock
     private TradeOrderService tradeOrderService;
 
+    @Mock
+    private ContentImageUrlResolver imageUrlResolver;
+
+    /**
+     * 创建被测服务，统一注入图片地址解析器替身。
+     *
+     * @return 门户内容服务
+     * @author Henfon
+     * @date 2026-09-17
+     */
+    private ContentPortalService newService() {
+        return new ContentPortalService(bannerMapper, reviewMapper, tradeOrderService, imageUrlResolver);
+    }
+
     /**
      * 校验评价查询必须提供商品ID，避免空参数查询全量评价。
      *
@@ -46,7 +63,7 @@ class ContentPortalServiceTest {
      */
     @Test
     void shouldRejectReviewQueryWithoutProductId() {
-        ContentPortalService service = new ContentPortalService(bannerMapper, reviewMapper, tradeOrderService);
+        ContentPortalService service = newService();
 
         BusinessException exception = assertThrows(BusinessException.class,
                 () -> service.reviews(null, 20));
@@ -63,7 +80,7 @@ class ContentPortalServiceTest {
      */
     @Test
     void shouldNormalizeNullReviewResultToEmptyList() {
-        ContentPortalService service = new ContentPortalService(bannerMapper, reviewMapper, tradeOrderService);
+        ContentPortalService service = newService();
         when(reviewMapper.selectList(any())).thenReturn(null);
 
         var result = service.reviews(100L, 0);
@@ -85,7 +102,7 @@ class ContentPortalServiceTest {
         review.setStatus(1);
         when(reviewMapper.selectOne(any())).thenReturn(review);
         when(reviewMapper.updateById(any(ContentReview.class))).thenReturn(1);
-        ContentPortalService service = new ContentPortalService(bannerMapper, reviewMapper, tradeOrderService);
+        ContentPortalService service = newService();
 
         ContentReview result = service.followup(9L, 7L, new ContentReviewFollowupRequest("使用一周后体验很好"));
 
@@ -107,11 +124,56 @@ class ContentPortalServiceTest {
         review.setStatus(1);
         review.setFollowupContent("已有追评");
         when(reviewMapper.selectOne(any())).thenReturn(review);
-        ContentPortalService service = new ContentPortalService(bannerMapper, reviewMapper, tradeOrderService);
+        ContentPortalService service = newService();
 
         BusinessException exception = assertThrows(BusinessException.class,
                 () -> service.followup(9L, 7L, new ContentReviewFollowupRequest("再次提交")));
 
         assertEquals("CONTENT_REVIEW_FOLLOWUP_EXISTS", exception.getCode());
+    }
+
+    /**
+     * 校验门户评价列表返回的晒单图片已重签为当前有效地址。
+     *
+     * @author Henfon
+     * @date 2026-09-17
+     */
+    @Test
+    void shouldResignReviewImagesWhenListing() {
+        ContentReview review = new ContentReview();
+        review.setId(5L);
+        review.setImageUrls("[\"media/a.png\"]");
+        when(reviewMapper.selectList(any())).thenReturn(List.of(review));
+        when(imageUrlResolver.resignJsonArray("[\"media/a.png\"]")).thenReturn("[\"https://signed/a.png\"]");
+
+        List<ContentReview> result = newService().reviews(100L, 20);
+
+        assertEquals("[\"https://signed/a.png\"]", result.get(0).getImageUrls());
+    }
+
+    /**
+     * 校验会员提交评价时把预签名地址归一化为对象键后入库。
+     *
+     * @author Henfon
+     * @date 2026-09-17
+     */
+    @Test
+    void shouldNormalizeReviewImagesWhenSubmitting() {
+        String signedUrl = "https://minio.local/henfon-shop/media/a.png?X-Amz-Signature=abc";
+        when(tradeOrderService.hasPurchasedProduct(7L, 100L)).thenReturn(true);
+        when(imageUrlResolver.normalizeJsonArray(List.of(signedUrl))).thenReturn("[\"media/a.png\"]");
+        when(reviewMapper.insert(any(ContentReview.class))).thenAnswer(invocation -> {
+            ContentReview inserted = invocation.getArgument(0);
+            inserted.setId(31L);
+            return 1;
+        });
+
+        Long id = newService().submitReview(100L, 7L, "会员",
+                new ContentReviewSubmitRequest(5, "很好用", null, List.of(signedUrl)));
+
+        assertEquals(31L, id);
+        ArgumentCaptor<ContentReview> captor = ArgumentCaptor.forClass(ContentReview.class);
+        verify(reviewMapper).insert(captor.capture());
+        assertEquals("[\"media/a.png\"]", captor.getValue().getImageUrls());
     }
 }

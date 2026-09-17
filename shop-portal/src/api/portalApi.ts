@@ -250,7 +250,11 @@ function delay(milliseconds: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
 }
 
-function mapCategory(categoryName?: string): Product['category'] {
+/**
+ * 把后端类目名归一化为门户前端的类目 slug。
+ * 商品列表与 Banner 类目跳转共用这一份映射，避免两边口径漂移。
+ */
+export function mapCategory(categoryName?: string): Product['category'] {
   const value = categoryName || '';
   if (value.includes('数码') || value.includes('电子')) return 'digital';
   if (value.includes('家居')) return 'home';

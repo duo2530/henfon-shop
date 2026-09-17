@@ -1,7 +1,9 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useAdmin } from '../../context/AdminContext';
 import { useExportCenter } from '../../context/ExportCenterContext';
-import { Order, OrderStatus } from '../../types';
+import { Order, LogisticsStep, OrderStatus } from '../../types';
+import { listTradeOrderLogistics } from '../../api/adminApi';
+import { formatDateTime } from '../../utils/datetime';
 import { 
   Plus, 
   Search, 
@@ -72,6 +74,11 @@ export const OrderManagementView: React.FC = () => {
 
   // Modals & Drawers
   const [inspectOrder, setInspectOrder] = useState<Order | null>(null);
+  /** 详情弹框按需拉取的服务端物流轨迹，订单列表接口不返回该数据。 */
+  const [inspectLogistics, setInspectLogistics] = useState<LogisticsStep[]>([]);
+  const [logisticsLoading, setLogisticsLoading] = useState(false);
+  /** 详情弹框请求序号，避免快速切换订单时旧响应覆盖新数据。 */
+  const inspectRequestSeq = useRef(0);
   const [shippingOrder, setShippingOrder] = useState<Order | null>(null);
   const [carrier, setCarrier] = useState('');
   const [trackingNumber, setTrackingNumber] = useState('');
@@ -101,6 +108,69 @@ export const OrderManagementView: React.FC = () => {
       setInspectOrder(latestOrder);
     }
   }, [orders, inspectOrder]);
+
+  /**
+   * 拉取指定订单的服务端物流轨迹并转换为展示节点。
+   *
+   * 订单列表接口只返回运单号，不含轨迹节点，此前详情弹框恒显示"暂无物流节点数据"。
+   *
+   * @param orderId 订单ID
+   */
+  const loadInspectLogistics = async (orderId: string) => {
+    const numericId = Number(orderId);
+    if (!Number.isFinite(numericId)) {
+      setInspectLogistics([]);
+      return;
+    }
+    const requestSeq = ++inspectRequestSeq.current;
+    setLogisticsLoading(true);
+    try {
+      const nodes = await listTradeOrderLogistics(numericId);
+      if (requestSeq !== inspectRequestSeq.current) return;
+      setInspectLogistics(nodes
+        .slice()
+        .sort((a, b) => {
+          const bySort = (b.sortNo || 0) - (a.sortNo || 0);
+          return bySort !== 0 ? bySort : String(b.eventTime).localeCompare(String(a.eventTime));
+        })
+        .map((node, index) => ({
+          title: node.eventDescription || node.logisticsStatus || '物流状态更新',
+          time: formatDateTime(node.eventTime, '-'),
+          desc: [node.logisticsCompany, node.trackingNo, node.eventLocation].filter(Boolean).join(' · '),
+          status: index === 0 ? 'current' as const : 'completed' as const,
+        })));
+    } catch (error) {
+      if (requestSeq === inspectRequestSeq.current) {
+        showToast(error instanceof Error ? error.message : '物流轨迹加载失败', 'error');
+      }
+    } finally {
+      if (requestSeq === inspectRequestSeq.current) setLogisticsLoading(false);
+    }
+  };
+
+  /**
+   * 打开订单详情并按需加载物流轨迹。
+   *
+   * @param order 被查看的订单
+   */
+  const openInspectOrder = async (order: Order) => {
+    setInspectOrder(order);
+    setInspectLogistics([]);
+    await loadInspectLogistics(order.id);
+  };
+
+  /**
+   * 手动同步物流后刷新详情弹框轨迹，避免弹框停留在同步前的节点。
+   *
+   * @param orderId 订单ID
+   */
+  const handleSyncInspectLogistics = async (orderId: string) => {
+    await syncOrderLogistics(orderId);
+    await loadInspectLogistics(orderId);
+  };
+
+  /** 详情弹框优先展示服务端轨迹，回落到本地乐观更新的节点。 */
+  const inspectSteps = inspectLogistics.length > 0 ? inspectLogistics : inspectOrder?.logisticsSteps || [];
 
   // New Order Form state
   const [newOrderCustomer, setNewOrderCustomer] = useState('');
@@ -711,7 +781,7 @@ export const OrderManagementView: React.FC = () => {
                       <td className="py-3 px-4">
                         <div
                           className="font-mono font-bold text-gray-900 hover:text-blue-600 cursor-pointer text-xs"
-                          onClick={() => setInspectOrder(order)}
+                          onClick={() => void openInspectOrder(order)}
                         >
                           {order.orderNumber}
                         </div>
@@ -797,7 +867,7 @@ export const OrderManagementView: React.FC = () => {
                       <td className={`sticky right-0 z-10 py-3 px-4 text-right w-[220px] min-w-[220px] border-l border-[#E2E8F0] shadow-[-8px_0_12px_-12px_rgba(15,23,42,0.45)] ${isSelected ? 'bg-blue-50/50' : idx % 2 === 1 ? 'bg-[#FCFDFF]' : 'bg-white'} group-hover:bg-[#F8FAFC]`}>
                         <div className="flex min-h-8 flex-wrap items-center justify-end gap-1.5">
                           <button
-                            onClick={() => setInspectOrder(order)}
+                            onClick={() => void openInspectOrder(order)}
                             className="p-1.5 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
                             title="查看完整履约与物流追踪"
                           >
@@ -1032,13 +1102,17 @@ export const OrderManagementView: React.FC = () => {
                   <span>物流轨迹与履约流转节点 (Logistics Steps)</span>
                 </h4>
 
-                {inspectOrder.logisticsSteps && inspectOrder.logisticsSteps.length > 0 ? (
+                {logisticsLoading ? (
+                  <div className="p-4 bg-gray-50 rounded-xl border border-gray-200 text-center text-xs text-gray-400">
+                    物流轨迹加载中…
+                  </div>
+                ) : inspectSteps.length > 0 ? (
                   <div className="p-3.5 bg-gray-50 rounded-xl border border-gray-200 space-y-3">
-                    {inspectOrder.logisticsSteps.map((step, sIdx) => (
+                    {inspectSteps.map((step, sIdx) => (
                       <div key={sIdx} className="flex gap-3 relative">
                         <div className="flex flex-col items-center">
                           <div className={`w-3 h-3 rounded-full ${sIdx === 0 ? 'bg-blue-600 ring-4 ring-blue-100' : 'bg-gray-300'}`} />
-                          {sIdx < inspectOrder.logisticsSteps!.length - 1 && (
+                          {sIdx < inspectSteps.length - 1 && (
                             <div className="w-0.5 flex-1 bg-gray-200 my-1" />
                           )}
                         </div>
@@ -1054,7 +1128,7 @@ export const OrderManagementView: React.FC = () => {
                   </div>
                 ) : (
                   <div className="p-4 bg-gray-50 rounded-xl border border-gray-200 text-center text-xs text-gray-400">
-                    该订单尚在备货中，暂无物流节点数据
+                    该订单暂无物流轨迹节点
                   </div>
                 )}
               </div>
@@ -1064,7 +1138,7 @@ export const OrderManagementView: React.FC = () => {
               {inspectOrder.status === 'shipped' && (
                 <PermissionGate permission="order:ship">
                   <button
-                    onClick={() => void syncOrderLogistics(inspectOrder.id)}
+                    onClick={() => void handleSyncInspectLogistics(inspectOrder.id)}
                     className="px-4 py-2 bg-blue-50 text-blue-700 text-xs font-semibold rounded-lg hover:bg-blue-100 transition-colors"
                   >
                     同步物流
