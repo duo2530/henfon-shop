@@ -41,7 +41,11 @@ henfon-shop
 │  ├─ shop-reporting/                  # 销售、商品与会员经营分析、事件投影
 │  ├─ shop-integration/                # 快递物流查询、对象存储等外部集成
 │  ├─ shop-boot/                       # Spring Boot 启动模块、全局配置与健康检查
-│  └─ db/                              # 数据库初始化脚本与迁移校验脚本
+│  └─ db/                              # 数据库脚本与演示数据
+│     ├─ init/                         # 逐版增量迁移脚本（001~054）
+│     ├─ schema/henfon-shop.sql        # 完整结构基线，一条命令建好 60 张表
+│     ├─ migration/                    # 迁移脚本的版本校验
+│     └─ seed/                         # 演示数据：27 张表快照 + 399 张图片 + 导入脚本
 ├─ shop-web/                           # React 管理端
 │  ├─ src/components/                  # 按业务域分组的页面组件
 │  ├─ src/context/                     # 管理端全局状态
@@ -274,7 +278,17 @@ henfon-shop
 
 ### 2. 初始化数据库
 
-MySQL 首次启动会按 `shop-admin/db/init` 的编号顺序执行初始化脚本。手动导入时逐个执行该目录下的 SQL，并确认后端配置的库名与实际一致（默认 `henfon-shop`）。
+用 `shop-admin/db/schema/henfon-shop.sql` 建库。它自带 `CREATE DATABASE` 和 `USE`，一条命令建好 60 张表，外加默认仓库、物流承运商字典、配送模板这三份基础数据（共 6 行）：
+
+```powershell
+mysql -uroot -p --default-character-set=utf8mb4 < shop-admin/db/schema/henfon-shop.sql
+```
+
+`shop-admin/db/init/` 是逐版增量迁移脚本，给已有环境升级用，新环境不需要逐个执行——其中 `045` 和 `046` 用了 MariaDB 专有的 `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`，MySQL 8.4 解析不了，从零顺序执行会停在 `045`，后面 9 个脚本都不再执行，建出来的库只有 55 张表、比完整结构少 69 个列；即使让 mysql 跳过错误继续跑，这两个脚本负责的 6 个列也一样加不上。schema 文件头已记录这几处已知差异，并按原始意图补齐了对应的列。需要校验迁移脚本有没有被改动或遗漏时跑：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File shop-admin/db/migration/verify-migrations.ps1
+```
 
 ### 3. 启动后端与基础设施
 
@@ -332,6 +346,35 @@ npm run dev -- --port 3001
 开发初始化数据提供管理员账号 `admin / 123456`，仅限本地联调，首次登录后应立即改密码。
 
 建议按 MySQL → Redis → RocketMQ（按需）→ MinIO（按需）→ `shop-admin` → `shop-web` → `shop-portal` 的顺序启动。
+
+## 演示数据
+
+新环境建出来的库只有表结构和基础数据，商品、订单、会员都是空的，页面上一张图也没有。`shop-admin/db/seed/` 里备了一份快照，导入后门户和管理端直接就是有图有数据的状态：
+
+| 文件 | 内容 |
+| --- | --- |
+| `demo-data.sql` | 27 张业务表的 `INSERT IGNORE` 快照（0.33 MB），覆盖商品、SKU、商品媒体、库存与流水、营销活动、会员与地址收藏、购物车、订单与物流、售后、发票、站内通知和登录日志 |
+| `media/` | 399 张图片，目录结构与库里的对象键一一对应 |
+| `import-demo.mjs` | 零依赖上传脚本，把 `media/` 传到 MinIO 的 `shop` 桶 |
+
+先把 MinIO 起起来（`docker compose up -d minio`），然后在 `shop-admin` 目录执行：
+
+```powershell
+mysql -uroot -p --default-character-set=utf8mb4 henfon-shop < db/seed/demo-data.sql
+node db/seed/import-demo.mjs
+```
+
+第二行需要 Node 18+，不装任何 npm 包。凭据要对得上：脚本默认连 `http://127.0.0.1:9000`、用 `minioadmin / minioadmin`，而 `docker compose` 起的 MinIO 账号密码取的是 `.env` 里的 `MINIO_ACCESS_KEY` 和 `MINIO_SECRET_KEY`（示例值是 `henfon-minio`），两者不一样会报 403。用 compose 起的就先把这两个变量设成同样的值：
+
+```powershell
+$env:MINIO_ACCESS_KEY = "henfon-minio"
+$env:MINIO_SECRET_KEY = "change-me-minio-secret"
+node db/seed/import-demo.mjs
+```
+
+跑完可以去 MinIO 控制台 `http://localhost:9001` 看 `shop` 桶里有没有 `media/` 目录，或者直接打开门户首页看商品图。重复执行不会产生脏数据：已存在的图片会跳过（加 `--force` 覆盖重传），SQL 全部是 `INSERT IGNORE`。脚本还支持 `--sql` 顺带导入快照，这时需要 mysql 客户端在 `PATH` 里，或用 `MYSQL_BIN` 指定绝对路径、`MYSQL_PWD` 传密码。
+
+参数、验证方式和图片地址的存放约定见 [shop-admin 的说明](shop-admin/README.md#演示数据与媒体)。
 
 ## 配置说明
 
@@ -442,6 +485,8 @@ Vite 只在开发服务启动时读 `.env.local`。
 **RocketMQ 或 MinIO 连接失败**：只联调商品和订单基础流程时，可以先关掉不需要的异步消费者或文件功能；需要完整事件、文件上传或物流链路时再启动对应服务，并保证地址是后端能访问到的。
 
 **商品图片或评价凭证上传失败**：检查 MinIO 是否启动、endpoint 后端能否访问、bucket 是否存在。
+
+**导入演示数据后页面还是没有图**：先确认 `import-demo.mjs` 跑完时没有失败项，再到 MinIO 控制台看 `shop` 桶里有没有 `media/` 前缀的对象。库里存的是对象键（形如 `media/2026-09-01/xxx.jpg`），不是能直接打开的图片地址——后端读取时才用当前配置的 MinIO endpoint 和密钥签发访问地址。所以换了 endpoint、桶名或密钥，图片会整体 403，把后端与导入脚本的 `MINIO_*` 环境变量对齐即可。
 
 **支付功能跑不通**：微信支付依赖真实商户环境，本地至少要满足公网可访问的 HTTPS 回调地址、有效的商户证书与私钥、与商户平台一致的参数。只做基础开发可以先关掉支付。
 

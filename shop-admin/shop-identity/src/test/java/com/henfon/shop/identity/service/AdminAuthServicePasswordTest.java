@@ -12,6 +12,7 @@ import com.henfon.shop.identity.security.JwtTokenService;
 import com.henfon.shop.identity.security.AdminTokenStore;
 import com.henfon.shop.identity.security.LoginFailureTracker;
 import com.henfon.shop.identity.security.LoginRateLimiter;
+import com.henfon.shop.integration.storage.ImageReferenceResolver;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -53,6 +54,8 @@ class AdminAuthServicePasswordTest {
     private LoginFailureTracker loginFailureTracker;
     @Mock
     private AdminTokenStore adminTokenStore;
+    @Mock
+    private ImageReferenceResolver imageReferenceResolver;
 
     private AdminAuthService service;
 
@@ -65,7 +68,8 @@ class AdminAuthServicePasswordTest {
     @BeforeEach
     void setUp() {
         service = new AdminAuthService(sysUserMapper, sysUserRoleMapper, passwordEncoder,
-                jwtTokenService, auditLogService, loginRateLimiter, loginFailureTracker, adminTokenStore);
+                jwtTokenService, auditLogService, loginRateLimiter, loginFailureTracker, adminTokenStore,
+                imageReferenceResolver);
     }
 
     /**

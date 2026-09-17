@@ -61,7 +61,82 @@ mvn -DskipTests package
 java -jar shop-boot/target/shop-boot-0.0.1-SNAPSHOT.jar
 ```
 
-基础接口：`GET http://127.0.0.1:8080/api/health`。
+健康检查：`GET http://127.0.0.1:8080/actuator/health`，免鉴权。其它接口都要 JWT，未登录会拿到 401 与 `AUTH_REQUIRED`，`/api/health` 同样在鉴权范围内。
+
+## 演示数据与媒体
+
+用 `db/schema/henfon-shop.sql` 建出来的是空库，跑起来门户没有商品图、管理端没有订单。`db/seed/` 放了一份可直接导入的快照：
+
+- `demo-data.sql`：27 张业务表的 `INSERT IGNORE` 快照，覆盖商品、SKU、商品媒体、库存与流水、营销活动、会员与地址收藏、购物车、订单与物流、售后、发票、站内通知、登录日志。
+- `media/`：399 张图片，按 `2026-09-01/xxx.jpg` 的日期目录存放，其中 2 张没有被任何记录引用，留着备用。
+- `import-demo.mjs`：上传脚本，把 `media/` 下的文件传到 MinIO 的 `shop` 桶，并补回对象键里的 `media/` 前缀。
+
+### 导入
+
+MinIO 先起来，媒体才传得进去。在 `shop-admin` 目录执行：
+
+```powershell
+mysql -uroot -p --default-character-set=utf8mb4 henfon-shop < db/seed/demo-data.sql
+node db/seed/import-demo.mjs
+```
+
+`import-demo.mjs` 只用 Node 原生能力，需要 Node 18+（用到全局 `fetch`），不需要 `npm install`。
+
+凭据必须和后端一致。脚本默认连 `http://127.0.0.1:9000`、用 `minioadmin / minioadmin`，与 `application-dev.yml` 的默认值相同；如果 MinIO 是 `docker compose` 起的，账号密码来自 `.env` 的 `MINIO_ACCESS_KEY` 和 `MINIO_SECRET_KEY`，要先设成同样的值，否则会 403：
+
+```powershell
+$env:MINIO_ACCESS_KEY = "henfon-minio"
+$env:MINIO_SECRET_KEY = "change-me-minio-secret"
+node db/seed/import-demo.mjs
+```
+
+可覆盖的环境变量：`MINIO_ENDPOINT`、`MINIO_BUCKET`、`MINIO_ACCESS_KEY`、`MINIO_SECRET_KEY`。桶不存在时脚本会自己创建。
+
+重复执行是安全的：图片已存在就跳过，加 `--force` 覆盖重传；SQL 全部是 `INSERT IGNORE`，不会覆盖已有数据。想一条命令做完，加 `--sql`：
+
+```powershell
+node db/seed/import-demo.mjs --sql
+```
+
+`--sql` 会调用 mysql 客户端，需要它在 `PATH` 里。Windows 上 MySQL 客户端一般不在 `PATH`，用 `MYSQL_BIN` 指定绝对路径、`MYSQL_PWD` 传密码、`MYSQL_DB` 指定库名（默认 `henfon-shop`）：
+
+```powershell
+$env:MYSQL_PWD = "123456"
+$env:MYSQL_BIN = "C:/Program Files/MySQL/MySQL Server 8.4/bin/mysql.exe"
+node db/seed/import-demo.mjs --sql
+```
+
+### 验证
+
+MinIO 控制台 `http://127.0.0.1:9001` 的 `shop` 桶下应能看到 `media/` 目录，`media/` 前缀下的对象数与本地 `db/seed/media/` 的文件数一致。库里核对几行关键数据：
+
+```sql
+SELECT COUNT(*) FROM catalog_product;         -- 394
+SELECT COUNT(*) FROM catalog_product_media;   -- 391
+SELECT COUNT(*) FROM trade_order;             -- 15
+```
+
+启动后端、打开门户首页，商品图、轮播图、评价图都应正常显示。
+
+### 图片地址的存放约定
+
+所有图片字段都按这条约定处理，新增带图的功能时照做：
+
+- 库里存**对象键**（`media/2026-09-01/xxx.jpg`），不存可访问地址。
+- 上传接口 `POST /api/admin/storage/upload` 返回的 `url` 是 24 小时过期的 MinIO 预签名地址，直接入库过一天就会 403；要入库的是同一次返回的 `objectKey`。
+- 读取时由后端重新签发地址。统一入口是 `shop-integration` 的 `ImageReferenceResolver`：`accessUrl` 处理单值，`resignJsonArray` 处理以 JSON 数组存的多个地址；写入侧对应 `normalizeReference` 与 `normalizeJsonArray`。新增模块直接注入它，不要再复制一份实现。
+- 现有先例：内容模块的海报与评价图、交易模块的售后凭证、支付模块的发票附件、身份模块的管理员与会员头像，读写两侧都已按此处理。
+- 后台列表要展示缩略图又不能把签名地址写回库时，用 `@TableField(exist = false)` 的瞬态字段（先例是 `ContentBanner.imageAccessUrl`）。
+
+`demo-data.sql` 里的地址已全部归一化成对象键，没有 http 残留，换任何 endpoint 都能直接用。
+
+### 有意不导出的表
+
+`sys_oper_log`（约 1.4 万行操作日志）、`trade_event_outbox`、`export_task`（产物已过期）、`content_email_delivery` 不导出。部门、角色、菜单和 `admin` 账号由 `IdentityDataInitializer` 在应用启动时自建，也不在快照里。
+
+### 重新生成快照
+
+本地数据变了、想刷新这份快照时，用 `demo-seed-package` 技能：它包含导出 MinIO 媒体和转出归一化 SQL 的两个脚本，以及需要导哪些表的范围参考，产物与本目录下的文件保持同一格式。手工重做的话，注意导出后必须把预签名地址替换成对象键，并核对 SQL 引用的对象键与 `media/` 下的文件双向无缺口。
 
 ## 测试与质量基线
 

@@ -26,6 +26,7 @@ import {
   getAdminToken,
   getCurrentAdmin,
   logoutAdmin,
+  updateAdminProfile,
   listMemberUsers,
   createMemberUser,
   updateMemberStatus,
@@ -90,6 +91,13 @@ interface AdminContextType {
   currentUser: AdminUser | null;
   login: (username: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
+  /** 修改当前登录管理员本人的资料；头像传对象键或访问地址均可，服务端会归一化。 */
+  updateCurrentProfile: (payload: {
+    nickname?: string;
+    phone?: string;
+    email?: string;
+    avatarUrl?: string;
+  }) => Promise<void>;
   currentTab: NavigationTab;
   setCurrentTab: (tab: NavigationTab) => void;
   /** 判断当前管理员是否拥有指定按钮权限（支持超级管理员通配符）。 */
@@ -1410,6 +1418,27 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     }
   };
 
+  /**
+   * 修改当前登录管理员本人的资料。
+   *
+   * <p>走 /api/admin/auth/profile，不需要 system:user:update 权限；成功后同步顶栏头像与姓名，
+   * 避免必须退出重登才能看到新头像。</p>
+   */
+  const updateCurrentProfile = async (payload: {
+    nickname?: string;
+    phone?: string;
+    email?: string;
+    avatarUrl?: string;
+  }) => {
+    const updated = await updateAdminProfile(payload);
+    setCurrentUser((previous) => previous ? {
+      ...previous,
+      realName: updated.realName ?? previous.realName,
+      avatarUrl: updated.avatarUrl,
+    } : previous);
+    showToast('账号资料已更新', 'success');
+  };
+
   const deleteSystemUser = (id: string) => {
     const target = systemUsers.find((u) => u.id === id);
     if (target?.username === 'admin') {
@@ -1561,6 +1590,7 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         currentUser,
         login,
         logout,
+        updateCurrentProfile,
         currentTab,
         setCurrentTab,
         hasPermission,

@@ -1768,6 +1768,23 @@ export function getCurrentAdmin(): Promise<AdminUser> {
   return request<AdminUser>('/api/admin/auth/me');
 }
 
+/**
+ * 修改当前登录管理员本人的资料。
+ *
+ * 头像传对象键或上传接口返回的访问地址均可，服务端会归一化成对象键；字段传 undefined 表示不改动。
+ */
+export function updateAdminProfile(payload: {
+  nickname?: string;
+  phone?: string;
+  email?: string;
+  avatarUrl?: string;
+}): Promise<AdminUser> {
+  return request<AdminUser>('/api/admin/auth/profile', {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  });
+}
+
 export function getAdminMenus(): Promise<BackendMenu[]> {
   return request<BackendMenu[]>('/api/admin/auth/menus');
 }

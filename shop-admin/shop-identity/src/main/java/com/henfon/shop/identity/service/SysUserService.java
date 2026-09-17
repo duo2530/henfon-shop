@@ -8,6 +8,7 @@ import com.henfon.shop.identity.dto.SysUserCreateRequest;
 import com.henfon.shop.identity.dto.SysUserUpdateRequest;
 import com.henfon.shop.identity.entity.SysUser;
 import com.henfon.shop.identity.mapper.SysUserMapper;
+import com.henfon.shop.integration.storage.ImageReferenceResolver;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -25,18 +26,22 @@ public class SysUserService {
 
     private final SysUserMapper sysUserMapper;
     private final PasswordEncoder passwordEncoder;
+    private final ImageReferenceResolver imageReferenceResolver;
 
     /**
      * 创建后台用户服务。
      *
      * @param sysUserMapper 系统用户数据访问对象
      * @param passwordEncoder 密码编码器
+     * @param imageReferenceResolver 媒体引用解析器
      * @author Henfon
      * @date 2026-08-29
      */
-    public SysUserService(SysUserMapper sysUserMapper, PasswordEncoder passwordEncoder) {
+    public SysUserService(SysUserMapper sysUserMapper, PasswordEncoder passwordEncoder,
+                          ImageReferenceResolver imageReferenceResolver) {
         this.sysUserMapper = sysUserMapper;
         this.passwordEncoder = passwordEncoder;
+        this.imageReferenceResolver = imageReferenceResolver;
     }
 
     /**
@@ -66,7 +71,9 @@ public class SysUserService {
                         .or().like(SysUser::getRealName, keyword)
                         .or().like(SysUser::getPhone, keyword))
                 .orderByDesc(SysUser::getCreatedAt);
-        return sysUserMapper.selectPage(new Page<>(safeCurrent, safeSize), wrapper);
+        IPage<SysUser> page = sysUserMapper.selectPage(new Page<>(safeCurrent, safeSize), wrapper);
+        page.getRecords().forEach(this::resignAvatarUrl);
+        return page;
     }
 
     /**
@@ -93,7 +100,7 @@ public class SysUserService {
         user.setNickname(request.nickname());
         user.setPhone(request.phone());
         user.setEmail(request.email());
-        user.setAvatarUrl(request.avatarUrl());
+        user.setAvatarUrl(imageReferenceResolver.normalizeReference(request.avatarUrl()));
         user.setDeptId(request.deptId());
         user.setStatus(request.status() == null ? 1 : request.status());
         user.setUserType("ADMIN");
@@ -119,7 +126,7 @@ public class SysUserService {
         user.setNickname(request.nickname());
         user.setPhone(request.phone());
         user.setEmail(request.email());
-        user.setAvatarUrl(request.avatarUrl());
+        user.setAvatarUrl(imageReferenceResolver.normalizeReference(request.avatarUrl()));
         user.setDeptId(request.deptId());
         if (request.status() != null) {
             user.setStatus(request.status());
@@ -144,5 +151,22 @@ public class SysUserService {
             throw new BusinessException("USER_PROTECTED", "主管理员账号不可删除");
         }
         sysUserMapper.deleteById(id);
+    }
+
+    /**
+     * 将库中保存的对象键重签为当前有效的访问地址。
+     *
+     * <p>头像历史上存过 24 小时过期的 MinIO 预签名地址，直接返回会让界面上一片裂图，
+     * 因此所有对外返回用户的出口都要过这里一次。</p>
+     *
+     * @param user 用户实体
+     * @author Henfon
+     * @date 2026-09-17
+     */
+    private void resignAvatarUrl(SysUser user) {
+        if (user == null) {
+            return;
+        }
+        user.setAvatarUrl(imageReferenceResolver.accessUrl(user.getAvatarUrl()));
     }
 }

@@ -6,6 +6,7 @@ import com.henfon.shop.identity.dto.AdminLoginRequest;
 import com.henfon.shop.identity.dto.AdminLoginResponse;
 import com.henfon.shop.identity.dto.AdminCurrentUserResponse;
 import com.henfon.shop.identity.dto.AdminPasswordChangeRequest;
+import com.henfon.shop.identity.dto.AdminProfileUpdateRequest;
 import com.henfon.shop.identity.dto.AdminRefreshRequest;
 import com.henfon.shop.identity.entity.SysUser;
 import com.henfon.shop.identity.mapper.SysUserMapper;
@@ -16,6 +17,7 @@ import com.henfon.shop.identity.security.AdminRefreshIdentity;
 import com.henfon.shop.identity.security.AdminTokenStore;
 import com.henfon.shop.identity.security.LoginRateLimiter;
 import com.henfon.shop.identity.security.LoginFailureTracker;
+import com.henfon.shop.integration.storage.ImageReferenceResolver;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -41,6 +43,7 @@ public class AdminAuthService {
     private final LoginRateLimiter loginRateLimiter;
     private final LoginFailureTracker loginFailureTracker;
     private final AdminTokenStore adminTokenStore;
+    private final ImageReferenceResolver imageReferenceResolver;
 
     /**
      * 创建管理端登录服务。
@@ -53,13 +56,15 @@ public class AdminAuthService {
      * @param loginRateLimiter IP 登录限流器
      * @param loginFailureTracker 账号失败锁定跟踪器
      * @param adminTokenStore 管理员刷新令牌存储
+     * @param imageReferenceResolver 媒体引用解析器
      * @author Henfon
      * @date 2026-08-29
      */
     public AdminAuthService(SysUserMapper sysUserMapper, SysUserRoleMapper sysUserRoleMapper,
                             PasswordEncoder passwordEncoder, JwtTokenService jwtTokenService,
                             AuditLogService auditLogService, LoginRateLimiter loginRateLimiter,
-                            LoginFailureTracker loginFailureTracker, AdminTokenStore adminTokenStore) {
+                            LoginFailureTracker loginFailureTracker, AdminTokenStore adminTokenStore,
+                            ImageReferenceResolver imageReferenceResolver) {
         this.sysUserMapper = sysUserMapper;
         this.sysUserRoleMapper = sysUserRoleMapper;
         this.passwordEncoder = passwordEncoder;
@@ -68,6 +73,7 @@ public class AdminAuthService {
         this.loginRateLimiter = loginRateLimiter;
         this.loginFailureTracker = loginFailureTracker;
         this.adminTokenStore = adminTokenStore;
+        this.imageReferenceResolver = imageReferenceResolver;
     }
 
     /**
@@ -116,7 +122,7 @@ public class AdminAuthService {
         loginFailureTracker.reset(tenantId, request.username());
         return new AdminLoginResponse(token, jwtTokenService.getExpirationSeconds(),
                 adminTokenStore.createRefreshToken(user.getId(), user.getTenantId()), user.getId(),
-                user.getTenantId(), user.getUsername(), user.getRealName(), user.getAvatarUrl(), permissions);
+                user.getTenantId(), user.getUsername(), user.getRealName(), avatarAccessUrl(user), permissions);
     }
 
     /**
@@ -145,7 +151,7 @@ public class AdminAuthService {
         String accessToken = jwtTokenService.generate(user, permissions);
         return new AdminLoginResponse(accessToken, jwtTokenService.getExpirationSeconds(),
                 adminTokenStore.createRefreshToken(user.getId(), user.getTenantId()), user.getId(),
-                user.getTenantId(), user.getUsername(), user.getRealName(), user.getAvatarUrl(), permissions);
+                user.getTenantId(), user.getUsername(), user.getRealName(), avatarAccessUrl(user), permissions);
     }
 
     /**
@@ -159,16 +165,40 @@ public class AdminAuthService {
      */
     @Transactional(readOnly = true)
     public AdminCurrentUserResponse currentUser(Authentication authentication) {
-        if (authentication == null || !(authentication.getPrincipal() instanceof AuthenticatedUser principal)) {
-            throw new BusinessException("AUTH_REQUIRED", "请先登录管理员账号");
-        }
-        SysUser user = sysUserMapper.selectById(principal.userId());
-        if (user == null || !Integer.valueOf(1).equals(user.getStatus())) {
-            throw new BusinessException("AUTH_USER_NOT_FOUND", "管理员账号不存在或已停用");
-        }
+        SysUser user = requireAuthenticatedAdmin(authentication);
         // 权限以认证主体为准，资料字段以数据库最新值为准。
         return new AdminCurrentUserResponse(user.getId(), user.getTenantId(), user.getUsername(),
-                user.getRealName(), user.getAvatarUrl(), principal.permissions());
+                user.getRealName(), avatarAccessUrl(user), currentPermissions(authentication));
+    }
+
+    /**
+     * 修改当前登录管理员本人的资料，用于个人中心自助更换头像。
+     *
+     * @param authentication 当前认证信息
+     * @param request 资料修改请求
+     * @return 更新后的资料
+     * @author Henfon
+     * @date 2026-09-17
+     */
+    @Transactional
+    public AdminCurrentUserResponse updateProfile(Authentication authentication, AdminProfileUpdateRequest request) {
+        SysUser user = requireAuthenticatedAdmin(authentication);
+        if (request.avatarUrl() != null) {
+            // 头像历史上存的是 24 小时过期的预签名地址，写入前统一归一化成对象键。
+            user.setAvatarUrl(imageReferenceResolver.normalizeReference(request.avatarUrl()));
+        }
+        if (request.nickname() != null) {
+            user.setNickname(request.nickname());
+        }
+        if (request.phone() != null) {
+            user.setPhone(request.phone());
+        }
+        if (request.email() != null) {
+            user.setEmail(request.email());
+        }
+        sysUserMapper.updateById(user);
+        return new AdminCurrentUserResponse(user.getId(), user.getTenantId(), user.getUsername(),
+                user.getRealName(), avatarAccessUrl(user), currentPermissions(authentication));
     }
 
     /**
@@ -181,17 +211,7 @@ public class AdminAuthService {
      */
     @Transactional
     public void changePassword(Authentication authentication, AdminPasswordChangeRequest request) {
-        if (authentication == null || !(authentication.getPrincipal() instanceof AuthenticatedUser principal)
-                || !"ADMIN".equalsIgnoreCase(principal.userType())) {
-            throw new BusinessException("AUTH_REQUIRED", "请先登录管理员账号");
-        }
-        SysUser user = sysUserMapper.selectById(principal.userId());
-        if (user == null) {
-            throw new BusinessException("AUTH_USER_NOT_FOUND", "管理员账号不存在");
-        }
-        if (!Integer.valueOf(1).equals(user.getStatus())) {
-            throw new BusinessException("AUTH_DISABLED", "账号已被停用");
-        }
+        SysUser user = requireAuthenticatedAdmin(authentication);
         if (!passwordEncoder.matches(request.oldPassword(), user.getPasswordHash())) {
             throw new BusinessException("AUTH_PASSWORD_INVALID", "当前密码错误");
         }
@@ -202,5 +222,49 @@ public class AdminAuthService {
         user.setPasswordHash(passwordEncoder.encode(request.newPassword()));
         user.setPasswordUpdatedAt(LocalDateTime.now());
         sysUserMapper.updateById(user);
+    }
+
+    /**
+     * 校验当前认证主体为启用的管理员账号并读取最新记录。
+     *
+     * @param authentication 当前认证信息
+     * @return 管理员用户
+     * @author Henfon
+     * @date 2026-09-17
+     */
+    private SysUser requireAuthenticatedAdmin(Authentication authentication) {
+        if (authentication == null || !(authentication.getPrincipal() instanceof AuthenticatedUser principal)
+                || !"ADMIN".equalsIgnoreCase(principal.userType())) {
+            throw new BusinessException("AUTH_REQUIRED", "请先登录管理员账号");
+        }
+        SysUser user = sysUserMapper.selectById(principal.userId());
+        if (user == null || !Integer.valueOf(1).equals(user.getStatus())) {
+            throw new BusinessException("AUTH_USER_NOT_FOUND", "管理员账号不存在或已停用");
+        }
+        return user;
+    }
+
+    /**
+     * 读取认证主体已加载的权限列表。
+     *
+     * @param authentication 当前认证信息
+     * @return 权限编码列表
+     * @author Henfon
+     * @date 2026-09-17
+     */
+    private List<String> currentPermissions(Authentication authentication) {
+        return ((AuthenticatedUser) authentication.getPrincipal()).permissions();
+    }
+
+    /**
+     * 将头像对象键重签为当前有效的访问地址。
+     *
+     * @param user 管理员用户
+     * @return 可访问的头像地址，未设置头像时返回原值
+     * @author Henfon
+     * @date 2026-09-17
+     */
+    private String avatarAccessUrl(SysUser user) {
+        return imageReferenceResolver.accessUrl(user.getAvatarUrl());
     }
 }

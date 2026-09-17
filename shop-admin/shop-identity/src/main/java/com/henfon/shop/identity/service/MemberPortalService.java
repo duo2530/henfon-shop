@@ -16,6 +16,7 @@ import com.henfon.shop.identity.mapper.MemberCompareItemMapper;
 import com.henfon.shop.identity.mapper.MemberFavoriteMapper;
 import com.henfon.shop.identity.mapper.MemberUserMapper;
 import com.henfon.shop.identity.entity.MemberUser;
+import com.henfon.shop.integration.storage.ImageReferenceResolver;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.dao.DuplicateKeyException;
@@ -36,6 +37,7 @@ public class MemberPortalService {
     private final MemberCompareHistoryMapper historyMapper;
     private final MemberCompareItemMapper itemMapper;
     private final MemberUserMapper userMapper;
+    private final ImageReferenceResolver imageReferenceResolver;
 
     /**
      * 创建门户会员服务。
@@ -44,17 +46,20 @@ public class MemberPortalService {
      * @param favoriteMapper 收藏数据访问对象
      * @param historyMapper 对比历史数据访问对象
      * @param itemMapper 对比明细数据访问对象
+     * @param userMapper 会员数据访问对象
+     * @param imageReferenceResolver 媒体引用解析器
      * @author Henfon
      * @date 2026-08-29
      */
     public MemberPortalService(MemberAddressMapper addressMapper, MemberFavoriteMapper favoriteMapper,
                                MemberCompareHistoryMapper historyMapper, MemberCompareItemMapper itemMapper,
-                               MemberUserMapper userMapper) {
+                               MemberUserMapper userMapper, ImageReferenceResolver imageReferenceResolver) {
         this.addressMapper = addressMapper;
         this.favoriteMapper = favoriteMapper;
         this.historyMapper = historyMapper;
         this.itemMapper = itemMapper;
         this.userMapper = userMapper;
+        this.imageReferenceResolver = imageReferenceResolver;
     }
 
     /**
@@ -66,8 +71,12 @@ public class MemberPortalService {
      * @date 2026-08-29
      */
     public MemberUser profile(Long memberId) {
-        return userMapper.selectOne(new LambdaQueryWrapper<MemberUser>()
+        MemberUser member = userMapper.selectOne(new LambdaQueryWrapper<MemberUser>()
                 .eq(MemberUser::getId, memberId).eq(MemberUser::getStatus, 1));
+        if (member != null) {
+            member.setAvatarUrl(imageReferenceResolver.accessUrl(member.getAvatarUrl()));
+        }
+        return member;
     }
 
     /**
@@ -92,7 +101,10 @@ public class MemberPortalService {
         }
         if (request.phone() != null) member.setPhone(trimToNull(request.phone()));
         if (request.email() != null) member.setEmail(trimToNull(request.email()));
-        if (request.avatarUrl() != null) member.setAvatarUrl(trimToNull(request.avatarUrl()));
+        // null 表示不改动；空串表示清除头像，两者都不能被归一化逻辑合并。
+        if (request.avatarUrl() != null) {
+            member.setAvatarUrl(imageReferenceResolver.normalizeReference(trimToNull(request.avatarUrl())));
+        }
         member.setUpdatedAt(LocalDateTime.now());
         try {
             if (userMapper.updateById(member) == 0) {
@@ -102,6 +114,7 @@ public class MemberPortalService {
             // 手机号和邮箱由数据库唯一索引兜底，转换为稳定业务错误码供门户展示。
             throw new BusinessException("MEMBER_CONTACT_EXISTS", "手机号或邮箱已被其他会员使用");
         }
+        member.setAvatarUrl(imageReferenceResolver.accessUrl(member.getAvatarUrl()));
         return member;
     }
 

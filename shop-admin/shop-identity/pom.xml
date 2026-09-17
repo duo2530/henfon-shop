@@ -16,6 +16,11 @@
             <groupId>com.henfon.shop</groupId>
             <artifactId>shop-common</artifactId>
         </dependency>
+        <!-- 头像等媒体引用需要归一化对象键并按需重签访问地址。 -->
+        <dependency>
+            <groupId>com.henfon.shop</groupId>
+            <artifactId>shop-integration</artifactId>
+        </dependency>
         <dependency>
             <groupId>com.baomidou</groupId>
             <artifactId>mybatis-plus-spring-boot3-starter</artifactId>

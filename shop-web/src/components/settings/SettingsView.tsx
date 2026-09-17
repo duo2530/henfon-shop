@@ -19,6 +19,109 @@ import {
   CheckCircle2
 } from 'lucide-react';
 import { PermissionGate } from '../common/PermissionGate';
+import { uploadStorageFile } from '../../api/adminApi';
+
+/**
+ * 当前登录管理员的头像卡片。
+ *
+ * <p>放在设置页顶部是因为「系统用户管理」里的头像入口需要 system:user:update 权限、
+ * 且面向的是"管理别人"；本人换头像属于自助操作，走 /api/admin/auth/profile 不需要额外权限。</p>
+ */
+const AdminAvatarCard: React.FC = () => {
+  const { showToast, currentUser, updateCurrentProfile } = useAdmin();
+  const [preview, setPreview] = useState('');
+  const [uploading, setUploading] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  const displayName = currentUser?.realName || currentUser?.username || '管理员';
+  const shownAvatar = preview || currentUser?.avatarUrl || '';
+
+  const handlePick = async (file?: File) => {
+    if (!file) return;
+    setUploading(true);
+    try {
+      const uploaded = await uploadStorageFile(file);
+      setPreview(uploaded.url);
+      setSaving(true);
+      await updateCurrentProfile({ avatarUrl: uploaded.objectKey });
+      setPreview('');
+      showToast('头像已更新', 'success');
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : '头像更新失败，请稍后重试', 'error');
+    } finally {
+      setUploading(false);
+      setSaving(false);
+    }
+  };
+
+  const handleClear = async () => {
+    setSaving(true);
+    try {
+      await updateCurrentProfile({ avatarUrl: '' });
+      setPreview('');
+      showToast('已清除头像，恢复默认字母头像', 'info');
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : '头像清除失败，请稍后重试', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="bg-white rounded-xl border border-[#E2E8F0] p-5 md:p-6 shadow-xs">
+      <div className="flex items-center gap-2.5 pb-3 border-b border-gray-100 mb-4">
+        <div className="p-2 bg-indigo-50 text-indigo-600 rounded-lg">
+          <Shield className="w-5 h-5" />
+        </div>
+        <div>
+          <h3 className="text-base font-semibold text-gray-900">我的账号</h3>
+          <p className="text-xs text-gray-500">右上角显示的头像与账号资料</p>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-4">
+        <div className="w-16 h-16 rounded-full overflow-hidden border border-gray-200 bg-gray-100 shrink-0 flex items-center justify-center">
+          {shownAvatar ? (
+            <img src={shownAvatar} alt="当前头像" className="w-full h-full object-cover" />
+          ) : (
+            <span className="text-xl font-bold text-gray-400">{displayName.slice(0, 1).toUpperCase()}</span>
+          )}
+        </div>
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-gray-900 truncate">{displayName}</p>
+          <p className="text-xs text-gray-500 truncate font-mono">{currentUser?.username || '-'}</p>
+          <div className="mt-2 flex items-center gap-2">
+            <label className={`inline-flex items-center rounded-lg bg-[#2563EB] px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700 cursor-pointer ${uploading || saving ? 'opacity-60 pointer-events-none' : ''}`}>
+              {uploading ? '上传中…' : saving ? '保存中…' : '更换头像'}
+              <input
+                type="file"
+                accept="image/jpeg,image/png,image/webp,image/gif"
+                className="hidden"
+                disabled={uploading || saving}
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  if (file) void handlePick(file);
+                  event.target.value = '';
+                }}
+              />
+            </label>
+            {currentUser?.avatarUrl && (
+              <button
+                type="button"
+                onClick={() => void handleClear()}
+                disabled={uploading || saving}
+                className="text-xs text-gray-500 hover:text-rose-600 disabled:opacity-60"
+              >
+                清除头像
+              </button>
+            )}
+          </div>
+          <p className="mt-1.5 text-[11px] text-gray-400">支持 JPG、PNG、WEBP、GIF，单张不超过 10MB，文件保存在 MinIO。</p>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 export const SettingsView: React.FC = () => {
   const { showToast, requirePermission, confirm, logisticsCarriers } = useAdmin();
@@ -183,6 +286,8 @@ export const SettingsView: React.FC = () => {
           </PermissionGate>
         </div>
       </div>
+
+      <AdminAvatarCard />
 
       <form onSubmit={handleSaveSettings} className="space-y-6">
         {/* Section 1: 店铺基本信息 */}

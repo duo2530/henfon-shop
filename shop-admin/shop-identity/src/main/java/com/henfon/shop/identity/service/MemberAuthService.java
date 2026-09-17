@@ -13,6 +13,7 @@ import com.henfon.shop.identity.security.JwtTokenService;
 import com.henfon.shop.identity.security.AuthenticatedUser;
 import com.henfon.shop.identity.security.MemberTokenStore;
 import com.henfon.shop.identity.security.MemberLoginFailureTracker;
+import com.henfon.shop.integration.storage.ImageReferenceResolver;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -35,6 +36,7 @@ public class MemberAuthService {
     private final JwtTokenService jwtTokenService;
     private final MemberTokenStore memberTokenStore;
     private final MemberLoginFailureTracker loginFailureTracker;
+    private final ImageReferenceResolver imageReferenceResolver;
 
     /**
      * 创建会员认证服务。
@@ -42,17 +44,22 @@ public class MemberAuthService {
      * @param memberUserMapper 会员数据访问对象
      * @param passwordEncoder 密码编码器
      * @param jwtTokenService JWT 服务
+     * @param memberTokenStore 会员令牌存储
+     * @param loginFailureTracker 会员登录失败锁定跟踪器
+     * @param imageReferenceResolver 媒体引用解析器
      * @author Henfon
      * @date 2026-08-30
      */
     public MemberAuthService(MemberUserMapper memberUserMapper, PasswordEncoder passwordEncoder,
                              JwtTokenService jwtTokenService, MemberTokenStore memberTokenStore,
-                             MemberLoginFailureTracker loginFailureTracker) {
+                             MemberLoginFailureTracker loginFailureTracker,
+                             ImageReferenceResolver imageReferenceResolver) {
         this.memberUserMapper = memberUserMapper;
         this.passwordEncoder = passwordEncoder;
         this.jwtTokenService = jwtTokenService;
         this.memberTokenStore = memberTokenStore;
         this.loginFailureTracker = loginFailureTracker;
+        this.imageReferenceResolver = imageReferenceResolver;
     }
 
     /**
@@ -200,7 +207,8 @@ public class MemberAuthService {
         return new MemberLoginResponse(token, jwtTokenService.getExpirationSeconds(),
                 memberTokenStore.createRefreshToken(member.getId()), member.getId(),
                 member.getUsername(), member.getNickname(), member.getMemberLevel(), member.getPoints(),
-                member.getBalance(), member.getPhone(), member.getEmail(), member.getAvatarUrl());
+                member.getBalance(), member.getPhone(), member.getEmail(),
+                imageReferenceResolver.accessUrl(member.getAvatarUrl()));
     }
 
     /**

@@ -8,6 +8,7 @@ import com.henfon.shop.identity.mapper.MemberCompareHistoryMapper;
 import com.henfon.shop.identity.mapper.MemberCompareItemMapper;
 import com.henfon.shop.identity.mapper.MemberFavoriteMapper;
 import com.henfon.shop.identity.mapper.MemberUserMapper;
+import com.henfon.shop.integration.storage.ImageReferenceResolver;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -35,6 +36,7 @@ class MemberPortalServiceProfileTest {
     @Mock private MemberCompareHistoryMapper historyMapper;
     @Mock private MemberCompareItemMapper itemMapper;
     @Mock private MemberUserMapper userMapper;
+    @Mock private ImageReferenceResolver imageReferenceResolver;
 
     private MemberPortalService service;
 
@@ -46,7 +48,8 @@ class MemberPortalServiceProfileTest {
      */
     @BeforeEach
     void setUp() {
-        service = new MemberPortalService(addressMapper, favoriteMapper, historyMapper, itemMapper, userMapper);
+        service = new MemberPortalService(addressMapper, favoriteMapper, historyMapper, itemMapper, userMapper,
+                imageReferenceResolver);
     }
 
     /**

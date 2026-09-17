@@ -7,6 +7,7 @@ import com.henfon.shop.identity.dto.AdminCurrentUserResponse;
 import com.henfon.shop.identity.dto.AdminPasswordChangeRequest;
 import com.henfon.shop.identity.dto.AdminRefreshRequest;
 import com.henfon.shop.identity.dto.AdminLogoutRequest;
+import com.henfon.shop.identity.dto.AdminProfileUpdateRequest;
 import com.henfon.shop.identity.security.AuthenticatedUser;
 import com.henfon.shop.identity.security.MemberTokenStore;
 import com.henfon.shop.identity.security.AdminTokenStore;
@@ -19,6 +20,7 @@ import org.slf4j.MDC;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -134,6 +136,21 @@ public class AdminAuthController {
     @GetMapping("/me")
     public ApiResponse<AdminCurrentUserResponse> me(Authentication authentication) {
         return ApiResponse.success(adminAuthService.currentUser(authentication), requestId());
+    }
+
+    /**
+     * 修改当前登录管理员本人的资料（个人中心自助换头像）。
+     *
+     * @param request 资料修改请求
+     * @param authentication 当前认证信息
+     * @return 更新后的当前用户主体
+     * @author Henfon
+     * @date 2026-09-17
+     */
+    @PutMapping("/profile")
+    public ApiResponse<AdminCurrentUserResponse> updateProfile(@Valid @RequestBody AdminProfileUpdateRequest request,
+                                                                Authentication authentication) {
+        return ApiResponse.success(adminAuthService.updateProfile(authentication, request), requestId());
     }
 
     /**

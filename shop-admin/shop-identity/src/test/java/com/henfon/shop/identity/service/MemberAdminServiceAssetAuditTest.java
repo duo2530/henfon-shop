@@ -8,6 +8,7 @@ import com.henfon.shop.identity.mapper.MemberConsumptionStatMapper;
 import com.henfon.shop.identity.mapper.MemberTagMapper;
 import com.henfon.shop.identity.mapper.MemberUserMapper;
 import com.henfon.shop.identity.mapper.MemberUserTagMapper;
+import com.henfon.shop.integration.storage.ImageReferenceResolver;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -36,6 +37,7 @@ class MemberAdminServiceAssetAuditTest {
     @Mock private MemberUserTagMapper memberUserTagMapper;
     @Mock private MemberConsumptionStatMapper memberConsumptionStatMapper;
     @Mock private MemberAssetAuditMapper memberAssetAuditMapper;
+    @Mock private ImageReferenceResolver imageReferenceResolver;
 
     private MemberAdminService service;
 
@@ -48,7 +50,7 @@ class MemberAdminServiceAssetAuditTest {
     @BeforeEach
     void setUp() {
         service = new MemberAdminService(memberUserMapper, memberTagMapper, memberUserTagMapper,
-                memberConsumptionStatMapper, memberAssetAuditMapper);
+                memberConsumptionStatMapper, memberAssetAuditMapper, imageReferenceResolver);
     }
 
     /**

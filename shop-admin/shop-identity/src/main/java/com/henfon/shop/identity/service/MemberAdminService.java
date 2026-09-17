@@ -20,6 +20,7 @@ import com.henfon.shop.identity.entity.MemberAssetAudit;
 import com.henfon.shop.identity.mapper.MemberAssetAuditMapper;
 import com.henfon.shop.identity.dto.MemberTagSaveRequest;
 import com.henfon.shop.identity.dto.MemberUserTagsRequest;
+import com.henfon.shop.integration.storage.ImageReferenceResolver;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import org.springframework.dao.DuplicateKeyException;
@@ -49,6 +50,7 @@ public class MemberAdminService {
     private final MemberUserTagMapper memberUserTagMapper;
     private final MemberConsumptionStatMapper memberConsumptionStatMapper;
     private final MemberAssetAuditMapper memberAssetAuditMapper;
+    private final ImageReferenceResolver imageReferenceResolver;
 
     /**
      * 创建后台会员管理服务。
@@ -57,18 +59,22 @@ public class MemberAdminService {
      * @param memberTagMapper 标签数据访问对象
      * @param memberUserTagMapper 会员标签关联数据访问对象
      * @param memberConsumptionStatMapper 消费统计数据访问对象
+     * @param memberAssetAuditMapper 资产审计数据访问对象
+     * @param imageReferenceResolver 媒体引用解析器
      * @author Henfon
      * @date 2026-08-30
      */
     public MemberAdminService(MemberUserMapper memberUserMapper, MemberTagMapper memberTagMapper,
                               MemberUserTagMapper memberUserTagMapper,
                               MemberConsumptionStatMapper memberConsumptionStatMapper,
-                              MemberAssetAuditMapper memberAssetAuditMapper) {
+                              MemberAssetAuditMapper memberAssetAuditMapper,
+                              ImageReferenceResolver imageReferenceResolver) {
         this.memberUserMapper = memberUserMapper;
         this.memberTagMapper = memberTagMapper;
         this.memberUserTagMapper = memberUserTagMapper;
         this.memberConsumptionStatMapper = memberConsumptionStatMapper;
         this.memberAssetAuditMapper = memberAssetAuditMapper;
+        this.imageReferenceResolver = imageReferenceResolver;
     }
 
     /**
@@ -159,7 +165,7 @@ public class MemberAdminService {
         member.setEmail(email);
         member.setMemberLevel(StringUtils.hasText(request.memberLevel()) ? request.memberLevel().trim().toUpperCase() : "REGULAR");
         member.setStatus(status);
-        member.setAvatarUrl(trimToNull(request.avatarUrl()));
+        member.setAvatarUrl(imageReferenceResolver.normalizeReference(trimToNull(request.avatarUrl())));
         member.setRemark(trimToNull(request.remark()));
         member.setPoints(0L);
         member.setBalance(BigDecimal.ZERO);
@@ -499,6 +505,8 @@ public class MemberAdminService {
         if (member == null) {
             return null;
         }
+        // 所有后台读会员的出口都汇集到这里，头像在返回前统一重签，避免过期地址变成裂图。
+        member.setAvatarUrl(imageReferenceResolver.accessUrl(member.getAvatarUrl()));
         List<MemberUserTag> relations = memberUserTagMapper.selectList(new LambdaQueryWrapper<MemberUserTag>()
                 .eq(MemberUserTag::getMemberId, member.getId()));
         if (relations.isEmpty()) {

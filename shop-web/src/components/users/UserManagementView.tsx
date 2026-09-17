@@ -4,6 +4,7 @@ import { useExportCenter } from '../../context/ExportCenterContext';
 import { User, UserStatus } from '../../types';
 import { PermissionGate } from '../common/PermissionGate';
 import { Pagination } from '../common/Pagination';
+import { uploadStorageFile } from '../../api/adminApi';
 import { 
   Users, 
   UserPlus, 
@@ -208,6 +209,27 @@ export const UserManagementView: React.FC = () => {
       // 创建失败时保留表单内容，方便修正资料后重试。
     } finally {
       setIsSubmittingUser(false);
+    }
+  };
+
+  const [avatarUploading, setAvatarUploading] = useState(false);
+
+  /**
+   * 上传会员头像。
+   *
+   * 表单里直接存上传接口返回的访问地址，服务端写入时会归一化成对象键，因此无需在前端拆分预览值与持久值。
+   */
+  const handleAvatarUpload = async (file?: File) => {
+    if (!file) return;
+    setAvatarUploading(true);
+    try {
+      const uploaded = await uploadStorageFile(file);
+      setFormData((previous) => ({ ...previous, avatar: uploaded.url }));
+      showToast('头像上传成功，保存后生效', 'success');
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : '头像上传失败，请稍后重试', 'warning');
+    } finally {
+      setAvatarUploading(false);
     }
   };
 
@@ -1029,6 +1051,58 @@ export const UserManagementView: React.FC = () => {
             </div>
 
             <form onSubmit={handleSubmitUser} className="py-4 space-y-3.5 text-sm">
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 mb-1">
+                  会员头像
+                </label>
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-full overflow-hidden border border-gray-300 bg-gray-100 shrink-0 flex items-center justify-center">
+                    {formData.avatar ? (
+                      <img src={formData.avatar} alt="头像预览" className="w-full h-full object-cover" />
+                    ) : (
+                      <span className="text-base font-bold text-gray-400">
+                        {(formData.name || '会').slice(0, 1).toUpperCase()}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex-1 space-y-1.5">
+                    <div className="flex items-center gap-2">
+                      <label className={`inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 cursor-pointer ${avatarUploading ? 'opacity-60 pointer-events-none' : ''}`}>
+                        {avatarUploading ? '上传中…' : '上传头像'}
+                        <input
+                          type="file"
+                          accept="image/jpeg,image/png,image/webp,image/gif"
+                          className="hidden"
+                          disabled={avatarUploading}
+                          onChange={(event) => {
+                            const file = event.target.files?.[0];
+                            if (file) void handleAvatarUpload(file);
+                            event.target.value = '';
+                          }}
+                        />
+                      </label>
+                      {formData.avatar && (
+                        <button
+                          type="button"
+                          onClick={() => setFormData({ ...formData, avatar: '' })}
+                          className="text-xs text-gray-500 hover:text-rose-600"
+                        >
+                          清除头像
+                        </button>
+                      )}
+                    </div>
+                    <input
+                      type="url"
+                      maxLength={512}
+                      placeholder="也可以直接填写头像地址"
+                      value={formData.avatar}
+                      onChange={(e) => setFormData({ ...formData, avatar: e.target.value })}
+                      className="w-full h-[32px] px-3 rounded-lg border border-gray-300 focus:border-blue-500 outline-none text-xs"
+                    />
+                  </div>
+                </div>
+              </div>
+
               <div>
                 <label className="block text-xs font-semibold text-gray-700 mb-1">
                   用户姓名 *

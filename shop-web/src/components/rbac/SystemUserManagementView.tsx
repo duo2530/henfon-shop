@@ -44,6 +44,8 @@ export const SystemUserManagementView: React.FC = () => {
   // Modal states
   const [modalMode, setModalMode] = useState<'create' | 'edit' | null>(null);
   const [editingUser, setEditingUser] = useState<SystemUser | null>(null);
+  /** 仅用于本地预览的签名地址；表单里保存的是对象键，提交后由服务端归一化。 */
+  const [avatarPreview, setAvatarPreview] = useState('');
 
   const [formData, setFormData] = useState({
     username: '',
@@ -103,6 +105,7 @@ export const SystemUserManagementView: React.FC = () => {
       dataScope: 'dept_and_sub',
       initialPassword: ''
     });
+    setAvatarPreview('');
     setModalMode('create');
   };
 
@@ -121,6 +124,7 @@ export const SystemUserManagementView: React.FC = () => {
       dataScope: user.dataScope,
       initialPassword: ''
     });
+    setAvatarPreview(user.avatar || '');
     setModalMode('edit');
   };
 
@@ -131,7 +135,9 @@ export const SystemUserManagementView: React.FC = () => {
     setAvatarUploading(true);
     try {
       const result = await uploadStorageFile(file);
-      setFormData((previous) => ({ ...previous, avatar: result.url }));
+      // 表单里保存对象键（服务端归一化的目标形态），预览单独用当次签发的访问地址。
+      setFormData((previous) => ({ ...previous, avatar: result.objectKey }));
+      setAvatarPreview(result.url);
       showToast('头像上传成功', 'success');
     } catch (error) {
       showToast(error instanceof Error ? error.message : '头像上传失败，请稍后重试', 'warning');
@@ -318,11 +324,17 @@ export const SystemUserManagementView: React.FC = () => {
                       {/* Avatar & User Info */}
                       <td className="px-5 py-4">
                         <div className="flex items-center gap-3">
-                          <img
-                            src={user.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150'}
-                            alt={user.realName}
-                            className="w-10 h-10 rounded-full object-cover border border-slate-200 shrink-0"
-                          />
+                          {user.avatar ? (
+                            <img
+                              src={user.avatar}
+                              alt={user.realName}
+                              className="w-10 h-10 rounded-full object-cover border border-slate-200 shrink-0"
+                            />
+                          ) : (
+                            <div className="w-10 h-10 rounded-full bg-blue-100 text-blue-700 font-bold flex items-center justify-center border border-slate-200 shrink-0">
+                              {(user.realName || user.username).slice(0, 1).toUpperCase()}
+                            </div>
+                          )}
                           <div>
                             <div className="font-semibold text-slate-900 flex items-center gap-1.5">
                               <span>{user.realName}</span>
@@ -583,8 +595,8 @@ export const SystemUserManagementView: React.FC = () => {
                 </label>
                 <div className="flex items-center gap-3">
                   <div className="w-14 h-14 rounded-full overflow-hidden border border-slate-200 bg-slate-100 shrink-0 flex items-center justify-center">
-                    {formData.avatar ? (
-                      <img src={formData.avatar} alt="头像预览" className="w-full h-full object-cover" />
+                    {avatarPreview || formData.avatar ? (
+                      <img src={avatarPreview || formData.avatar} alt="头像预览" className="w-full h-full object-cover" />
                     ) : (
                       <Users className="w-6 h-6 text-slate-400" />
                     )}
@@ -612,7 +624,10 @@ export const SystemUserManagementView: React.FC = () => {
                       maxLength={512}
                       placeholder="也可以直接填写头像地址"
                       value={formData.avatar}
-                      onChange={(e) => setFormData({ ...formData, avatar: e.target.value })}
+                      onChange={(e) => {
+                        setFormData({ ...formData, avatar: e.target.value });
+                        setAvatarPreview('');
+                      }}
                       className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
                     />
                     <p className="text-[11px] text-slate-400">支持 JPG、PNG、WEBP、GIF，上传后自动保存到 MinIO。</p>
