@@ -69,11 +69,13 @@ import {
   PortalInvoiceRecord,
   PortalCategoryRecord,
   PortalFlashSaleRecord,
+  fetchPortalReviewSummary,
 } from './api/portalApi';
 import {
   Product,
   CartItem,
   Order,
+  OrderItem,
   Coupon,
   SortOption,
   CompareHistoryItem,
@@ -109,6 +111,36 @@ function resolveSelectedSku(product: Product, variants: Record<string, string>) 
   return product.skus?.find((sku) =>
     Object.entries(sku.attributes).every(([name, value]) => variants[name] === value)
   );
+}
+
+/** 从门户商品 ID 中解析后端商品主键。 */
+function toCatalogProductId(productId: string): number {
+  return Number(productId.replace(/^prod-/, ''));
+}
+
+/**
+ * 把评价统计合并到商品上。
+ *
+ * 商品列表与详情接口都不返回评价数据，这里统一补齐；接口不可用时按「暂无评价」展示，
+ * 不再回落到 5.0 分 0 条评价这类与真实数据不符的占位值。
+ */
+async function mergeReviewStats(products: Product[]): Promise<Product[]> {
+  if (products.length === 0) return products;
+  const ids = Array.from(new Set(
+    products.map((product) => toCatalogProductId(product.id)).filter((id) => Number.isFinite(id) && id > 0),
+  ));
+  if (ids.length === 0) return products;
+  const statsById = new Map<number, { reviewCount: number; avgRating: number }>();
+  try {
+    const summary = await fetchPortalReviewSummary(ids);
+    summary.forEach((item) => statsById.set(item.productId, { reviewCount: item.reviewCount, avgRating: item.avgRating }));
+  } catch (error) {
+    console.warn('商品评价统计接口暂不可用，评价数按暂无处理', error);
+  }
+  return products.map((product) => {
+    const stats = statsById.get(toCatalogProductId(product.id));
+    return { ...product, rating: stats?.avgRating ?? 0, reviewCount: stats?.reviewCount ?? 0 };
+  });
 }
 
 function mapPortalOrderStatus(orderStatus: number): { status: Order['status']; label: string } {
@@ -433,9 +465,11 @@ export default function App() {
       current: productPage,
       size: 24,
     })
-      .then((page) => {
+      .then(async (page) => {
         if (!active) return;
-        setProducts(page.records);
+        const enriched = await mergeReviewStats(page.records);
+        if (!active) return;
+        setProducts(enriched);
         setProductPage(page.current);
         setProductPageTotal(page.total);
         setProductPageCount(Math.max(page.pages, 1));
@@ -876,6 +910,12 @@ export default function App() {
 
   // Modals & Drawers
   const [quickViewProduct, setQuickViewProduct] = useState<Product | null>(null);
+  /** 打开商品快览时定位的页签，订单评价入口会直接落到「买家评价」。 */
+  const [quickViewTab, setQuickViewTab] = useState<'details' | 'specs' | 'reviews'>('details');
+  /** 页签定位标记，同一商品被重复从订单入口打开时也能切回评价页签。 */
+  const [quickViewTabToken, setQuickViewTabToken] = useState(0);
+  /** 待带入评价表单的已购规格。 */
+  const [quickViewVariantSeed, setQuickViewVariantSeed] = useState('');
   const [productDetailLoading, setProductDetailLoading] = useState(false);
   const [productDetailError, setProductDetailError] = useState<string | null>(null);
   const productDetailRequestRef = useRef(0);
@@ -1021,8 +1061,8 @@ export default function App() {
     }
   };
 
-  // 打开商品详情时补充后端的卖点、参数和媒体数据。
-  const openProduct = async (product: Product) => {
+  // 打开商品详情时补充后端的卖点、参数、媒体数据和评价统计。
+  const loadProductQuickView = async (product: Product) => {
     const requestId = productDetailRequestRef.current + 1;
     productDetailRequestRef.current = requestId;
     setQuickViewProduct(product);
@@ -1031,11 +1071,14 @@ export default function App() {
     try {
       const detail = await fetchPortalProductDetail(product.id);
       if (requestId !== productDetailRequestRef.current) return;
-      if (detail) {
-        setQuickViewProduct((current) => (current?.id === product.id ? { ...current, ...detail } : current));
-      } else {
+      if (!detail) {
         setProductDetailError('商品详情不存在或已下架');
+        return;
       }
+      // 详情接口不返回评价数据，合并后统一补齐真实统计，避免把结果覆盖成占位分数。
+      const [enriched] = await mergeReviewStats([{ ...product, ...detail }]);
+      if (requestId !== productDetailRequestRef.current) return;
+      setQuickViewProduct((current) => (current?.id === product.id ? { ...current, ...enriched } : current));
     } catch (error) {
       if (requestId !== productDetailRequestRef.current) return;
       console.warn('商品详情接口暂不可用', error);
@@ -1043,6 +1086,72 @@ export default function App() {
     } finally {
       if (requestId === productDetailRequestRef.current) setProductDetailLoading(false);
     }
+  };
+
+  // 常规入口打开商品快览，默认展示商品详情页签。
+  const openProduct = async (product: Product) => {
+    setQuickViewTab('details');
+    setQuickViewTabToken((current) => current + 1);
+    setQuickViewVariantSeed('');
+    await loadProductQuickView(product);
+  };
+
+  /**
+   * 打开商品快览并直接定位到买家评价页签，供订单列表的评价入口使用。
+   *
+   * @param product 商品
+   * @param variantSummary 订单中的已购规格，作为评价表单默认值
+   */
+  const openProductReview = async (product: Product, variantSummary?: string) => {
+    setQuickViewTab('reviews');
+    setQuickViewTabToken((current) => current + 1);
+    setQuickViewVariantSeed(variantSummary || '');
+    await loadProductQuickView(product);
+  };
+
+  /**
+   * 从订单商品行进入评价：关闭订单弹窗并打开对应商品的买家评价页签。
+   *
+   * @param item 订单商品明细
+   */
+  const handleReviewOrderItem = (item: OrderItem) => {
+    if (!item.productId) {
+      showToast('该订单商品缺少商品编号，暂时无法评价', 'error');
+      return;
+    }
+    setIsOrdersOpen(false);
+    const known = products.find((candidate) => candidate.id === item.productId);
+    const fallback: Product = known ?? {
+      id: item.productId,
+      title: item.title,
+      subtitle: '',
+      category: 'lifestyle',
+      categoryLabel: '精选商品',
+      brand: 'HENFON',
+      price: item.price,
+      originalPrice: item.price,
+      rating: 0,
+      reviewCount: 0,
+      salesCount: 0,
+      stock: 0,
+      images: item.image ? [item.image] : [],
+      features: [],
+      specs: {},
+      description: '',
+      isFreeShipping: true,
+      deliveryEstimate: '',
+    };
+    void openProductReview(fallback, item.variantsSummary);
+  };
+
+  // 评价提交后刷新当前商品的评价统计（新评价待审核，公开条数通常不变）。
+  const handleReviewSubmitted = () => {
+    const current = quickViewProduct;
+    if (!current) return;
+    void mergeReviewStats([current]).then(([enriched]) => {
+      if (!enriched) return;
+      setQuickViewProduct((latest) => (latest && latest.id === current.id ? { ...latest, ...enriched } : latest));
+    });
   };
 
   // Sync to localStorage
@@ -2678,7 +2787,12 @@ export default function App() {
         product={quickViewProduct}
         detailLoading={productDetailLoading}
         detailError={productDetailError}
-        onRetryDetail={() => { if (quickViewProduct) void openProduct(quickViewProduct); }}
+        onRetryDetail={() => { if (quickViewProduct) void loadProductQuickView(quickViewProduct); }}
+        initialTab={quickViewTab}
+        initialTabToken={quickViewTabToken}
+        reviewVariantSeed={quickViewVariantSeed}
+        onRequireLogin={() => handleOpenAuth('login-pwd')}
+        onReviewSubmitted={handleReviewSubmitted}
         isWishlisted={quickViewProduct ? wishlist.includes(quickViewProduct.id) : false}
         onClose={() => setQuickViewProduct(null)}
         onAddToCart={(p, variants, qty) => {
@@ -2765,6 +2879,7 @@ export default function App() {
         onCancelAfterSale={handleCancelAfterSale}
         onApplyInvoice={handleApplyInvoice}
         onRetryLogistics={handleRetryLogistics}
+        onReviewOrderItem={handleReviewOrderItem}
       />
 
       <WishlistModal
@@ -2837,6 +2952,7 @@ export default function App() {
         user={currentUser}
         claimedCoupons={claimedCoupons}
         orders={orders}
+        products={products}
         onClose={() => setIsUserProfileModalOpen(false)}
         onUpdateUser={handleUpdateUser}
         onLogout={handleLogout}

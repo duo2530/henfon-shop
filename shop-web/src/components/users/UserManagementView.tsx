@@ -30,8 +30,14 @@ import {
   ShieldCheck,
   ShieldAlert,
   Sliders,
-  DollarSign
+  DollarSign,
+  ChevronDown,
+  ChevronUp,
+  RefreshCw
 } from 'lucide-react';
+
+/** 标签筛选栏折叠时最多展示的标签数量，超出后由「展开全部」控制。 */
+const TAG_CHIP_COLLAPSED_LIMIT = 12;
 
 export const UserManagementView: React.FC = () => {
   const { 
@@ -44,7 +50,9 @@ export const UserManagementView: React.FC = () => {
     updateUserTags,
     showToast,
     searchQuery,
-    requirePermission
+    requirePermission,
+    memberTags,
+    refreshMemberTags
   } = useAdmin();
   const { submit: submitExportTask } = useExportCenter();
 
@@ -52,7 +60,10 @@ export const UserManagementView: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'suspended'>('all');
   const [tierFilter, setTierFilter] = useState<string>('all');
-  const [tagFilter, setTagFilter] = useState<string>('all');
+  // 画像标签支持多选：标签体系是枚举值，单选用不上「组合画像」这种典型场景。
+  const [tagFilters, setTagFilters] = useState<string[]>([]);
+  const [tagMatchMode, setTagMatchMode] = useState<'any' | 'all'>('any');
+  const [tagsExpanded, setTagsExpanded] = useState(false);
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
 
   // Pagination
@@ -90,12 +101,39 @@ export const UserManagementView: React.FC = () => {
     tags: []
   });
 
-  // All unique user tags for quick filtering
-  const allUserTags = useMemo(() => {
-    const set = new Set<string>();
-    users.forEach((u) => u.tags?.forEach((t) => set.add(t)));
-    return Array.from(set);
-  }, [users]);
+  /**
+   * 画像筛选的候选标签集合。
+   *
+   * 优先使用服务端标签字典，这样即使某个标签还没有会员使用，也能在筛选栏里被看到和选中；
+   * 字典接口不可用时回退到「当前已加载会员身上出现过的标签」，保证筛选栏不至于完全空掉。
+   */
+  const tagOptions = useMemo(() => {
+    const derived = new Map<string, number>();
+    users.forEach((u) => u.tags?.forEach((t) => derived.set(t, (derived.get(t) || 0) + 1)));
+    if (memberTags.length === 0) {
+      return Array.from(derived, ([name, count]) => ({ name, count }));
+    }
+    // memberCount 由服务端统计（包含当前未加载的分页会员）；后端尚未提供该字段时退回本地计数，避免一律显示 0。
+    return memberTags.map((tag) => ({
+      name: tag.tagName,
+      count: tag.memberCount === undefined ? (derived.get(tag.tagName) || 0) : Number(tag.memberCount)
+    }));
+  }, [memberTags, users]);
+
+  const visibleTagOptions = useMemo(() => {
+    if (tagsExpanded) {
+      return tagOptions;
+    }
+    const head = tagOptions.slice(0, TAG_CHIP_COLLAPSED_LIMIT);
+    const headNames = new Set(head.map((option) => option.name));
+    // 已选中但排在折叠区之外的标签仍要展示，否则收起筛选栏后就看不到当前生效的条件。
+    return [...head, ...tagOptions.filter((option) => tagFilters.includes(option.name) && !headNames.has(option.name))];
+  }, [tagOptions, tagsExpanded, tagFilters]);
+
+  const toggleTagFilter = (tag: string) => {
+    setTagFilters((prev) => (prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]));
+    setCurrentPage(1);
+  };
 
   const userStats = useMemo(() => ({
     total: users.length,
@@ -121,11 +159,14 @@ export const UserManagementView: React.FC = () => {
         tierFilter === 'all' || u.tier === tierFilter;
 
       const matchesTag =
-        tagFilter === 'all' || (u.tags && u.tags.includes(tagFilter));
+        tagFilters.length === 0 ||
+        (tagMatchMode === 'all'
+          ? tagFilters.every((tag) => u.tags?.includes(tag))
+          : tagFilters.some((tag) => u.tags?.includes(tag)));
 
       return matchesSearch && matchesStatus && matchesTier && matchesTag;
     });
-  }, [users, searchTerm, searchQuery, statusFilter, tierFilter, tagFilter]);
+  }, [users, searchTerm, searchQuery, statusFilter, tierFilter, tagFilters, tagMatchMode]);
 
   // Paginated Users
   const totalEntries = filteredUsers.length;
@@ -503,32 +544,127 @@ export const UserManagementView: React.FC = () => {
           )}
         </div>
 
-        {/* Tag quick filters bar */}
-        <div className="px-4 py-2 bg-gray-50 border-b border-gray-100 flex items-center gap-2 flex-wrap text-xs">
-          <span className="text-gray-500 font-medium">标签筛选:</span>
-          <button
-            onClick={() => setTagFilter('all')}
-            className={`px-2 py-0.5 rounded text-xs transition-colors ${
-              tagFilter === 'all'
-                ? 'bg-blue-600 text-white font-semibold'
-                : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-100'
-            }`}
-          >
-            全部画像
-          </button>
-          {allUserTags.map((tg) => (
+        {/* 画像标签筛选栏：标签来自服务端标签字典，未绑定会员的标签同样可选 */}
+        <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-100 space-y-2">
+          <div className="flex items-center gap-2 flex-wrap text-xs">
+            <span className="text-gray-500 font-medium flex items-center gap-1">
+              <Tag className="w-3.5 h-3.5" />
+              画像标签筛选:
+            </span>
+            <span className="text-gray-400">
+              共 {tagOptions.length} 个标签
+              {tagFilters.length > 0 && `，已选 ${tagFilters.length} 个`}
+            </span>
+
+            {tagFilters.length > 0 && (
+              <>
+                <div className="flex items-center rounded-md border border-gray-200 overflow-hidden bg-white">
+                  <button
+                    onClick={() => {
+                      setTagMatchMode('any');
+                      setCurrentPage(1);
+                    }}
+                    className={`px-2 py-0.5 transition-colors ${
+                      tagMatchMode === 'any' ? 'bg-blue-600 text-white font-semibold' : 'text-gray-600 hover:bg-gray-100'
+                    }`}
+                  >
+                    命中任一
+                  </button>
+                  <button
+                    onClick={() => {
+                      setTagMatchMode('all');
+                      setCurrentPage(1);
+                    }}
+                    className={`px-2 py-0.5 transition-colors ${
+                      tagMatchMode === 'all' ? 'bg-blue-600 text-white font-semibold' : 'text-gray-600 hover:bg-gray-100'
+                    }`}
+                  >
+                    同时具备
+                  </button>
+                </div>
+                <button
+                  onClick={() => {
+                    setTagFilters([]);
+                    setCurrentPage(1);
+                  }}
+                  className="text-blue-600 hover:underline font-medium"
+                >
+                  清空标签
+                </button>
+              </>
+            )}
+
+            <span className="ml-auto text-gray-400">
+              当前条件命中 {totalEntries} 位会员
+            </span>
             <button
-              key={tg}
-              onClick={() => setTagFilter(tg)}
-              className={`px-2 py-0.5 rounded text-xs transition-colors ${
-                tagFilter === tg
-                  ? 'bg-blue-600 text-white font-semibold shadow-xs'
-                  : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-100'
+              onClick={() => void refreshMemberTags()}
+              className="text-gray-400 hover:text-blue-600 transition-colors"
+              title="重新拉取标签字典"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          <div className="flex flex-wrap gap-1.5">
+            <button
+              onClick={() => {
+                setTagFilters([]);
+                setCurrentPage(1);
+              }}
+              className={`px-2 py-0.5 rounded border text-xs transition-colors ${
+                tagFilters.length === 0
+                  ? 'bg-blue-600 text-white border-blue-600 font-semibold'
+                  : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-100'
               }`}
             >
-              #{tg}
+              全部画像
             </button>
-          ))}
+
+            {visibleTagOptions.map((option) => {
+              const active = tagFilters.includes(option.name);
+              return (
+                <button
+                  key={option.name}
+                  onClick={() => toggleTagFilter(option.name)}
+                  title={active ? `取消「${option.name}」筛选` : `按「${option.name}」筛选`}
+                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded border text-xs transition-colors ${
+                    active
+                      ? 'bg-blue-600 text-white border-blue-600 font-semibold'
+                      : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-100'
+                  }`}
+                >
+                  <span>#{option.name}</span>
+                  <span className={active ? 'text-blue-100' : 'text-gray-400'}>{option.count}</span>
+                </button>
+              );
+            })}
+
+            {tagOptions.length > TAG_CHIP_COLLAPSED_LIMIT && (
+              <button
+                onClick={() => setTagsExpanded((prev) => !prev)}
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded border border-dashed border-gray-300 text-xs text-gray-500 hover:bg-white transition-colors"
+              >
+                {tagsExpanded ? (
+                  <>
+                    收起
+                    <ChevronUp className="w-3 h-3" />
+                  </>
+                ) : (
+                  <>
+                    展开全部 {tagOptions.length} 个
+                    <ChevronDown className="w-3 h-3" />
+                  </>
+                )}
+              </button>
+            )}
+
+            {tagOptions.length === 0 && (
+              <span className="text-xs text-gray-400">
+                暂无画像标签，可点击会员行右侧的标签按钮新建
+              </span>
+            )}
+          </div>
         </div>
 
         {/* User Table Content */}
@@ -548,7 +684,8 @@ export const UserManagementView: React.FC = () => {
                     )}
                   </button>
                 </th>
-                <th className="py-3 px-4">会员基础信息 / 标签</th>
+                <th className="py-3 px-4">会员基础信息</th>
+                <th className="py-3 px-4 w-[230px]">会员画像</th>
                 <th className="py-3 px-4 text-center">会员等级</th>
                 <th className="py-3 px-4">账户资产 (余额 / 积分)</th>
                 <th className="py-3 px-4 text-right">累计消费 / 订单</th>
@@ -560,7 +697,7 @@ export const UserManagementView: React.FC = () => {
             <tbody className="divide-y divide-gray-100 text-sm text-gray-800">
               {paginatedUsers.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="text-center py-16 text-gray-400">
+                  <td colSpan={8} className="text-center py-16 text-gray-400">
                     <Users className="w-12 h-12 mx-auto mb-2 opacity-40" />
                     <p className="text-sm font-medium">未查找到匹配的会员数据</p>
                   </td>
@@ -614,20 +751,40 @@ export const UserManagementView: React.FC = () => {
                             <div className="text-xs text-gray-400 font-mono">
                               {user.phone} • {user.userCode}
                             </div>
-                            {user.tags && user.tags.length > 0 && (
-                              <div className="flex flex-wrap gap-1 mt-1">
-                                {user.tags.map((t) => (
-                                  <span
-                                    key={t}
-                                    className="px-1.5 py-0.2 rounded text-[10px] bg-purple-50 text-purple-700 border border-purple-100 font-medium"
-                                  >
-                                    {t}
-                                  </span>
-                                ))}
-                              </div>
-                            )}
                           </div>
                         </div>
+                      </td>
+
+                      {/* 会员画像：标签同时是筛选入口，点击即按该标签过滤 */}
+                      <td className="py-3 px-4">
+                        {user.tags && user.tags.length > 0 ? (
+                          <div className="flex flex-wrap gap-1">
+                            {user.tags.slice(0, 4).map((t) => (
+                              <button
+                                key={t}
+                                onClick={() => toggleTagFilter(t)}
+                                title={`按「${t}」筛选会员`}
+                                className={`px-1.5 py-0.5 rounded text-[10px] border font-medium transition-colors cursor-pointer ${
+                                  tagFilters.includes(t)
+                                    ? 'bg-blue-600 text-white border-blue-600'
+                                    : 'bg-purple-50 text-purple-700 border-purple-100 hover:bg-purple-100'
+                                }`}
+                              >
+                                #{t}
+                              </button>
+                            ))}
+                            {user.tags.length > 4 && (
+                              <span
+                                className="px-1.5 py-0.5 rounded text-[10px] bg-gray-100 text-gray-500 border border-gray-200 font-medium"
+                                title={user.tags.join('、')}
+                              >
+                                +{user.tags.length - 4}
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-xs text-gray-300">未标注</span>
+                        )}
                       </td>
 
                       {/* Tier Badge */}
@@ -974,6 +1131,56 @@ export const UserManagementView: React.FC = () => {
             </div>
 
             <div className="py-4 space-y-3.5 text-sm">
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-xs font-semibold text-gray-700">
+                    标签库（点击添加或移除，共 {tagOptions.length} 个）
+                  </span>
+                  {userTagsInput.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setUserTagsInput([])}
+                      className="text-xs text-gray-400 hover:text-rose-600"
+                    >
+                      清空已选
+                    </button>
+                  )}
+                </div>
+                {tagOptions.length > 0 ? (
+                  <div className="flex flex-wrap gap-1.5 max-h-[140px] overflow-y-auto custom-scrollbar p-2 rounded-lg border border-gray-200 bg-gray-50">
+                    {tagOptions.map((option) => {
+                      const picked = userTagsInput.includes(option.name);
+                      return (
+                        <button
+                          key={option.name}
+                          type="button"
+                          onClick={() =>
+                            setUserTagsInput((prev) =>
+                              prev.includes(option.name)
+                                ? prev.filter((t) => t !== option.name)
+                                : [...prev, option.name]
+                            )
+                          }
+                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs border transition-colors ${
+                            picked
+                              ? 'bg-purple-600 text-white border-purple-600 font-semibold'
+                              : 'bg-white text-gray-600 border-gray-200 hover:bg-purple-50 hover:border-purple-200'
+                          }`}
+                        >
+                          {picked && <X className="w-3 h-3" />}
+                          <span>{option.name}</span>
+                          <span className={picked ? 'text-purple-100' : 'text-gray-400'}>{option.count}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="text-xs text-gray-400 p-2 rounded-lg border border-dashed border-gray-200">
+                    标签库为空，可直接在下方新建标签
+                  </p>
+                )}
+              </div>
+
               <div className="flex gap-2">
                 <input
                   type="text"
@@ -997,23 +1204,33 @@ export const UserManagementView: React.FC = () => {
                 </button>
               </div>
 
-              <div className="flex flex-wrap gap-1.5 pt-2">
-                {userTagsInput.map((t) => (
-                  <span
-                    key={t}
-                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded text-xs bg-purple-50 text-purple-700 border border-purple-200"
-                  >
-                    {t}
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveUserTag(t)}
-                      className="hover:text-red-600"
-                    >
-                      <X className="w-3 h-3" />
-                    </button>
+              {/* 标签库里已有的标签在上方高亮展示，这里只列出临时新建、尚未进入标签库的标签。 */}
+              {userTagsInput.filter((t) => !tagOptions.some((option) => option.name === t)).length > 0 && (
+                <div>
+                  <span className="text-xs font-semibold text-gray-700 block mb-1.5">
+                    自定义标签（保存后自动进入标签库）
                   </span>
-                ))}
-              </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {userTagsInput
+                      .filter((t) => !tagOptions.some((option) => option.name === t))
+                      .map((t) => (
+                        <span
+                          key={t}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded text-xs bg-purple-50 text-purple-700 border border-purple-200"
+                        >
+                          {t}
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveUserTag(t)}
+                            className="hover:text-red-600"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </span>
+                      ))}
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="pt-3 border-t border-gray-200 flex justify-end gap-2">

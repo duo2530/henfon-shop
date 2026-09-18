@@ -115,11 +115,15 @@ export const ProductCard: React.FC<ProductCardProps> = ({
           </p>
 
           <div className="flex items-center gap-4 text-xs text-zinc-500 mb-3">
-            <div className="flex items-center gap-1 text-amber-500 font-medium">
-              <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
-              <span>{product.rating}</span>
-              <span className="text-zinc-400">({product.reviewCount}条评价)</span>
-            </div>
+            {product.reviewCount > 0 ? (
+              <div className="flex items-center gap-1 text-amber-500 font-medium">
+                <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
+                <span>{product.rating}</span>
+                <span className="text-zinc-400">({product.reviewCount}条评价)</span>
+              </div>
+            ) : (
+              <span className="text-zinc-400">暂无评价</span>
+            )}
             <span>已售 {product.salesCount}+</span>
             <span className={stockState === 'out' ? 'text-rose-600 font-medium' : stockState === 'low' ? 'text-amber-600 font-medium' : 'text-emerald-600 font-medium'}>{stockLabel}</span>
             <span className="text-emerald-600 font-medium">顺丰包邮</span>
@@ -342,11 +346,15 @@ export const ProductCard: React.FC<ProductCardProps> = ({
         <div>
           {/* Rating & Sales */}
           <div className="flex items-center justify-between text-xs text-zinc-500 mb-3 pt-2 border-t border-zinc-100">
-            <div className="flex items-center gap-1 text-amber-500 font-medium">
-              <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
-              <span>{product.rating}</span>
-              <span className="text-zinc-400">({product.reviewCount})</span>
-            </div>
+            {product.reviewCount > 0 ? (
+              <div className="flex items-center gap-1 text-amber-500 font-medium">
+                <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
+                <span>{product.rating}</span>
+                <span className="text-zinc-400">({product.reviewCount})</span>
+              </div>
+            ) : (
+              <span className="text-zinc-400">暂无评价</span>
+            )}
             <span className="text-[11px] text-zinc-400">已售 {product.salesCount}+</span>
           </div>
           <div className={`text-[11px] mb-3 ${stockState === 'out' ? 'text-rose-600' : stockState === 'low' ? 'text-amber-600' : 'text-emerald-600'}`}>

@@ -852,11 +852,17 @@ export const CompareModal: React.FC<CompareModalProps> = ({
                       </div>
                       {products.map((p) => (
                         <div key={p.id} className="px-2 flex items-center gap-1.5">
-                          <div className="flex items-center gap-1 text-amber-500 font-bold">
-                            <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
-                            <span>{p.rating}</span>
-                          </div>
-                          <span className="text-zinc-400 text-[11px]">({p.reviewCount}人评价)</span>
+                          {p.reviewCount > 0 ? (
+                            <>
+                              <div className="flex items-center gap-1 text-amber-500 font-bold">
+                                <Star className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
+                                <span>{p.rating}</span>
+                              </div>
+                              <span className="text-zinc-400 text-[11px]">({p.reviewCount}人评价)</span>
+                            </>
+                          ) : (
+                            <span className="text-zinc-400 text-[11px]">暂无评价</span>
+                          )}
                         </div>
                       ))}
                       {Array.from({ length: 3 - products.length }).map((_, i) => (

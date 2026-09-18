@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Order } from '../types/ecommerce';
+import { Order, OrderItem } from '../types/ecommerce';
 import { PortalAfterSaleCreatePayload, PortalAfterSaleRecord, uploadPortalMedia } from '../api/portalApi';
 import { Package, X, ChevronDown, ChevronUp, RotateCcw, Receipt, Upload, Trash2 } from 'lucide-react';
 import { OrderTracking } from './OrderTracking';
@@ -19,6 +19,8 @@ interface OrdersModalProps {
   onCancelAfterSale?: (afterSale: PortalAfterSaleRecord) => Promise<void> | void;
   onApplyInvoice?: (order: Order) => Promise<void> | void;
   onRetryLogistics?: (order: Order) => Promise<Order['trackingSteps']>;
+  /** 点击订单商品行的「评价」，跳转到该商品的买家评价页签。 */
+  onReviewOrderItem?: (item: OrderItem) => Promise<void> | void;
 }
 
 export const OrdersModal: React.FC<OrdersModalProps> = ({
@@ -36,6 +38,7 @@ export const OrdersModal: React.FC<OrdersModalProps> = ({
   onCancelAfterSale,
   onApplyInvoice,
   onRetryLogistics,
+  onReviewOrderItem,
 }) => {
   const [expandedOrderId, setExpandedOrderId] = useState<string | null>(
     orders[0]?.id || null
@@ -250,6 +253,8 @@ export const OrdersModal: React.FC<OrdersModalProps> = ({
               const isExpanded = expandedOrderId === ord.id;
               const orderAfterSales = afterSales.filter((item) => String(item.orderId) === ord.id);
               const canApplyAfterSale = ['paid', 'processing', 'shipped', 'delivered'].includes(ord.status);
+              // 与后端 hasPurchasedProduct 口径一致：已支付且未取消的订单才允许评价。
+              const canReviewOrder = ['paid', 'processing', 'shipped', 'delivered', 'refunding', 'refunded'].includes(ord.status);
               return (
                 <div
                   key={ord.id}
@@ -320,9 +325,20 @@ export const OrdersModal: React.FC<OrdersModalProps> = ({
                                 </span>
                               </div>
                             </div>
-                            <span className="font-bold text-zinc-900 shrink-0">
-                              ¥{(item.price * item.quantity).toFixed(2)}
-                            </span>
+                            <div className="flex shrink-0 items-center gap-2">
+                              <span className="font-bold text-zinc-900">
+                                ¥{(item.price * item.quantity).toFixed(2)}
+                              </span>
+                              {canReviewOrder && onReviewOrderItem && (
+                                <button
+                                  type="button"
+                                  onClick={() => void onReviewOrderItem(item)}
+                                  className="rounded-md border border-zinc-900 px-2 py-1 text-[11px] font-semibold text-zinc-900 transition hover:bg-zinc-900 hover:text-white"
+                                >
+                                  评价
+                                </button>
+                              )}
+                            </div>
                           </div>
                         )) : (
                           <p className="text-xs text-zinc-400 py-2">订单明细加载中或暂无明细</p>

@@ -152,6 +152,9 @@ export interface PortalReviewRecord {
   replyContent?: string;
   repliedAt?: string;
   repliedBy?: string;
+  /** 会员追评内容，未追评时为空。 */
+  followupContent?: string;
+  followupAt?: string;
 }
 
 export interface PortalReviewPage {
@@ -160,6 +163,13 @@ export interface PortalReviewPage {
   size: number;
   current: number;
   pages: number;
+}
+
+/** 商品评价统计，仅统计审核通过的评价。 */
+export interface PortalReviewSummary {
+  productId: number;
+  reviewCount: number;
+  avgRating: number;
 }
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
@@ -609,6 +619,48 @@ export async function fetchPortalBanners(): Promise<PortalBanner[]> {
 export async function fetchPortalProductReviews(productId: string, current = 1, size = 10): Promise<PortalReviewPage> {
   const numericId = productId.replace(/^prod-/, '');
   return request<PortalReviewPage>(`/api/portal/content/products/${numericId}/reviews/page?current=${current}&size=${size}`);
+}
+
+/**
+ * 批量查询商品评价统计（条数与平均分）。
+ *
+ * 商品列表一次展示多款商品，逐款查询评价会触发大量请求，这里一次拿回全部统计。
+ */
+export async function fetchPortalReviewSummary(productIds: number[]): Promise<PortalReviewSummary[]> {
+  const ids = Array.from(new Set(productIds.filter((id) => Number.isFinite(id) && id > 0)));
+  if (ids.length === 0) return [];
+  return request<PortalReviewSummary[]>(`/api/portal/content/reviews/summary?productIds=${ids.join(',')}`);
+}
+
+/** 查询当前登录会员自己提交的评价，包含待审核与已隐藏的记录。 */
+export async function fetchPortalMyReviews(current = 1, size = 10): Promise<PortalReviewPage> {
+  return request<PortalReviewPage>(`/api/portal/content/reviews/mine?current=${current}&size=${size}`);
+}
+
+/** 对已审核通过的评价提交追评。 */
+export async function submitPortalReviewFollowup(reviewId: number, content: string): Promise<PortalReviewRecord> {
+  return request<PortalReviewRecord>(`/api/portal/content/reviews/${reviewId}/followup`, {
+    method: 'POST',
+    body: JSON.stringify({ content }),
+  });
+}
+
+/**
+ * 解析评价晒单图片字段。
+ *
+ * 后端历史数据里既有 JSON 数组字符串也有已经解析好的数组，这里统一成数组，避免逐处判断。
+ */
+export function parsePortalReviewImageUrls(value?: string | string[]): string[] {
+  if (Array.isArray(value)) return value.filter(Boolean);
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed)
+      ? parsed.filter((item): item is string => typeof item === 'string' && item.length > 0)
+      : [];
+  } catch {
+    return value.split(',').map((item) => item.trim()).filter(Boolean);
+  }
 }
 
 /** 提交门户商品评价，评价默认进入后台待审核状态。 */

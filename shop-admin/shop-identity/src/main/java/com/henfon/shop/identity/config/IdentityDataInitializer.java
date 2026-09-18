@@ -1,10 +1,12 @@
 package com.henfon.shop.identity.config;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.henfon.shop.identity.entity.MemberTag;
 import com.henfon.shop.identity.entity.SysDept;
 import com.henfon.shop.identity.entity.SysMenu;
 import com.henfon.shop.identity.entity.SysRole;
 import com.henfon.shop.identity.entity.SysUser;
+import com.henfon.shop.identity.mapper.MemberTagMapper;
 import com.henfon.shop.identity.mapper.SysDeptMapper;
 import com.henfon.shop.identity.mapper.SysMenuMapper;
 import com.henfon.shop.identity.mapper.SysRoleMapper;
@@ -34,12 +36,37 @@ import java.util.Objects;
 @Order(1)
 public class IdentityDataInitializer implements ApplicationRunner {
 
+    /**
+     * 会员画像标签字典的预置项，格式为「标签名 / 排序号 / 维度说明」。
+     *
+     * <p>标签字典是后台画像筛选的基础数据，与业务数据无关，因此随应用启动幂等补齐。</p>
+     */
+    private static final String[][] PRESET_MEMBER_TAGS = {
+            {"高净值客户", "10", "价值分层：累计消费与客单价处于头部"},
+            {"高复购客户", "20", "价值分层：复购频次高于同行均值"},
+            {"价格敏感型", "30", "价值分层：优惠券依赖度高，正价转化低"},
+            {"潜力成长型", "40", "价值分层：近期消费增速快，可重点培育"},
+            {"大促活跃客", "50", "消费行为：大促期间下单占比高"},
+            {"秒杀常客", "60", "消费行为：常参与限时限量活动"},
+            {"新客首单", "70", "消费行为：注册后完成首单，处于激活期"},
+            {"低频沉睡客", "80", "消费行为：长期未下单，需要召回"},
+            {"数码偏好", "90", "品类偏好：集中在数码电子品类"},
+            {"音频发烧", "100", "品类偏好：集中在耳机音箱品类"},
+            {"家居生活", "110", "品类偏好：集中在家居生活品类"},
+            {"户外运动", "120", "品类偏好：集中在户外运动品类"},
+            {"时尚穿搭", "130", "品类偏好：集中在服饰穿搭品类"},
+            {"售后高频", "140", "服务风险：售后申请次数明显偏高"},
+            {"投诉敏感", "150", "服务风险：历史投诉或差评记录"},
+            {"多地址收货", "160", "服务风险：常用收货地址数量多"}
+    };
+
     private final SysDeptMapper sysDeptMapper;
     private final SysRoleMapper sysRoleMapper;
     private final SysMenuMapper sysMenuMapper;
     private final SysUserMapper sysUserMapper;
     private final SysUserRoleMapper sysUserRoleMapper;
     private final SysRoleMenuMapper sysRoleMenuMapper;
+    private final MemberTagMapper memberTagMapper;
     private final PasswordEncoder passwordEncoder;
 
     /**
@@ -51,6 +78,7 @@ public class IdentityDataInitializer implements ApplicationRunner {
      * @param sysUserMapper 用户数据访问对象
      * @param sysUserRoleMapper 用户角色关联数据访问对象
      * @param sysRoleMenuMapper 角色菜单关联数据访问对象
+     * @param memberTagMapper 会员标签数据访问对象
      * @param passwordEncoder 密码编码器
      * @author Henfon
      * @date 2026-08-29
@@ -58,13 +86,14 @@ public class IdentityDataInitializer implements ApplicationRunner {
     public IdentityDataInitializer(SysDeptMapper sysDeptMapper, SysRoleMapper sysRoleMapper,
                                    SysMenuMapper sysMenuMapper, SysUserMapper sysUserMapper,
                                    SysUserRoleMapper sysUserRoleMapper, SysRoleMenuMapper sysRoleMenuMapper,
-                                   PasswordEncoder passwordEncoder) {
+                                   MemberTagMapper memberTagMapper, PasswordEncoder passwordEncoder) {
         this.sysDeptMapper = sysDeptMapper;
         this.sysRoleMapper = sysRoleMapper;
         this.sysMenuMapper = sysMenuMapper;
         this.sysUserMapper = sysUserMapper;
         this.sysUserRoleMapper = sysUserRoleMapper;
         this.sysRoleMenuMapper = sysRoleMenuMapper;
+        this.memberTagMapper = memberTagMapper;
         this.passwordEncoder = passwordEncoder;
     }
 
@@ -84,6 +113,35 @@ public class IdentityDataInitializer implements ApplicationRunner {
         menus.addAll(ensureBusinessMenus());
         bindRoleMenus(superAdmin.getId(), menus);
         ensureAdminUser(rootDept.getId(), superAdmin.getId());
+        ensurePresetMemberTags();
+    }
+
+    /**
+     * 确保会员画像标签字典存在。
+     *
+     * <p>后台「客户与会员中心」的画像筛选栏读取的是标签字典而不是会员数据推导，
+     * 因此首次启动补齐一套常用画像维度，保证空库也能直接做标签筛选。
+     * 已存在的标签不做任何改写，运营调整过的名称、排序与停用状态都会保留。</p>
+     *
+     * @author Henfon
+     * @date 2026-09-17
+     */
+    private void ensurePresetMemberTags() {
+        for (String[] preset : PRESET_MEMBER_TAGS) {
+            String tagName = preset[0];
+            Long existing = memberTagMapper.selectCount(new LambdaQueryWrapper<MemberTag>()
+                    .eq(MemberTag::getTenantId, 0L).eq(MemberTag::getTagName, tagName));
+            if (existing != null && existing > 0) {
+                continue;
+            }
+            MemberTag tag = new MemberTag();
+            tag.setTenantId(0L);
+            tag.setTagName(tagName);
+            tag.setSortNo(Integer.parseInt(preset[1]));
+            tag.setStatus(1);
+            tag.setRemark(preset[2]);
+            memberTagMapper.insert(tag);
+        }
     }
 
     /**

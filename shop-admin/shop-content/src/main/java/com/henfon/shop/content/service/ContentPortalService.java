@@ -1,11 +1,13 @@
 package com.henfon.shop.content.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.henfon.shop.common.exception.BusinessException;
 import com.henfon.shop.content.dto.ContentReviewSubmitRequest;
 import com.henfon.shop.content.dto.ContentReviewFollowupRequest;
+import com.henfon.shop.content.dto.ContentReviewSummaryItem;
 import com.henfon.shop.content.entity.ContentBanner;
 import com.henfon.shop.content.entity.ContentReview;
 import com.henfon.shop.content.mapper.ContentBannerMapper;
@@ -16,8 +18,11 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 
 /**
  * 门户内容查询服务。
@@ -31,6 +36,9 @@ public class ContentPortalService {
     private final ContentReviewMapper reviewMapper;
     private final TradeOrderService tradeOrderService;
     private final ContentImageUrlResolver imageUrlResolver;
+
+    /** 单次评价统计允许的商品数量上限。 */
+    private static final int MAX_SUMMARY_PRODUCT_IDS = 100;
 
     /**
      * 创建门户内容服务。
@@ -131,6 +139,154 @@ public class ContentPortalService {
             result.getRecords().forEach(this::resignReviewImages);
         }
         return result;
+    }
+
+    /**
+     * 按商品批量统计审核通过的评价条数与平均分。
+     *
+     * <p>门户商品列表一次展示多款商品，逐款查询评价会让列表接口出现 N+1 请求，
+     * 这里一次聚合返回；只统计 status=1 的评价，与门户展示口径保持一致。</p>
+     *
+     * @param productIds 商品ID集合
+     * @return 评价统计项，未命中商品不会出现在结果中
+     * @author Henfon
+     * @date 2026-09-18
+     */
+    public List<ContentReviewSummaryItem> reviewSummary(List<Long> productIds) {
+        if (productIds == null || productIds.isEmpty()) {
+            return Collections.emptyList();
+        }
+        // 去重、剔除非法 ID 并限制批量大小，避免把整表聚合交给数据库。
+        List<Long> safeIds = productIds.stream()
+                .filter(id -> id != null && id > 0)
+                .distinct()
+                .limit(MAX_SUMMARY_PRODUCT_IDS)
+                .toList();
+        if (safeIds.isEmpty()) {
+            return Collections.emptyList();
+        }
+        QueryWrapper<ContentReview> wrapper = new QueryWrapper<>();
+        wrapper.select("product_id", "COUNT(*) AS review_count", "ROUND(AVG(rating), 1) AS avg_rating")
+                .eq("status", 1)
+                .in("product_id", safeIds)
+                .groupBy("product_id");
+        List<Map<String, Object>> rows = reviewMapper.selectMaps(wrapper);
+        if (rows == null || rows.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<ContentReviewSummaryItem> items = new ArrayList<>(rows.size());
+        for (Map<String, Object> row : rows) {
+            Long productId = readLongColumn(row, "product_id");
+            if (productId == null) {
+                continue;
+            }
+            Long count = readLongColumn(row, "review_count");
+            items.add(new ContentReviewSummaryItem(productId, count == null ? 0L : count,
+                    readDoubleColumn(row, "avg_rating")));
+        }
+        return items;
+    }
+
+    /**
+     * 分页查询当前会员自己提交的评价。
+     *
+     * <p>与门户展示口径不同：这里包含待审核、已隐藏的评价，会员需要能看到自己提交内容的处理状态。</p>
+     *
+     * @param memberId 会员ID
+     * @param current 当前页
+     * @param size 页大小
+     * @return 评价分页数据
+     * @author Henfon
+     * @date 2026-09-18
+     */
+    public IPage<ContentReview> myReviews(Long memberId, long current, long size) {
+        if (memberId == null) {
+            throw new BusinessException("CONTENT_REVIEW_MEMBER_REQUIRED", "会员信息不能为空");
+        }
+        long safeCurrent = Math.max(current, 1);
+        long safeSize = Math.min(Math.max(size, 1), 50);
+        IPage<ContentReview> result = reviewMapper.selectPage(new Page<>(safeCurrent, safeSize),
+                new LambdaQueryWrapper<ContentReview>()
+                        .eq(ContentReview::getMemberId, memberId)
+                        .orderByDesc(ContentReview::getCreatedAt)
+                        .orderByDesc(ContentReview::getId));
+        if (result != null && result.getRecords() != null) {
+            result.getRecords().forEach(this::resignReviewImages);
+        }
+        return result;
+    }
+
+    /**
+     * 从聚合结果中按列名取值。
+     *
+     * <p>不同驱动返回的列名大小写、下划线风格并不一致，这里归一化后再匹配，避免线上取不到值。</p>
+     *
+     * @param row 聚合结果行
+     * @param column 列名
+     * @return 列值，缺失时返回 null
+     * @author Henfon
+     * @date 2026-09-18
+     */
+    private Object readColumn(Map<String, Object> row, String column) {
+        if (row == null || column == null) {
+            return null;
+        }
+        String expected = column.replace("_", "").toLowerCase(Locale.ROOT);
+        for (Map.Entry<String, Object> entry : row.entrySet()) {
+            String key = entry.getKey();
+            if (key != null && key.replace("_", "").toLowerCase(Locale.ROOT).equals(expected)) {
+                return entry.getValue();
+            }
+        }
+        return null;
+    }
+
+    /**
+     * 读取聚合结果中的整型列。
+     *
+     * @param row 聚合结果行
+     * @param column 列名
+     * @return 列值，缺失或不可解析时返回 null
+     * @author Henfon
+     * @date 2026-09-18
+     */
+    private Long readLongColumn(Map<String, Object> row, String column) {
+        Object value = readColumn(row, column);
+        if (value instanceof Number number) {
+            return number.longValue();
+        }
+        if (value == null) {
+            return null;
+        }
+        try {
+            return Long.parseLong(value.toString().trim());
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
+    }
+
+    /**
+     * 读取聚合结果中的浮点列。
+     *
+     * @param row 聚合结果行
+     * @param column 列名
+     * @return 列值，缺失或不可解析时返回 0
+     * @author Henfon
+     * @date 2026-09-18
+     */
+    private double readDoubleColumn(Map<String, Object> row, String column) {
+        Object value = readColumn(row, column);
+        if (value instanceof Number number) {
+            return number.doubleValue();
+        }
+        if (value == null) {
+            return 0d;
+        }
+        try {
+            return Double.parseDouble(value.toString().trim());
+        } catch (NumberFormatException ignored) {
+            return 0d;
+        }
     }
 
     /**

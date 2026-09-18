@@ -73,6 +73,8 @@ export interface BackendMemberTag {
   tagName: string;
   sortNo: number;
   status: number;
+  /** 该标签当前绑定的会员人数，由服务端统计，用于画像筛选栏展示。 */
+  memberCount?: number;
 }
 
 export interface BackendSystemConfig {

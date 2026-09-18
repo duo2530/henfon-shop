@@ -1,6 +1,7 @@
 package com.henfon.shop.identity.entity;
 
 import com.baomidou.mybatisplus.annotation.IdType;
+import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableLogic;
 import com.baomidou.mybatisplus.annotation.TableName;
@@ -31,4 +32,9 @@ public class MemberTag {
     @Version
     private Integer version;
     private String remark;
+    /**
+     * 标签当前绑定的会员人数，仅用于后台标签字典展示，不落库。
+     */
+    @TableField(exist = false)
+    private Integer memberCount;
 }

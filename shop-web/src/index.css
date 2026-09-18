@@ -7,6 +7,29 @@
     max-height: calc(100dvh - 2rem);
     overflow-y: auto;
   }
+
+  /* 侧边栏长菜单的窄滚动条：系统默认滚动条在 20 项以上时会挤掉导航项宽度。 */
+  .custom-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: #CBD5E1 transparent;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    background: #CBD5E1;
+    border-radius: 3px;
+  }
+
+  .custom-scrollbar:hover::-webkit-scrollbar-thumb {
+    background: #94A3B8;
+  }
 }
 
 /* 键盘焦点和减少动效由全局样式统一兜底，确保后台可用键盘操作。 */

@@ -4,6 +4,7 @@ import com.henfon.shop.common.api.ApiResponse;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.henfon.shop.content.dto.ContentReviewSubmitRequest;
 import com.henfon.shop.content.dto.ContentReviewFollowupRequest;
+import com.henfon.shop.content.dto.ContentReviewSummaryItem;
 import com.henfon.shop.content.entity.ContentBanner;
 import com.henfon.shop.content.entity.ContentReview;
 import com.henfon.shop.content.service.ContentPortalService;
@@ -87,6 +88,39 @@ public class ContentPortalController {
                                                         @RequestParam(defaultValue = "1") long current,
                                                         @RequestParam(defaultValue = "10") long size) {
         return ApiResponse.success(service.reviewPage(productId, current, size), MDC.get("requestId"));
+    }
+
+    /**
+     * 批量查询商品评价统计。
+     *
+     * @param productIds 商品ID集合，逗号分隔
+     * @return 评价条数与平均分
+     * @author Henfon
+     * @date 2026-09-18
+     */
+    @GetMapping("/reviews/summary")
+    public ApiResponse<List<ContentReviewSummaryItem>> reviewSummary(
+            @RequestParam(name = "productIds", required = false) List<Long> productIds) {
+        return ApiResponse.success(service.reviewSummary(productIds), MDC.get("requestId"));
+    }
+
+    /**
+     * 查询当前会员自己提交的评价（含待审核与已隐藏）。
+     *
+     * @param current 当前页
+     * @param size 页大小
+     * @param authentication 当前会员认证信息
+     * @return 评价分页数据
+     * @author Henfon
+     * @date 2026-09-18
+     */
+    @GetMapping("/reviews/mine")
+    @PreAuthorize("isAuthenticated()")
+    public ApiResponse<IPage<ContentReview>> myReviews(@RequestParam(defaultValue = "1") long current,
+                                                       @RequestParam(defaultValue = "10") long size,
+                                                       Authentication authentication) {
+        Long memberId = MemberPrincipalResolver.requireMemberId(authentication);
+        return ApiResponse.success(service.myReviews(memberId, current, size), MDC.get("requestId"));
     }
 
     /**

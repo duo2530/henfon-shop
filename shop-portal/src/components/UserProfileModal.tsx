@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   X,
   User,
@@ -17,8 +17,16 @@ import {
   Mail,
   Calendar,
   Layers,
+  Star,
 } from 'lucide-react';
-import { UserProfile, MemberLevel, Coupon, Order } from '../types/ecommerce';
+import { UserProfile, MemberLevel, Coupon, Order, Product } from '../types/ecommerce';
+import {
+  PortalReviewRecord,
+  fetchPortalMyReviews,
+  submitPortalReviewFollowup,
+  parsePortalReviewImageUrls,
+  fetchPortalProductDetail,
+} from '../api/portalApi';
 
 interface UserProfileModalProps {
   isOpen: boolean;
@@ -26,12 +34,26 @@ interface UserProfileModalProps {
   claimedCoupons?: Coupon[];
   /** 当前会员订单快照，用于展示消费统计和快捷查看订单明细。 */
   orders?: Order[];
+  /** 已加载的商品，用于把评价里的商品ID还原成商品名。 */
+  products?: Product[];
   onClose: () => void;
   onUpdateUser: (updatedUser: UserProfile) => void;
   onLogout: () => void;
   onOpenOrders: () => void;
   onOpenWishlist: () => void;
   onOpenCouponCenter?: () => void;
+}
+
+/** 从门户商品 ID 中解析后端商品主键。 */
+function toCatalogProductId(productId: string): number {
+  return Number(productId.replace(/^prod-/, ''));
+}
+
+/** 评价审核状态对应的展示文案与配色。 */
+function reviewStatusMeta(status: number): { label: string; className: string } {
+  if (status === 1) return { label: '已通过', className: 'border-emerald-200 bg-emerald-50 text-emerald-700' };
+  if (status === 2) return { label: '已隐藏', className: 'border-zinc-200 bg-zinc-100 text-zinc-500' };
+  return { label: '待审核', className: 'border-amber-200 bg-amber-50 text-amber-700' };
 }
 
 const AVATAR_OPTIONS = [
@@ -48,6 +70,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
   user,
   claimedCoupons = [],
   orders = [],
+  products = [],
   onClose,
   onUpdateUser,
   onLogout,
@@ -61,8 +84,69 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
   const [email, setEmail] = useState(user?.email || '');
   const [phone, setPhone] = useState(user?.phone || '');
   const [selectedAvatar, setSelectedAvatar] = useState(user?.avatar || AVATAR_OPTIONS[0]);
+  const [showReviewsView, setShowReviewsView] = useState(false);
+  const [myReviews, setMyReviews] = useState<PortalReviewRecord[]>([]);
+  const [myReviewsLoading, setMyReviewsLoading] = useState(false);
+  const [myReviewsError, setMyReviewsError] = useState<string | null>(null);
+  const [reviewProductTitles, setReviewProductTitles] = useState<Record<number, string>>({});
+  const [followupDraft, setFollowupDraft] = useState<Record<number, string>>({});
+  const [followupSubmittingId, setFollowupSubmittingId] = useState<number | null>(null);
+
+  // 打开个人中心即加载自己的评价，展开前就能看到条数；后端评价只存商品ID，这里补齐商品名。
+  useEffect(() => {
+    if (!isOpen || !user) return;
+    let active = true;
+    setMyReviewsLoading(true);
+    setMyReviewsError(null);
+    fetchPortalMyReviews(1, 20)
+      .then(async (page) => {
+        if (!active) return;
+        const records = page.records || [];
+        setMyReviews(records);
+        const titles = new Map(products.map((product) => [toCatalogProductId(product.id), product.title]));
+        const missingIds = Array.from(new Set(
+          records.map((record) => record.productId).filter((id) => !titles.has(id)),
+        ));
+        if (missingIds.length > 0) {
+          const details = await Promise.all(
+            missingIds.map((id) => fetchPortalProductDetail(`prod-${id}`).catch(() => null)),
+          );
+          if (!active) return;
+          details.forEach((product) => {
+            if (product) titles.set(toCatalogProductId(product.id), product.title);
+          });
+        }
+        setReviewProductTitles(Object.fromEntries(titles));
+      })
+      .catch((error) => {
+        if (active) setMyReviewsError(error instanceof Error ? error.message : '评价加载失败，请稍后重试');
+      })
+      .finally(() => {
+        if (active) setMyReviewsLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [isOpen, user, products]);
 
   if (!isOpen || !user) return null;
+
+  /** 提交追评并就地更新当前列表。 */
+  const submitFollowup = async (reviewId: number) => {
+    const content = (followupDraft[reviewId] || '').trim();
+    if (!content) return;
+    setFollowupSubmittingId(reviewId);
+    setMyReviewsError(null);
+    try {
+      const updated = await submitPortalReviewFollowup(reviewId, content);
+      setMyReviews((current) => current.map((item) => (item.id === reviewId ? { ...item, ...updated } : item)));
+      setFollowupDraft((current) => ({ ...current, [reviewId]: '' }));
+    } catch (error) {
+      setMyReviewsError(error instanceof Error ? error.message : '追评提交失败，请稍后重试');
+    } finally {
+      setFollowupSubmittingId(null);
+    }
+  };
 
   const handleSaveProfile = (e: React.FormEvent) => {
     e.preventDefault();
@@ -448,6 +532,97 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                         <span className="font-bold text-zinc-900">¥{Number(order.totalPaid || 0).toFixed(2)}</span>
                       </div>
                     ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="rounded-2xl border border-zinc-200 bg-white p-4">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-black text-zinc-900 flex items-center gap-1.5">
+                    <Star className="w-4 h-4 text-amber-500" />
+                    我的评价
+                    {myReviews.length > 0 && <span className="text-[10px] font-bold text-zinc-400">({myReviews.length})</span>}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setShowReviewsView((current) => !current)}
+                    className="text-[11px] font-bold text-sky-700 hover:text-sky-900"
+                  >
+                    {showReviewsView ? '收起' : '展开'}
+                  </button>
+                </div>
+                {!showReviewsView ? (
+                  <p className="text-xs text-zinc-400 py-1">查看已提交评价的审核进度，通过后可追评</p>
+                ) : (
+                  <div className="space-y-2.5">
+                    {myReviewsLoading && <p className="text-xs text-zinc-400 py-2">评价加载中…</p>}
+                    {!myReviewsLoading && myReviewsError && (
+                      <p className="rounded-lg bg-rose-50 px-2.5 py-2 text-[11px] text-rose-600">{myReviewsError}</p>
+                    )}
+                    {!myReviewsLoading && myReviews.length === 0 && (
+                      <p className="text-xs text-zinc-400 py-2">还没有提交过评价，可在我的订单中点击「评价」</p>
+                    )}
+                    {myReviews.map((review) => {
+                      const statusMeta = reviewStatusMeta(review.status);
+                      const reviewImages = parsePortalReviewImageUrls(review.imageUrls);
+                      return (
+                        <div key={review.id} className="rounded-xl border border-zinc-100 bg-zinc-50/70 p-3 space-y-1.5">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="truncate text-[11px] font-bold text-zinc-900">
+                              {reviewProductTitles[review.productId] || `商品 #${review.productId}`}
+                            </span>
+                            <span className={`shrink-0 rounded-md border px-1.5 py-0.5 text-[10px] font-semibold ${statusMeta.className}`}>
+                              {statusMeta.label}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-0.5">
+                            {[1, 2, 3, 4, 5].map((score) => (
+                              <Star key={score} className={`h-3 w-3 ${score <= review.rating ? 'fill-amber-400 text-amber-400' : 'text-zinc-300'}`} />
+                            ))}
+                            <span className="ml-1.5 text-[10px] text-zinc-400">{review.variantSummary || '默认规格'}</span>
+                          </div>
+                          <p className="text-[11px] leading-relaxed text-zinc-700">{review.reviewContent}</p>
+                          {reviewImages.length > 0 && (
+                            <div className="flex flex-wrap gap-1.5">
+                              {reviewImages.map((url) => (
+                                <a key={url} href={url} target="_blank" rel="noreferrer">
+                                  <img src={url} alt="评价图片" className="h-10 w-10 rounded-md border border-zinc-200 object-cover" />
+                                </a>
+                              ))}
+                            </div>
+                          )}
+                          {review.replyContent && (
+                            <p className="rounded-md border border-zinc-100 bg-white px-2 py-1 text-[10px] text-zinc-600">
+                              <span className="font-bold text-zinc-800">商家回复：</span>{review.replyContent}
+                            </p>
+                          )}
+                          {review.followupContent ? (
+                            <p className="rounded-md bg-sky-50 px-2 py-1 text-[10px] text-sky-800">
+                              <span className="font-bold">我的追评：</span>{review.followupContent}
+                            </p>
+                          ) : review.status === 1 ? (
+                            <div className="space-y-1.5 pt-0.5">
+                              <textarea
+                                rows={2}
+                                maxLength={500}
+                                value={followupDraft[review.id] || ''}
+                                onChange={(event) => setFollowupDraft((current) => ({ ...current, [review.id]: event.target.value }))}
+                                placeholder="补充使用体验（追评）"
+                                className="w-full resize-none rounded-lg border border-zinc-200 px-2 py-1.5 text-[11px] outline-none focus:border-zinc-400"
+                              />
+                              <button
+                                type="button"
+                                disabled={followupSubmittingId === review.id || !(followupDraft[review.id] || '').trim()}
+                                onClick={() => void submitFollowup(review.id)}
+                                className="rounded-lg bg-zinc-900 px-2.5 py-1 text-[10px] font-bold text-white disabled:opacity-50"
+                              >
+                                {followupSubmittingId === review.id ? '提交中…' : '提交追评'}
+                              </button>
+                            </div>
+                          ) : null}
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </div>

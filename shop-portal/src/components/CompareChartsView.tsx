@@ -118,7 +118,7 @@ export const CompareChartsView: React.FC<CompareChartsViewProps> = ({
   const radarData = useMemo(() => {
     // Normalization factors
     const maxSales = Math.max(...products.map((p) => p.salesCount), 1000);
-    const maxReviews = Math.max(...products.map((p) => p.reviewCount), 500);
+    const maxReviews = Math.max(...products.map((p) => p.reviewCount), 0);
 
     const dimensions = [
       { key: 'rating', label: '用户评分' },
@@ -134,15 +134,16 @@ export const CompareChartsView: React.FC<CompareChartsViewProps> = ({
       products.forEach((p, pIdx) => {
         let score = 50;
         if (dim.key === 'rating') {
-          score = Math.round((p.rating / 5.0) * 100);
+          // 无公开评价时给中性分，避免整条维度被 0 分拉平。
+          score = p.reviewCount > 0 ? Math.round((p.rating / 5.0) * 100) : 50;
         } else if (dim.key === 'value') {
           // value score based on rating per dollar
           const discountPct = (p.originalPrice - p.price) / p.originalPrice;
-          score = Math.min(100, Math.round(60 + discountPct * 70 + (p.rating >= 4.8 ? 15 : 5)));
+          score = Math.min(100, Math.round(60 + discountPct * 70 + (p.reviewCount > 0 && p.rating >= 4.8 ? 15 : 5)));
         } else if (dim.key === 'sales') {
           score = Math.min(100, Math.round((p.salesCount / maxSales) * 100));
         } else if (dim.key === 'reviews') {
-          score = Math.min(100, Math.round((p.reviewCount / maxReviews) * 100));
+          score = maxReviews > 0 ? Math.min(100, Math.round((p.reviewCount / maxReviews) * 100)) : 50;
         } else if (dim.key === 'discount') {
           const discountPct = Math.max(0, ((p.originalPrice - p.price) / p.originalPrice) * 100);
           score = Math.min(100, Math.round(discountPct * 2.5 + 30));
@@ -519,6 +520,7 @@ export const CompareChartsView: React.FC<CompareChartsViewProps> = ({
               </div>
               <p className="text-xs text-zinc-500 mb-4 pl-9">
                 对比商品累计销量件数与用户评价总量，了解真实大众口碑与选择
+                {salesAndRatingData.every((item) => item.reviewCount === 0) && '（当前对比商品暂无公开评价）'}
               </p>
             </div>
 
@@ -575,7 +577,9 @@ export const CompareChartsView: React.FC<CompareChartsViewProps> = ({
                   {insights.highestRated.title}
                 </h5>
                 <p className="text-[11px] text-zinc-400 mt-0.5">
-                  评分 {insights.highestRated.rating} 分 / {insights.highestRated.reviewCount} 条评价
+                  {insights.highestRated.reviewCount > 0
+                    ? `评分 ${insights.highestRated.rating} 分 / ${insights.highestRated.reviewCount} 条评价`
+                    : '暂无公开评价'}
                 </p>
               </div>
               <button

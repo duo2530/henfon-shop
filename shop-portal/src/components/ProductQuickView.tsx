@@ -74,6 +74,16 @@ interface ProductQuickViewProps {
   detailError?: string | null;
   /** 重新加载详情。 */
   onRetryDetail?: () => void;
+  /** 打开弹窗时默认选中的页签，订单入口会直接定位到「买家评价」。 */
+  initialTab?: 'details' | 'specs' | 'reviews';
+  /** 每次请求切换页签时递增的标记，用于在同一商品上重复定位到评价页签。 */
+  initialTabToken?: number;
+  /** 已购规格，订单入口带入后作为评价表单的默认值。 */
+  reviewVariantSeed?: string;
+  /** 未登录时点击提交评价回调，用于拉起登录弹窗。 */
+  onRequireLogin?: () => void;
+  /** 评价提交成功回调，用于刷新商品评价统计。 */
+  onReviewSubmitted?: () => void;
   isWishlisted: boolean;
   onClose: () => void;
   onAddToCart: (product: Product, variants: Record<string, string>, quantity: number) => void;
@@ -86,6 +96,11 @@ const ProductQuickViewContent: React.FC<Omit<ProductQuickViewProps, 'product'> &
   detailLoading = false,
   detailError,
   onRetryDetail,
+  initialTab,
+  initialTabToken,
+  reviewVariantSeed,
+  onRequireLogin,
+  onReviewSubmitted,
   isWishlisted,
   onClose,
   onAddToCart,
@@ -96,6 +111,8 @@ const ProductQuickViewContent: React.FC<Omit<ProductQuickViewProps, 'product'> &
   const [activeTab, setActiveTab] = useState<'details' | 'specs' | 'reviews'>('details');
   const [quantity, setQuantity] = useState(1);
   const [reviews, setReviews] = useState<ProductReview[]>([]);
+  /** 服务端返回的评价总条数，未知时回退到商品上的统计值。 */
+  const [reviewTotal, setReviewTotal] = useState<number | null>(null);
   const [reviewLoading, setReviewLoading] = useState(false);
   const [reviewLoadingMore, setReviewLoadingMore] = useState(false);
   const [reviewLoadError, setReviewLoadError] = useState<string | null>(null);
@@ -117,6 +134,8 @@ const ProductQuickViewContent: React.FC<Omit<ProductQuickViewProps, 'product'> &
     setQuantity(1);
     setIsPlaying(false);
     setCurrentTime(0);
+    setReviewTotal(null);
+    setReviewVariant(reviewVariantSeed || '');
     if (product.variants) {
       const initial: Record<string, string> = {};
       product.variants.forEach((v) => {
@@ -126,7 +145,14 @@ const ProductQuickViewContent: React.FC<Omit<ProductQuickViewProps, 'product'> &
     } else {
       setSelectedVariants({});
     }
-  }, [product.id, product.variants]);
+  }, [product.id, product.variants, reviewVariantSeed]);
+
+  // 从订单等外部入口打开时需要直接落在指定页签，同一商品重复请求靠递增标记触发。
+  useEffect(() => {
+    if (initialTab) {
+      setActiveTab(initialTab);
+    }
+  }, [initialTab, initialTabToken, product.id]);
 
   // 评价页签打开后从内容中心分页加载真实评价，接口异常时展示明确错误并支持重试。
   useEffect(() => {
@@ -144,6 +170,7 @@ const ProductQuickViewContent: React.FC<Omit<ProductQuickViewProps, 'product'> &
         if (cancelled) return;
         setReviewPageNo(1);
         setReviewHasMore(page.current < page.pages);
+        setReviewTotal(Number.isFinite(page.total) ? page.total : null);
         setReviews((page.records || []).map(mapPortalReview));
       })
       .catch((error) => {
@@ -175,8 +202,14 @@ const ProductQuickViewContent: React.FC<Omit<ProductQuickViewProps, 'product'> &
 
   const submitReview = async () => {
     if (!hasPortalMemberSession()) {
-      setReviewError('请先登录会员账号后再提交评价');
       setReviewNotice(null);
+      if (onRequireLogin) {
+        // 未登录直接拉起登录弹窗，登录完成后仍停留在当前评价表单。
+        setReviewError(null);
+        onRequireLogin();
+      } else {
+        setReviewError('请先登录会员账号后再提交评价');
+      }
       return;
     }
     if (!reviewContent.trim()) {
@@ -199,6 +232,7 @@ const ProductQuickViewContent: React.FC<Omit<ProductQuickViewProps, 'product'> &
       setReviewVariant('');
       setReviewImages([]);
       setReviewNotice('评价已提交，审核通过后展示');
+      onReviewSubmitted?.();
     } catch (error) {
       setReviewError(error instanceof Error ? error.message : '评价提交失败，请稍后重试');
     } finally {
@@ -485,6 +519,8 @@ const ProductQuickViewContent: React.FC<Omit<ProductQuickViewProps, 'product'> &
   const currentStock = Math.max(0, selectedSku?.stock ?? (product.skus?.length ? 0 : product.stock));
   const maxPurchaseQuantity = Math.min(10, currentStock);
   const currentOriginalPrice = selectedSku?.marketPrice ?? product.originalPrice;
+  // 评价条数以服务端返回的总数为准，尚未加载时回退到商品列表上的统计值。
+  const displayReviewCount = reviewTotal ?? product.reviewCount;
   const stockLabel = product.skus?.length && !selectedSku
     ? '该规格组合暂不可售'
     : currentStock > 0
@@ -846,12 +882,18 @@ const ProductQuickViewContent: React.FC<Omit<ProductQuickViewProps, 'product'> &
 
                 {/* Rating & Reviews overview */}
                 <div className="flex items-center gap-4 text-xs text-zinc-500 pb-4 border-b border-zinc-100">
-                  <div className="flex items-center gap-1 text-amber-500 font-bold">
-                    <Star className="w-4 h-4 fill-amber-400 text-amber-400" />
-                    <span>{product.rating}</span>
-                  </div>
+                  {displayReviewCount > 0 ? (
+                    <div className="flex items-center gap-1 text-amber-500 font-bold">
+                      <Star className="w-4 h-4 fill-amber-400 text-amber-400" />
+                      <span>{product.rating}</span>
+                    </div>
+                  ) : (
+                    <span className="text-zinc-400">暂无评价</span>
+                  )}
                   <span>•</span>
-                  <span>{product.reviewCount} 条用户真实评价</span>
+                  {displayReviewCount > 0
+                    ? <span>{displayReviewCount} 条用户真实评价</span>
+                    : <span>成为第一个评价的人</span>}
                   <span>•</span>
                   <span className="text-zinc-600 font-medium">累计热销 {product.salesCount}+ 件</span>
                 </div>
@@ -1023,7 +1065,7 @@ const ProductQuickViewContent: React.FC<Omit<ProductQuickViewProps, 'product'> &
                     : 'text-zinc-400 hover:text-zinc-600'
                 }`}
               >
-                买家评价 ({product.reviewCount})
+                买家评价 ({displayReviewCount})
               </button>
             </div>
 

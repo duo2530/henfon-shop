@@ -295,19 +295,32 @@ public class MemberAdminService {
     }
 
     /**
-     * 查询启用的会员标签。
+     * 查询启用的会员标签字典。
      *
-     * @return 标签列表
+     * <p>后台画像筛选栏需要看到完整标签体系，因此这里不做「只返回被引用过的标签」的过滤，
+     * 未绑定会员的标签同样返回并给出人数 0，方便运营识别尚未启用的画像维度。</p>
+     *
+     * @return 标签列表，含每个标签当前绑定的会员人数
      * @author Henfon
      * @date 2026-08-30
      */
     public List<MemberTag> listTags() {
         // 标签只返回默认租户下的启用数据，避免后台误绑定已停用标签。
-        return memberTagMapper.selectList(new LambdaQueryWrapper<MemberTag>()
+        List<MemberTag> tags = memberTagMapper.selectList(new LambdaQueryWrapper<MemberTag>()
                 .eq(MemberTag::getTenantId, 0L)
                 .eq(MemberTag::getStatus, 1)
                 .orderByAsc(MemberTag::getSortNo)
                 .orderByAsc(MemberTag::getId));
+        if (tags.isEmpty()) {
+            return tags;
+        }
+        // 关联表逻辑删除由 MyBatis-Plus 自动过滤，标签数通常只有几十个，一次 IN 查询即可完成统计。
+        List<Long> tagIds = tags.stream().map(MemberTag::getId).collect(Collectors.toList());
+        Map<Long, Long> usage = memberUserTagMapper.selectList(new LambdaQueryWrapper<MemberUserTag>()
+                        .in(MemberUserTag::getTagId, tagIds)).stream()
+                .collect(Collectors.groupingBy(MemberUserTag::getTagId, Collectors.counting()));
+        tags.forEach(tag -> tag.setMemberCount(usage.getOrDefault(tag.getId(), 0L).intValue()));
+        return tags;
     }
 
     /**

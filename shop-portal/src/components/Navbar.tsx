@@ -595,8 +595,14 @@ export const Navbar: React.FC<NavbarProps> = ({
                                   )}
                                 </div>
                                 <div className="flex items-center justify-end gap-1 mt-0.5 text-[10px] text-zinc-400">
-                                  <Star className="w-2.5 h-2.5 fill-amber-400 text-amber-400" />
-                                  <span>{product.rating}</span>
+                                  {product.reviewCount > 0 ? (
+                                    <>
+                                      <Star className="w-2.5 h-2.5 fill-amber-400 text-amber-400" />
+                                      <span>{product.rating}</span>
+                                    </>
+                                  ) : (
+                                    <span>暂无评价</span>
+                                  )}
                                   <span>·</span>
                                   <span>已售{product.salesCount}</span>
                                 </div>

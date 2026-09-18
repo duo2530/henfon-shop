@@ -19,6 +19,7 @@ import { formatDateTime } from '../utils/datetime';
 import {
   AdminUser,
   BackendLogisticsCarrier,
+  BackendMemberTag,
   BackendMenu,
   BackendTradeOrder,
   clearAdminToken,
@@ -28,6 +29,7 @@ import {
   logoutAdmin,
   updateAdminProfile,
   listMemberUsers,
+  listMemberTags,
   createMemberUser,
   updateMemberStatus,
   updateMemberProfile,
@@ -107,6 +109,10 @@ interface AdminContextType {
   products: Product[];
   orders: Order[];
   users: User[];
+  /** 会员画像标签字典（含绑定人数），用于筛选栏展示完整标签体系。 */
+  memberTags: BackendMemberTag[];
+  /** 重新拉取画像标签字典。 */
+  refreshMemberTags: () => Promise<void>;
   catalogCategories: Array<{ id: number; code: ProductCategory; name: string }>;
   logisticsCarriers: BackendLogisticsCarrier[];
   todos: TodoItem[];
@@ -282,6 +288,8 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   const [orders, setOrders] = useState<Order[]>([]);
   // 会员列表以服务端返回为唯一事实来源，避免管理端展示本地演示会员。
   const [users, setUsers] = useState<User[]>([]);
+  // 画像标签字典（含每个标签的绑定人数）。筛选栏展示的是完整标签体系，不能从当前页会员数据反向推导。
+  const [memberTags, setMemberTags] = useState<BackendMemberTag[]>([]);
   const [catalogCategories, setCatalogCategories] = useState<Array<{ id: number; code: ProductCategory; name: string }>>([]);
   const [logisticsCarriers, setLogisticsCarriers] = useState<BackendLogisticsCarrier[]>([]);
   // 工作台待办和通知只展示服务端同步结果，避免把本地演示数据误当成线上业务数据。
@@ -304,6 +312,20 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     const id = Date.now().toString() + Math.random().toString(36).substring(2, 5);
     setToasts((prev) => [...prev, { id, message, type }]);
     setTimeout(() => setToasts((prev) => prev.filter((toast) => toast.id !== id)), 3500);
+  }, []);
+
+  /**
+   * 重新拉取会员画像标签字典。
+   *
+   * 新增或删除标签后调用，保证筛选栏的标签全集与后端一致。
+   * 拉取失败时清空字典，页面会回退到「按已加载会员的标签推导」，不会因此丢掉筛选能力。
+   */
+  const refreshMemberTags = useCallback(async () => {
+    try {
+      setMemberTags(await listMemberTags());
+    } catch {
+      setMemberTags([]);
+    }
   }, []);
 
   const openDialog = useCallback((request: Omit<AdminDialogRequest, 'resolve'>): Promise<DialogResult> => {
@@ -457,6 +479,8 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       // 查询失败时清空列表，避免把过期或演示数据误当成线上会员。
       setUsers([]);
     }
+    // 标签字典与会员列表并行加载，标签接口失败不影响会员列表展示。
+    await refreshMemberTags();
   };
 
   const hydrateCatalogMetadata = async () => {
@@ -1013,6 +1037,7 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
           const tagged = await updateMemberTags(Number(record.id), userData.tags);
           const taggedUser = backendMembersToFrontend([tagged])[0];
           setUsers((prev) => prev.map((user) => user.id === synced.id ? taggedUser : user));
+          void refreshMemberTags();
         } catch {
           // 会员已成功创建，标签失败仅提示并保留创建结果，便于稍后在画像面板重试。
           showToast('会员已创建，但默认标签保存失败，请稍后补充', 'warning');
@@ -1144,6 +1169,8 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     void updateMemberTags(numericId, tags).then((record) => {
       const synced = backendMembersToFrontend([record])[0];
       setUsers((prev) => prev.map((user) => user.id === id ? synced : user));
+      // 会员可以现场新建标签，保存后同步字典，新增的标签才会出现在筛选栏里。
+      void refreshMemberTags();
     }).catch((error) => {
       setUsers((prev) => prev.map((user) => user.id === id ? previous : user));
       showToast(error instanceof Error ? error.message : '会员标签保存失败，已回滚', 'warning');
@@ -1598,6 +1625,8 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         products,
         orders,
         users,
+        memberTags,
+        refreshMemberTags,
         catalogCategories,
         logisticsCarriers,
         todos,
