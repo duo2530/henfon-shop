@@ -40,6 +40,7 @@ public class CatalogPortalService {
     private final CatalogSkuMapper skuMapper;
     private final CatalogProductMediaMapper mediaMapper;
     private final MinioStorageService minioStorageService;
+    private final CatalogCategoryService categoryService;
 
     /**
      * 创建门户商品查询服务。
@@ -50,6 +51,7 @@ public class CatalogPortalService {
      * @param skuMapper SKU 数据访问对象
      * @param mediaMapper 媒体数据访问对象
      * @param minioStorageService MinIO 文件服务
+     * @param categoryService 类目服务
      * @author Henfon
      * @date 2026-08-29
      */
@@ -58,13 +60,15 @@ public class CatalogPortalService {
                                 CatalogProductSpecMapper specMapper,
                                 CatalogSkuMapper skuMapper,
                                 CatalogProductMediaMapper mediaMapper,
-                                MinioStorageService minioStorageService) {
+                                MinioStorageService minioStorageService,
+                                CatalogCategoryService categoryService) {
         this.productMapper = productMapper;
         this.featureMapper = featureMapper;
         this.specMapper = specMapper;
         this.skuMapper = skuMapper;
         this.mediaMapper = mediaMapper;
         this.minioStorageService = minioStorageService;
+        this.categoryService = categoryService;
     }
 
     /**
@@ -112,9 +116,11 @@ public class CatalogPortalService {
         }
         long safeCurrent = Math.max(current, 1);
         long safeSize = Math.min(Math.max(size, 1), 100);
+        // 商品挂在类目树叶子节点上，按一级或二级类目筛选时要把整棵子树都算进来。
+        List<Long> categoryScope = categoryService.subtreeCategoryIds(categoryId);
         LambdaQueryWrapper<CatalogProduct> wrapper = new LambdaQueryWrapper<CatalogProduct>()
                 .eq(CatalogProduct::getStatus, 1)
-                .eq(categoryId != null, CatalogProduct::getCategoryId, categoryId)
+                .in(!categoryScope.isEmpty(), CatalogProduct::getCategoryId, categoryScope)
                 .ge(minPrice != null, CatalogProduct::getPrice, minPrice)
                 .le(maxPrice != null, CatalogProduct::getPrice, maxPrice)
                 .and(StringUtils.hasText(keyword), q -> q.like(CatalogProduct::getProductName, keyword)

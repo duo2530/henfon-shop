@@ -33,8 +33,8 @@ import {
   Tag,
   ChevronRight,
 } from 'lucide-react';
-import { CATEGORIES } from '../data/products';
 import { Product, UserProfile } from '../types/ecommerce';
+import { ALL_CATEGORY_ID, PortalCategoryNode } from '../api/portalApi';
 import { AuthMode } from './AuthModal';
 
 interface NavbarProps {
@@ -44,6 +44,8 @@ interface NavbarProps {
   ordersCount: number;
   searchQuery: string;
   selectedCategory: string;
+  /** 后端下发的类目树，门户导航与搜索建议都以此为唯一来源。 */
+  categoryTree: PortalCategoryNode[];
   currentUser: UserProfile | null;
   claimedCouponsCount?: number;
   products?: Product[];
@@ -66,6 +68,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   ordersCount,
   searchQuery,
   selectedCategory,
+  categoryTree,
   currentUser,
   claimedCouponsCount = 0,
   products = [],
@@ -95,6 +98,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   const userMenuRef = useRef<HTMLDivElement>(null);
   const searchContainerRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  // 展开二级/三级类目面板的一级类目 ID。
+  const [openCategoryId, setOpenCategoryId] = useState<string | null>(null);
 
   const hotKeywords = ['降噪耳机', '机械键盘', '手冲咖啡壶', '4K显示器', '铝镁合金箱', '羊绒卫衣'];
 
@@ -138,6 +143,25 @@ export const Navbar: React.FC<NavbarProps> = ({
     };
   }, []);
 
+  // 类目树按层级深度优先展开，搜索建议需要同时覆盖一级、二级与三级类目。
+  const flatCategories = useMemo(() => {
+    const result: PortalCategoryNode[] = [];
+    const walk = (nodes: PortalCategoryNode[]) => {
+      nodes.forEach((node) => {
+        result.push(node);
+        walk(node.children);
+      });
+    };
+    walk(categoryTree);
+    return result;
+  }, [categoryTree]);
+
+  // 当前展开下级面板的一级类目。
+  const activeNavCategory = useMemo(
+    () => (openCategoryId ? categoryTree.find((node) => node.id === openCategoryId) : undefined),
+    [openCategoryId, categoryTree]
+  );
+
   // Compute Auto-Suggest Matching Categories & Products
   const { matchingCategories, matchingProducts, totalMatchingCount } = useMemo(() => {
     const trimmed = searchQuery.trim().toLowerCase();
@@ -146,20 +170,19 @@ export const Navbar: React.FC<NavbarProps> = ({
     }
 
     // Matching Categories
-    const matchedCats = CATEGORIES.filter((cat) => {
-      if (cat.id === 'all') return false;
-      const labelMatch = cat.label.toLowerCase().includes(trimmed) || cat.id.toLowerCase().includes(trimmed);
-      // Also match if any product in this category matches the query
-      const hasMatchingProduct = products.some(
-        (p) => p.category === cat.id && (p.title.toLowerCase().includes(trimmed) || p.brand.toLowerCase().includes(trimmed))
-      );
-      return labelMatch || hasMatchingProduct;
+    const matchedCats = flatCategories.filter((cat) => {
+      return cat.name.toLowerCase().includes(trimmed) || cat.code.toLowerCase().includes(trimmed);
     }).map((cat) => {
-      const count = products.filter(
-        (p) => p.category === cat.id && (p.title.toLowerCase().includes(trimmed) || p.brand.toLowerCase().includes(trimmed) || true)
-      ).length;
+      // 商品卡片上的分类标签取自叶子类目名，统计时要把该类目的整棵子树都算进来。
+      const names = new Set<string>();
+      const collect = (node: PortalCategoryNode) => {
+        names.add(node.name);
+        node.children.forEach(collect);
+      };
+      collect(cat);
+      const count = products.filter((p) => names.has(p.categoryLabel || '')).length;
       return { ...cat, productCount: count };
-    });
+    }).slice(0, 12);
 
     // Matching Products
     const allMatches = products.filter((p) => {
@@ -182,7 +205,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   const allNavigableItems = useMemo(() => {
     if (!searchQuery.trim()) return [];
     const items: Array<
-      | { type: 'category'; data: (typeof CATEGORIES)[number] }
+      | { type: 'category'; data: PortalCategoryNode & { productCount: number } }
       | { type: 'product'; data: Product }
       | { type: 'search_action'; query: string }
     > = [];
@@ -193,25 +216,17 @@ export const Navbar: React.FC<NavbarProps> = ({
     return items;
   }, [searchQuery, matchingCategories, matchingProducts]);
 
-  // Helper to render category icon
-  const renderCategoryIcon = (iconName: string) => {
-    switch (iconName) {
-      case 'Smartphone':
-        return <Smartphone className="w-3.5 h-3.5" />;
-      case 'Headphones':
-        return <Headphones className="w-3.5 h-3.5" />;
-      case 'Home':
-        return <Home className="w-3.5 h-3.5" />;
-      case 'Shirt':
-        return <Shirt className="w-3.5 h-3.5" />;
-      case 'Compass':
-        return <Compass className="w-3.5 h-3.5" />;
-      case 'Coffee':
-        return <Coffee className="w-3.5 h-3.5" />;
-      case 'Sparkles':
-      default:
-        return <Sparkles className="w-3.5 h-3.5" />;
-    }
+  // Helper to render category icon：后端类目没有图标字段，按类目编码前缀取同一套线性图标。
+  const renderCategoryIcon = (categoryCode: string) => {
+    const code = (categoryCode || '').toUpperCase();
+    if (code.startsWith('ELEC')) return <Smartphone className="w-3.5 h-3.5" />;
+    if (code.startsWith('CLOTH')) return <Shirt className="w-3.5 h-3.5" />;
+    if (code.startsWith('HOME')) return <Home className="w-3.5 h-3.5" />;
+    if (code.startsWith('BEAUTY')) return <Sparkles className="w-3.5 h-3.5" />;
+    if (code.startsWith('FOOD') || code.startsWith('LIFE')) return <Coffee className="w-3.5 h-3.5" />;
+    if (code.startsWith('AUDIO')) return <Headphones className="w-3.5 h-3.5" />;
+    if (code.startsWith('OUTDOOR')) return <Compass className="w-3.5 h-3.5" />;
+    return <Tag className="w-3.5 h-3.5" />;
   };
 
   // Helper to highlight matching text
@@ -268,8 +283,12 @@ export const Navbar: React.FC<NavbarProps> = ({
 
   const handleSelectCategory = (categoryId: string) => {
     onCategorySelect(categoryId);
+    setOpenCategoryId(null);
     setIsSearchFocused(false);
-    saveRecentSearch(searchQuery || categoryId);
+    const name = categoryId === ALL_CATEGORY_ID
+      ? '全部商品'
+      : flatCategories.find((item) => item.id === categoryId)?.name;
+    saveRecentSearch(name || searchQuery || categoryId);
   };
 
   const handleSelectProduct = (product: Product) => {
@@ -485,7 +504,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                     <div className="pt-2 border-t border-zinc-100">
                       <div className="text-[11px] font-semibold text-zinc-400 mb-2">按分类快速发现</div>
                       <div className="grid grid-cols-3 sm:grid-cols-6 gap-1.5">
-                        {CATEGORIES.filter((c) => c.id !== 'all').map((cat) => (
+                        {categoryTree.map((cat) => (
                           <button
                             key={cat.id}
                             type="button"
@@ -493,9 +512,9 @@ export const Navbar: React.FC<NavbarProps> = ({
                             className="p-2 rounded-xl bg-zinc-50 hover:bg-zinc-100 border border-zinc-100 text-center flex flex-col items-center gap-1 transition text-zinc-700 hover:text-zinc-900"
                           >
                             <div className="w-7 h-7 rounded-lg bg-white shadow-xs flex items-center justify-center text-zinc-700">
-                              {renderCategoryIcon(cat.icon)}
+                              {renderCategoryIcon(cat.code)}
                             </div>
-                            <span className="text-[11px] font-medium">{cat.label}</span>
+                            <span className="text-[11px] font-medium">{cat.name}</span>
                           </button>
                         ))}
                       </div>
@@ -520,14 +539,19 @@ export const Navbar: React.FC<NavbarProps> = ({
                               className="group px-3 py-1.5 rounded-xl bg-white hover:bg-zinc-900 hover:text-white border border-zinc-200 text-zinc-800 text-xs font-medium transition flex items-center gap-2 shadow-xs"
                             >
                               <div className="text-zinc-500 group-hover:text-amber-400 transition">
-                                {renderCategoryIcon(cat.icon)}
+                                {renderCategoryIcon(cat.code)}
                               </div>
                               <span>
-                                {highlightText(cat.label, searchQuery)}
+                                {highlightText(cat.name, searchQuery)}
                               </span>
-                              <span className="text-[10px] text-zinc-400 group-hover:text-zinc-300">
-                                ({cat.productCount}件)
+                              <span className="text-[10px] text-zinc-400 group-hover:text-zinc-500">
+                                {cat.level === 1 ? '一级' : cat.level === 2 ? '二级' : '三级'}
                               </span>
+                              {cat.productCount > 0 && (
+                                <span className="text-[10px] text-zinc-400 group-hover:text-zinc-300">
+                                  （本页 {cat.productCount} 件）
+                                </span>
+                              )}
                               <ChevronRight className="w-3 h-3 text-zinc-400 group-hover:text-white transition" />
                             </button>
                           ))}
@@ -624,14 +648,14 @@ export const Navbar: React.FC<NavbarProps> = ({
                           请尝试缩短关键词，或点击下方分类进行浏览
                         </p>
                         <div className="flex flex-wrap justify-center gap-1.5 mt-3">
-                          {CATEGORIES.filter((c) => c.id !== 'all').map((cat) => (
+                          {categoryTree.map((cat) => (
                             <button
                               key={cat.id}
                               type="button"
                               onClick={() => handleSelectCategory(cat.id)}
                               className="text-xs px-2.5 py-1 rounded-lg bg-zinc-100 hover:bg-zinc-200 text-zinc-700 transition"
                             >
-                              {cat.label}
+                              {cat.name}
                             </button>
                           ))}
                         </div>
@@ -891,38 +915,112 @@ export const Navbar: React.FC<NavbarProps> = ({
         </div>
 
         {/* Category Navigation Pills & Coupon Center Shortcut */}
-        <div className="flex items-center justify-between gap-2 pt-3 mt-1">
-          <nav className="flex items-center gap-2 overflow-x-auto no-scrollbar flex-1">
-            {CATEGORIES.map((cat) => {
-              const isActive = selectedCategory === cat.id;
-              return (
-                <button
-                  key={cat.id}
-                  onClick={() => onCategorySelect(cat.id)}
-                  className={`px-3.5 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-all flex items-center gap-1.5 ${
-                    isActive
-                      ? 'bg-zinc-900 text-white shadow-xs'
-                      : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200/80 hover:text-zinc-900'
-                  }`}
-                >
-                  {cat.label}
-                </button>
-              );
-            })}
-          </nav>
+        <div className="relative pt-3 mt-1" onMouseLeave={() => setOpenCategoryId(null)}>
+          <div className="flex items-center justify-between gap-2">
+            <nav className="flex items-center gap-2 overflow-x-auto no-scrollbar flex-1">
+              <button
+                onClick={() => handleSelectCategory(ALL_CATEGORY_ID)}
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-all ${
+                  selectedCategory === ALL_CATEGORY_ID
+                    ? 'bg-zinc-900 text-white shadow-xs'
+                    : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200/80 hover:text-zinc-900'
+                }`}
+              >
+                全部商品
+              </button>
+              {categoryTree.map((cat) => {
+                const isActive = selectedCategory === cat.id;
+                const isOpen = openCategoryId === cat.id;
+                const hasChildren = cat.children.length > 0;
+                return (
+                  <button
+                    key={cat.id}
+                    onMouseEnter={() => setOpenCategoryId(hasChildren ? cat.id : null)}
+                    onFocus={() => setOpenCategoryId(hasChildren ? cat.id : null)}
+                    onClick={() => {
+                      // 触屏没有 hover，点击时在选中类目的同时展开下级面板。
+                      handleSelectCategory(cat.id);
+                      setOpenCategoryId(hasChildren ? cat.id : null);
+                    }}
+                    aria-expanded={hasChildren ? isOpen : undefined}
+                    className={`px-3.5 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-all flex items-center gap-1.5 ${
+                      isActive || isOpen
+                        ? 'bg-zinc-900 text-white shadow-xs'
+                        : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200/80 hover:text-zinc-900'
+                    }`}
+                  >
+                    <span>{cat.name}</span>
+                    {hasChildren && (
+                      <ChevronDown className={`w-3 h-3 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+                    )}
+                  </button>
+                );
+              })}
+            </nav>
 
-          {/* Quick Coupon Center Header Button */}
-          {onOpenCouponCenter && (
-            <button
-              onClick={onOpenCouponCenter}
-              className="shrink-0 px-3 py-1.5 rounded-lg bg-linear-to-r from-amber-500 to-rose-500 text-white text-xs font-bold hover:opacity-95 transition flex items-center gap-1.5 shadow-xs"
-            >
-              <Ticket className="w-3.5 h-3.5" />
-              <span>领券中心</span>
-              <span className="text-[10px] bg-white/20 px-1 py-0.2 rounded-full">
-                最高省¥150
-              </span>
-            </button>
+            {/* Quick Coupon Center Header Button */}
+            {onOpenCouponCenter && (
+              <button
+                onClick={onOpenCouponCenter}
+                className="shrink-0 px-3 py-1.5 rounded-lg bg-linear-to-r from-amber-500 to-rose-500 text-white text-xs font-bold hover:opacity-95 transition flex items-center gap-1.5 shadow-xs"
+              >
+                <Ticket className="w-3.5 h-3.5" />
+                <span>领券中心</span>
+                <span className="text-[10px] bg-white/20 px-1 py-0.2 rounded-full">
+                  最高省¥150
+                </span>
+              </button>
+            )}
+          </div>
+
+          {/* 二级 / 三级类目面板：挂在导航条下沿，避免被横向滚动容器裁切 */}
+          {activeNavCategory && (
+            <div className="absolute left-0 right-0 top-full z-30 mt-1 rounded-2xl border border-zinc-200 bg-white p-5 shadow-xl">
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+                <button
+                  onClick={() => handleSelectCategory(activeNavCategory.id)}
+                  className="flex items-center gap-2 text-sm font-bold text-zinc-900 transition hover:text-amber-600"
+                >
+                  {renderCategoryIcon(activeNavCategory.code)}
+                  <span>{activeNavCategory.name} 全部商品</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </button>
+                <span className="text-[11px] text-zinc-400">
+                  共 {activeNavCategory.children.length} 个二级分类
+                </span>
+              </div>
+              <div className="grid grid-cols-1 gap-x-6 gap-y-5 sm:grid-cols-2 lg:grid-cols-4">
+                {activeNavCategory.children.map((level2) => (
+                  <div key={level2.id} className="min-w-0">
+                    <button
+                      onClick={() => handleSelectCategory(level2.id)}
+                      className="mb-2 flex items-center gap-1.5 text-xs font-semibold text-zinc-900 transition hover:text-amber-600"
+                    >
+                      <span className="h-3 w-1 rounded-full bg-amber-400" />
+                      {level2.name}
+                    </button>
+                    <div className="flex flex-wrap gap-1.5">
+                      {level2.children.map((level3) => (
+                        <button
+                          key={level3.id}
+                          onClick={() => handleSelectCategory(level3.id)}
+                          className={`rounded-lg px-2 py-1 text-[11px] transition ${
+                            selectedCategory === level3.id
+                              ? 'bg-zinc-900 text-white'
+                              : 'bg-zinc-50 text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900'
+                          }`}
+                        >
+                          {level3.name}
+                        </button>
+                      ))}
+                      {level2.children.length === 0 && (
+                        <span className="text-[11px] text-zinc-400">暂无三级分类</span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
           )}
         </div>
       </div>

@@ -16,7 +16,7 @@ import { AuthModal, AuthMode, PRESET_TEST_USERS } from './components/AuthModal';
 import { UserProfileModal } from './components/UserProfileModal';
 import { CouponCenter } from './components/CouponCenter';
 import { ToastContainer, ToastMessage } from './components/Toast';
-import { PRODUCTS, AVAILABLE_COUPONS } from './data/products';
+import { PRODUCTS, AVAILABLE_COUPONS, CATEGORIES } from './data/products';
 import {
   addPortalCartItem,
   mergePortalCartItems,
@@ -53,7 +53,6 @@ import {
   fetchPortalProductDetail,
   fetchPortalProducts,
   fetchPortalMyReviews,
-  mapCategory,
   logoutPortalMember,
   updatePortalMemberProfile,
   savePortalAddress,
@@ -69,6 +68,10 @@ import {
   PortalAfterSaleCreatePayload,
   PortalInvoiceRecord,
   PortalCategoryRecord,
+  PortalCategoryNode,
+  ALL_CATEGORY_ID,
+  buildCategoryTree,
+  findCategoryPath,
   PortalFlashSaleRecord,
   fetchPortalReviewSummary,
 } from './api/portalApi';
@@ -224,7 +227,7 @@ export default function App() {
   const [portalCategories, setPortalCategories] = useState<PortalCategoryRecord[]>([]);
   const [coupons, setCoupons] = useState<Coupon[]>(DEMO_MODE ? AVAILABLE_COUPONS : []);
   const [banners, setBanners] = useState<PortalBanner[]>([]);
-  const [selectedCategory, setSelectedCategory] = useState<string>('all');
+  const [selectedCategory, setSelectedCategory] = useState<string>(ALL_CATEGORY_ID);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [skuKeyword, setSkuKeyword] = useState<string>('');
   const [sortBy, setSortBy] = useState<SortOption>('featured');
@@ -234,6 +237,28 @@ export default function App() {
   const [onlyInStock, setOnlyInStock] = useState<boolean>(false);
   const [onlyDiscount, setOnlyDiscount] = useState<boolean>(false);
   const [priceRange, setPriceRange] = useState<[number, number]>([0, 2000]);
+
+  // 分类导航的树形结构：优先使用后台类目，接口不可用时退回本地演示类目，避免导航栏整条消失。
+  const categoryTree = useMemo<PortalCategoryNode[]>(() => {
+    if (portalCategories.length > 0) {
+      return buildCategoryTree(portalCategories);
+    }
+    return CATEGORIES.filter((item) => item.id !== ALL_CATEGORY_ID).map((item) => ({
+      id: item.id,
+      name: item.label,
+      code: item.id.toUpperCase(),
+      level: 1,
+      children: [],
+    }));
+  }, [portalCategories]);
+
+  // 当前选中类目的完整层级路径，列表标题用它显示「一级 / 二级 / 三级」。
+  const selectedCategoryPath = useMemo(
+    () => (selectedCategory === ALL_CATEGORY_ID
+      ? []
+      : findCategoryPath(categoryTree, (node) => node.id === selectedCategory)),
+    [categoryTree, selectedCategory]
+  );
 
   // Comparison State
   const [isCompareMode, setIsCompareMode] = useState<boolean>(false);
@@ -440,19 +465,9 @@ export default function App() {
       };
     }
 
-    const categoryId = selectedCategory === 'all'
-      ? undefined
-      : portalCategories.find((category) => {
-          const value = `${category.categoryCode || ''} ${category.categoryName || ''}`.toLowerCase();
-          if (selectedCategory === 'digital') return value.includes('digital') || value.includes('数码') || value.includes('电子');
-          if (selectedCategory === 'audio') return value.includes('audio') || value.includes('影音');
-          if (selectedCategory === 'home') return value.includes('home') || value.includes('家居');
-          if (selectedCategory === 'fashion') return value.includes('fashion') || value.includes('服饰');
-          if (selectedCategory === 'outdoor') return value.includes('outdoor') || value.includes('户外');
-          // “咖啡美食”不能使用“生活”泛匹配，否则会误命中“家居生活”类目。
-          if (selectedCategory === 'lifestyle') return value.includes('lifestyle') || value.includes('咖啡美食') || value.includes('咖啡');
-          return false;
-        })?.id;
+    // 选中的是后台类目 ID；后端会连带子树一起筛选，所以一级、二级类目也能查到挂在三级叶子上的商品。
+    const parsedCategoryId = selectedCategory === ALL_CATEGORY_ID ? Number.NaN : Number(selectedCategory);
+    const categoryId = Number.isFinite(parsedCategoryId) ? parsedCategoryId : undefined;
 
     setProductPageLoading(true);
     setProductPageError(null);
@@ -488,7 +503,7 @@ export default function App() {
     return () => {
       active = false;
     };
-  }, [productPage, productReloadKey, selectedCategory, searchQuery, skuKeyword, sortBy, priceRange, portalCategories]);
+  }, [productPage, productReloadKey, selectedCategory, searchQuery, skuKeyword, sortBy, priceRange]);
 
   // Claimed coupons in user's account
   const [claimedCouponCodes, setClaimedCouponCodes] = useState<string[]>(() => {
@@ -2233,8 +2248,8 @@ export default function App() {
   const filteredProducts = useMemo(() => {
     return products
       .filter((prod) => {
-        // Category filter
-        if (selectedCategory !== 'all' && prod.category !== selectedCategory) {
+        // 非演示模式下商品列表已由服务端按类目子树过滤，本地再筛会把三级叶子商品误判掉。
+        if (DEMO_MODE && selectedCategory !== ALL_CATEGORY_ID && prod.category !== selectedCategory) {
           return false;
         }
         // Search filter
@@ -2357,6 +2372,7 @@ export default function App() {
         wishlistCount={wishlist.length}
         ordersCount={orders.length}
         searchQuery={searchQuery}
+        categoryTree={categoryTree}
         selectedCategory={selectedCategory}
         currentUser={currentUser}
         claimedCouponsCount={claimedCoupons.length}
@@ -2381,7 +2397,7 @@ export default function App() {
 
       <main id="portal-main-content" tabIndex={-1} aria-label="商城主要内容" className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-6 md:py-8">
         {/* Promotional Hero Carousel & Benefits (show only when no active text search query) */}
-        {!searchQuery && selectedCategory === 'all' && (
+        {!searchQuery && selectedCategory === ALL_CATEGORY_ID && (
           <HeroBanner
             banners={banners}
             onExploreCategory={(cat) => {
@@ -2407,12 +2423,15 @@ export default function App() {
                 return;
               }
               if (linkType === 'CATEGORY') {
-                const category = portalCategories.find((item) =>
-                  String(item.id) === target || item.categoryCode === target || item.categoryName === target);
-                if (category) {
-                  // 商品列表按前端 slug 过滤，这里必须与商品映射走同一份归一化，
-                  // 直接塞后端的 categoryCode 会筛不到任何商品。
-                  setSelectedCategory(mapCategory(category.categoryName));
+                // Banner 的 linkTarget 可能填类目 ID、编码或名称，三种都认，命中后统一按类目 ID 选中。
+                const normalizedTarget = target.toLowerCase();
+                const path = findCategoryPath(categoryTree, (node) =>
+                  node.id === target
+                  || node.code.toLowerCase() === normalizedTarget
+                  || node.name === target);
+                const matched = path[path.length - 1];
+                if (matched) {
+                  setSelectedCategory(matched.id);
                   setProductPage(1);
                   return;
                 }
@@ -2441,7 +2460,7 @@ export default function App() {
           />
         )}
 
-        {!searchQuery && selectedCategory === 'all' && flashSales.length > 0 && (
+        {!searchQuery && selectedCategory === ALL_CATEGORY_ID && flashSales.length > 0 && (
           <section className="mb-8 rounded-2xl border border-orange-200 bg-gradient-to-br from-orange-50 via-white to-rose-50 p-4 sm:p-5 shadow-xs" aria-label="限时秒杀活动">
             <div className="flex items-center justify-between gap-3 mb-4">
               <div className="flex items-center gap-2">
@@ -2495,12 +2514,28 @@ export default function App() {
             <div className="flex items-center gap-3 flex-wrap">
               <div className="flex items-center gap-2">
                 <span className="text-sm font-bold text-zinc-900">
-                  {selectedCategory === 'all' ? '全部优选商品' : `品类筛选`}
+                  {selectedCategoryPath.length > 0
+                    ? selectedCategoryPath.map((node) => node.name).join(' / ')
+                    : '全部优选商品'}
                 </span>
                 <span className="text-xs px-2 py-0.5 rounded-full bg-zinc-100 text-zinc-600 font-semibold">
                   共 {productPageTotal || filteredProducts.length} 款
                 </span>
+                {selectedCategoryPath.length > 1 && (
+                  <span className="text-xs px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 font-semibold">
+                    第 {selectedCategoryPath.length} 级类目
+                  </span>
+                )}
               </div>
+
+              {selectedCategoryPath.length > 0 && (
+                <button
+                  onClick={() => { setSelectedCategory(ALL_CATEGORY_ID); setProductPage(1); }}
+                  className="rounded-lg bg-zinc-100 px-2.5 py-1 text-xs text-zinc-700 hover:bg-zinc-200"
+                >
+                  清除分类筛选
+                </button>
+              )}
 
               {searchQuery && (
                 <div className="flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg bg-zinc-100 text-zinc-800">

@@ -30,6 +30,7 @@ public class CatalogProductService {
     private final CatalogProductMapper catalogProductMapper;
     private final CatalogSkuMapper catalogSkuMapper;
     private final MinioStorageService minioStorageService;
+    private final CatalogCategoryService categoryService;
 
     /**
      * 创建商品目录服务。
@@ -37,15 +38,18 @@ public class CatalogProductService {
      * @param catalogProductMapper 商品数据访问对象
      * @param catalogSkuMapper SKU数据访问对象
      * @param minioStorageService MinIO 文件服务
+     * @param categoryService 类目服务
      * @author Henfon
      * @date 2026-08-29
      */
     public CatalogProductService(CatalogProductMapper catalogProductMapper,
                                  CatalogSkuMapper catalogSkuMapper,
-                                 MinioStorageService minioStorageService) {
+                                 MinioStorageService minioStorageService,
+                                 CatalogCategoryService categoryService) {
         this.catalogProductMapper = catalogProductMapper;
         this.catalogSkuMapper = catalogSkuMapper;
         this.minioStorageService = minioStorageService;
+        this.categoryService = categoryService;
     }
 
     /**
@@ -64,8 +68,10 @@ public class CatalogProductService {
         // 统一限制分页参数，避免异常参数导致数据库扫描过大。
         long safeCurrent = Math.max(current, 1);
         long safeSize = Math.min(Math.max(size, 1), 200);
+        // 商品挂在类目树叶子节点上，按一级或二级类目筛选时要把整棵子树都算进来。
+        List<Long> categoryScope = categoryService.subtreeCategoryIds(categoryId);
         LambdaQueryWrapper<CatalogProduct> wrapper = new LambdaQueryWrapper<CatalogProduct>()
-                .eq(categoryId != null, CatalogProduct::getCategoryId, categoryId)
+                .in(!categoryScope.isEmpty(), CatalogProduct::getCategoryId, categoryScope)
                 .eq(status != null, CatalogProduct::getStatus, status)
                 .and(StringUtils.hasText(keyword), query -> query
                         .like(CatalogProduct::getProductName, keyword)

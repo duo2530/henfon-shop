@@ -37,7 +37,11 @@ export interface Product {
   id: string;
   title: string;
   subtitle: string;
-  category: 'digital' | 'home' | 'fashion' | 'audio' | 'lifestyle' | 'outdoor';
+  /**
+   * 商品所属类目标识。服务端商品记录存后端类目 ID 字符串，本地演示商品存类目 slug，
+   * 两者都只用于与当前选中的类目做相等比较。
+   */
+  category: string;
   categoryLabel: string;
   brand: string;
   price: number;

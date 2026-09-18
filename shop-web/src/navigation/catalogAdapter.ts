@@ -2,19 +2,14 @@ import { BackendCatalogCategory, BackendCatalogProduct } from '../api/adminApi';
 import { Product, ProductCategory } from '../types';
 import { formatDate } from '../utils/datetime';
 
-const categoryCodeMap: Record<string, ProductCategory> = {
-  ELECTRONICS: 'electronics',
-  CLOTHING: 'clothing',
-  HOME: 'home',
-  BEAUTY: 'beauty',
-  FOOD: 'food'
-};
-
 const splitTags = (value?: string): string[] => value ? value.split(',').map((tag) => tag.trim()).filter(Boolean) : [];
+
+// 后端类目编码即前端选项值，避免自建映射表漏掉新类目后静默落到默认分类。
+const normalizeCategoryCode = (value?: string): ProductCategory => (value || '').trim().toUpperCase();
 
 export function backendCategoriesToMap(categories: BackendCatalogCategory[]): Map<number, { code: ProductCategory; name: string }> {
   return new Map(categories.map((category) => [category.id, {
-    code: categoryCodeMap[category.categoryCode.toUpperCase()] || 'electronics',
+    code: normalizeCategoryCode(category.categoryCode),
     name: category.categoryName
   }]));
 }
@@ -22,7 +17,7 @@ export function backendCategoriesToMap(categories: BackendCatalogCategory[]): Ma
 export function backendCategoriesToOptions(categories: BackendCatalogCategory[]): Array<{ id: number; code: ProductCategory; name: string }> {
   return categories.map((category) => ({
     id: category.id,
-    code: categoryCodeMap[category.categoryCode.toUpperCase()] || 'electronics',
+    code: normalizeCategoryCode(category.categoryCode),
     name: category.categoryName
   }));
 }

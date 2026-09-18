@@ -7,12 +7,16 @@ import com.henfon.shop.catalog.entity.CatalogProduct;
 import com.henfon.shop.catalog.mapper.CatalogCategoryMapper;
 import com.henfon.shop.catalog.mapper.CatalogProductMapper;
 import com.henfon.shop.common.exception.BusinessException;
+import com.henfon.shop.integration.storage.MinioStorageService;
 import org.springframework.stereotype.Service;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 
 /**
  * 商品类目应用服务。
@@ -25,17 +29,22 @@ public class CatalogCategoryService {
 
     private final CatalogCategoryMapper catalogCategoryMapper;
     private final CatalogProductMapper catalogProductMapper;
+    private final MinioStorageService minioStorageService;
 
     /**
      * 创建商品类目服务。
      *
      * @param catalogCategoryMapper 类目数据访问对象
+     * @param catalogProductMapper 商品数据访问对象
+     * @param minioStorageService MinIO 文件服务
      * @author Henfon
      * @date 2026-08-29
      */
-    public CatalogCategoryService(CatalogCategoryMapper catalogCategoryMapper, CatalogProductMapper catalogProductMapper) {
+    public CatalogCategoryService(CatalogCategoryMapper catalogCategoryMapper, CatalogProductMapper catalogProductMapper,
+                                  MinioStorageService minioStorageService) {
         this.catalogCategoryMapper = catalogCategoryMapper;
         this.catalogProductMapper = catalogProductMapper;
+        this.minioStorageService = minioStorageService;
     }
 
     /**
@@ -47,10 +56,10 @@ public class CatalogCategoryService {
      */
     public List<CatalogCategory> listEnabled() {
         // 商品编辑页只展示启用类目，停用类目仍保留在后台数据库中。
-        return catalogCategoryMapper.selectList(new LambdaQueryWrapper<CatalogCategory>()
+        return withAccessibleIcon(catalogCategoryMapper.selectList(new LambdaQueryWrapper<CatalogCategory>()
                 .eq(CatalogCategory::getStatus, 1)
                 .orderByAsc(CatalogCategory::getParentId)
-                .orderByAsc(CatalogCategory::getSortNo));
+                .orderByAsc(CatalogCategory::getSortNo)));
     }
 
     /**
@@ -61,10 +70,42 @@ public class CatalogCategoryService {
      * @date 2026-08-30
      */
     public List<CatalogCategory> listAdmin() {
-        return catalogCategoryMapper.selectList(new LambdaQueryWrapper<CatalogCategory>()
+        return withAccessibleIcon(catalogCategoryMapper.selectList(new LambdaQueryWrapper<CatalogCategory>()
                 .orderByAsc(CatalogCategory::getParentId)
                 .orderByAsc(CatalogCategory::getSortNo)
-                .orderByAsc(CatalogCategory::getId));
+                .orderByAsc(CatalogCategory::getId)));
+    }
+
+    /**
+     * 展开类目及其全部下级类目 ID。
+     *
+     * <p>商品挂在类目树的叶子节点上，按上级类目筛选商品时必须一并带上下级，否则只会命中直接挂在该类目下的商品。
+     * 类目总量在百级以内，一次性取出后逐层收敛比递归查询更简单。</p>
+     *
+     * @param rootId 根类目ID
+     * @return 根类目及其全部后代的 ID，根类目为空时返回空集合
+     * @author Henfon
+     * @date 2026-09-18
+     */
+    public List<Long> subtreeCategoryIds(Long rootId) {
+        if (rootId == null) {
+            return List.of();
+        }
+        List<CatalogCategory> all = catalogCategoryMapper.selectList(new LambdaQueryWrapper<CatalogCategory>()
+                .select(CatalogCategory::getId, CatalogCategory::getParentId));
+        Set<Long> scope = new LinkedHashSet<>();
+        scope.add(rootId);
+        boolean expanded = true;
+        while (expanded) {
+            expanded = false;
+            for (CatalogCategory category : all) {
+                if (category.getParentId() != null && scope.contains(category.getParentId())
+                        && scope.add(category.getId())) {
+                    expanded = true;
+                }
+            }
+        }
+        return new ArrayList<>(scope);
     }
 
     /**
@@ -97,7 +138,7 @@ public class CatalogCategoryService {
         category.setLevelNo(level);
         category.setSortNo(request.sortNo() == null ? 0 : request.sortNo());
         category.setStatus(request.status());
-        category.setIconUrl(trimToNull(request.iconUrl()));
+        category.setIconUrl(minioStorageService.normalizeReference(trimToNull(request.iconUrl())));
         category.setRemark(trimToNull(request.remark()));
         try {
             if (category.getId() == null) {
@@ -175,6 +216,23 @@ public class CatalogCategoryService {
             throw new BusinessException("CATALOG_CATEGORY_NOT_FOUND", "类目不存在");
         }
         return category;
+    }
+
+    /**
+     * 把类目图标的稳定引用换算成本次请求可访问的地址。
+     *
+     * <p>库内存的是 MinIO 对象键或外部图片地址：对象键前端无法直接展示，历史遗留的预签名地址又会在 24 小时后失效，
+     * 因此读取时统一重签。外部地址与对象存储不可用的情况由 {@link MinioStorageService#resolveAccessUrl} 保留原值。</p>
+     *
+     * @param categories 类目列表
+     * @return 同一批类目
+     * @author Henfon
+     * @date 2026-09-18
+     */
+    private List<CatalogCategory> withAccessibleIcon(List<CatalogCategory> categories) {
+        categories.forEach(category ->
+                category.setIconUrl(minioStorageService.resolveAccessUrl(category.getIconUrl())));
+        return categories;
     }
 
     /**

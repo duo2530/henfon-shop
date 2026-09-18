@@ -70,6 +70,7 @@ java -jar shop-boot/target/shop-boot-0.0.1-SNAPSHOT.jar
 用 `db/schema/henfon-shop.sql` 建出来的是空库，跑起来门户没有商品图、管理端没有订单。`db/seed/` 放了一份可直接导入的快照：
 
 - `demo-data.sql`：27 张业务表的 `INSERT IGNORE` 快照，覆盖商品、SKU、商品媒体、库存与流水、营销活动、会员与地址收藏、购物车、订单与物流、售后、发票、站内通知、登录日志。
+- `category-tree.sql`：二级、三级类目与商品归属。按 `category_code` 幂等插入，商品归属改动以「当前挂在一级类目下」为前提，重复执行不会产生副本。要在 `demo-data.sql` 之后执行，它会覆盖快照里商品的一级类目归属。
 - `media/`：399 张图片，按 `2026-09-01/xxx.jpg` 的日期目录存放，其中 2 张没有被任何记录引用，留着备用。
 - `import-demo.mjs`：上传脚本，把 `media/` 下的文件传到 MinIO 的 `shop` 桶，并补回对象键里的 `media/` 前缀。
 
@@ -79,6 +80,7 @@ MinIO 先起来，媒体才传得进去。在 `shop-admin` 目录执行：
 
 ```powershell
 mysql -uroot -p --default-character-set=utf8mb4 henfon-shop < db/seed/demo-data.sql
+mysql -uroot -p --default-character-set=utf8mb4 henfon-shop < db/seed/category-tree.sql
 node db/seed/import-demo.mjs
 ```
 

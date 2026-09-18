@@ -7,12 +7,14 @@ import {
   Edit3,
   FolderTree,
   GripVertical,
+  Image as ImageIcon,
   Loader2,
   Plus,
   Power,
   RefreshCw,
   Save,
   Trash2,
+  Upload,
   X
 } from 'lucide-react';
 import {
@@ -20,7 +22,8 @@ import {
   deleteCatalogCategory,
   listManageCatalogCategories,
   saveCatalogCategory,
-  updateCatalogCategoryStatus
+  updateCatalogCategoryStatus,
+  uploadStorageFile
 } from '../../api/adminApi';
 import { useAdmin } from '../../context/AdminContext';
 
@@ -114,6 +117,7 @@ export const CategoryManagementView: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [editing, setEditing] = useState<CategoryForm | null>(null);
+  const [iconUploading, setIconUploading] = useState(false);
   const [expandedIds, setExpandedIds] = useState<Set<number>>(new Set());
 
   const tree = useMemo(() => buildTree(categories), [categories]);
@@ -159,6 +163,24 @@ export const CategoryManagementView: React.FC = () => {
 
   const updateForm = (key: keyof CategoryForm, value: string | number) => {
     setEditing((current) => current ? { ...current, [key]: value } : current);
+  };
+
+  /**
+   * 上传类目图标。
+   *
+   * 表单里存上传接口返回的访问地址，服务端写入时会归一化成对象键，避免把会过期的签名地址写进类目。
+   */
+  const handleIconUpload = async (file: File) => {
+    setIconUploading(true);
+    try {
+      const uploaded = await uploadStorageFile(file);
+      updateForm('iconUrl', uploaded.url);
+      showToast('图标上传成功，保存后生效', 'success');
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : '图标上传失败，请稍后重试', 'error');
+    } finally {
+      setIconUploading(false);
+    }
   };
 
   const submit = async (event: FormEvent) => {
@@ -288,6 +310,6 @@ export const CategoryManagementView: React.FC = () => {
       {loading ? <div className="flex items-center justify-center py-20 text-sm text-slate-500"><Loader2 className="mr-2 h-4 w-4 animate-spin" />正在加载类目…</div> : categories.length === 0 ? <div className="py-20 text-center text-sm text-slate-500"><FolderTree className="mx-auto mb-3 h-9 w-9 text-slate-300" />暂无类目，点击右上角新增根类目。</div> : renderRows(tree)}
     </div>
 
-    {editing && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"><form onSubmit={submit} className="max-h-[90vh] w-full max-w-xl space-y-4 overflow-y-auto rounded-xl bg-white p-6 shadow-xl"><div className="flex items-center justify-between"><h3 className="text-lg font-bold text-slate-900">{editing.id ? '编辑类目' : '新增类目'}</h3><button type="button" onClick={() => setEditing(null)} className="text-slate-400 hover:text-slate-700" aria-label="关闭"><X className="h-5 w-5" /></button></div><div className="grid grid-cols-1 gap-4 md:grid-cols-2"><label className="text-xs text-slate-600 md:col-span-2">类目名称 *<input required maxLength={128} value={editing.categoryName} onChange={(event) => updateForm('categoryName', event.target.value)} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-500" /></label><label className="text-xs text-slate-600">类目编码 *<input required maxLength={64} value={editing.categoryCode} onChange={(event) => updateForm('categoryCode', event.target.value.toUpperCase())} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 font-mono text-sm uppercase outline-none focus:border-blue-500" placeholder="例如 ELECTRONICS" /></label><label className="text-xs text-slate-600">父级类目<select value={editing.parentId} onChange={(event) => updateForm('parentId', Number(event.target.value))} className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-500"><option value={0}>根类目</option>{parentOptions.map(({ category, depth }) => <option key={category.id} value={category.id}>{'　'.repeat(depth)}{category.categoryName}</option>)}</select></label><label className="text-xs text-slate-600">排序号<input type="number" min={0} value={editing.sortNo} onChange={(event) => updateForm('sortNo', Number(event.target.value))} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-500" /></label><label className="text-xs text-slate-600">状态<select value={editing.status} onChange={(event) => updateForm('status', Number(event.target.value))} className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-500"><option value={1}>启用</option><option value={0}>停用</option></select></label><label className="text-xs text-slate-600 md:col-span-2">图标地址<input maxLength={512} value={editing.iconUrl} onChange={(event) => updateForm('iconUrl', event.target.value)} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-500" placeholder="可选，填写图片 URL" /></label><label className="text-xs text-slate-600 md:col-span-2">备注<textarea maxLength={500} rows={3} value={editing.remark} onChange={(event) => updateForm('remark', event.target.value)} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-500" /></label></div><div className="flex justify-end gap-2 pt-2"><button type="button" onClick={() => setEditing(null)} className="rounded-lg border border-slate-200 px-4 py-2 text-sm text-slate-600">取消</button><button disabled={saving} type="submit" className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60">{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}保存</button></div></form></div>}
+    {editing && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"><form onSubmit={submit} className="max-h-[90vh] w-full max-w-xl space-y-4 overflow-y-auto rounded-xl bg-white p-6 shadow-xl"><div className="flex items-center justify-between"><h3 className="text-lg font-bold text-slate-900">{editing.id ? '编辑类目' : '新增类目'}</h3><button type="button" onClick={() => setEditing(null)} className="text-slate-400 hover:text-slate-700" aria-label="关闭"><X className="h-5 w-5" /></button></div><div className="grid grid-cols-1 gap-4 md:grid-cols-2"><label className="text-xs text-slate-600 md:col-span-2">类目名称 *<input required maxLength={128} value={editing.categoryName} onChange={(event) => updateForm('categoryName', event.target.value)} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-500" /></label><label className="text-xs text-slate-600">类目编码 *<input required maxLength={64} value={editing.categoryCode} onChange={(event) => updateForm('categoryCode', event.target.value.toUpperCase())} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 font-mono text-sm uppercase outline-none focus:border-blue-500" placeholder="例如 ELECTRONICS" /></label><label className="text-xs text-slate-600">父级类目<select value={editing.parentId} onChange={(event) => updateForm('parentId', Number(event.target.value))} className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-500"><option value={0}>根类目</option>{parentOptions.map(({ category, depth }) => <option key={category.id} value={category.id}>{'　'.repeat(depth)}{category.categoryName}</option>)}</select></label><label className="text-xs text-slate-600">排序号<input type="number" min={0} value={editing.sortNo} onChange={(event) => updateForm('sortNo', Number(event.target.value))} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-500" /></label><label className="text-xs text-slate-600">状态<select value={editing.status} onChange={(event) => updateForm('status', Number(event.target.value))} className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-500"><option value={1}>启用</option><option value={0}>停用</option></select></label><div className="text-xs text-slate-600 md:col-span-2"><span className="font-medium">图标</span><div className="mt-1 flex items-center gap-3"><div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-slate-200 bg-slate-50">{editing.iconUrl ? <img src={editing.iconUrl} alt="类目图标预览" className="h-full w-full object-cover" /> : <ImageIcon className="h-5 w-5 text-slate-300" />}</div><div className="min-w-0 flex-1"><div className="flex items-center gap-3"><label className={`inline-flex items-center gap-1 text-[11px] font-medium text-blue-600 hover:text-blue-700 cursor-pointer ${iconUploading ? 'opacity-60 pointer-events-none' : ''}`}>{iconUploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}{iconUploading ? '上传中…' : '上传图片'}<input type="file" accept="image/jpeg,image/png,image/webp,image/gif" className="hidden" disabled={iconUploading} onChange={(event) => { const file = event.target.files?.[0]; if (file) void handleIconUpload(file); event.target.value = ''; }} /></label>{editing.iconUrl && <button type="button" onClick={() => updateForm('iconUrl', '')} className="text-[11px] text-slate-400 hover:text-rose-600">清除</button>}</div><input maxLength={512} value={editing.iconUrl} onChange={(event) => updateForm('iconUrl', event.target.value)} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-500" placeholder="可上传图片，也可填写外部图片地址" /></div></div></div><label className="text-xs text-slate-600 md:col-span-2">备注<textarea maxLength={500} rows={3} value={editing.remark} onChange={(event) => updateForm('remark', event.target.value)} className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-500" /></label></div><div className="flex justify-end gap-2 pt-2"><button type="button" onClick={() => setEditing(null)} className="rounded-lg border border-slate-200 px-4 py-2 text-sm text-slate-600">取消</button><button disabled={saving} type="submit" className="flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60">{saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}保存</button></div></form></div>}
   </div>;
 };

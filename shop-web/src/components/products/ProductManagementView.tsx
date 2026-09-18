@@ -22,7 +22,10 @@ import {
   Layers,
   ArrowUpRight,
   ShieldAlert,
-  Percent
+  Percent,
+  Upload,
+  Loader2,
+  Image as ImageIcon
 } from 'lucide-react';
 import {
   BackendCatalogProductContent,
@@ -108,12 +111,13 @@ export const ProductManagementView: React.FC = () => {
   const [originalMediaKeys, setOriginalMediaKeys] = useState<string[]>([]);
   const [contentLoading, setContentLoading] = useState(false);
   const [contentSaving, setContentSaving] = useState(false);
+  const [coverUploading, setCoverUploading] = useState(false);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [detailProduct, setDetailProduct] = useState<Product | null>(null);
   
   // Batch category modal state
   const [batchCategoryOpen, setBatchCategoryOpen] = useState(false);
-  const [targetBatchCategory, setTargetBatchCategory] = useState<ProductCategory>('electronics');
+  const [targetBatchCategory, setTargetBatchCategory] = useState<ProductCategory>('');
 
   // Quick Stock Adjustment modal
   const [stockAdjustProduct, setStockAdjustProduct] = useState<Product | null>(null);
@@ -123,7 +127,7 @@ export const ProductManagementView: React.FC = () => {
   // Form states for Add/Edit
   const [formData, setFormData] = useState({
     name: '',
-    category: 'electronics' as ProductCategory,
+    category: '' as ProductCategory,
     price: 0,
     costPrice: 0,
     safetyStock: 0,
@@ -329,6 +333,24 @@ export const ProductManagementView: React.FC = () => {
       void deleteStorageFile(target.objectKey).catch(() => {
         // 对象可能已经被服务端清理，删除失败不阻断本地内容编辑。
       });
+    }
+  };
+
+  /**
+   * 上传商品主图。
+   *
+   * 表单里存上传接口返回的访问地址，服务端写入时会归一化成对象键，避免把会过期的签名地址写进商品。
+   */
+  const handleCoverUpload = async (file: File) => {
+    setCoverUploading(true);
+    try {
+      const uploaded = await uploadStorageFile(file);
+      setFormData((previous) => ({ ...previous, imageUrl: uploaded.url }));
+      showToast('主图上传成功，保存后生效', 'success');
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : '主图上传失败，请稍后重试', 'error');
+    } finally {
+      setCoverUploading(false);
     }
   };
 
@@ -680,7 +702,11 @@ export const ProductManagementView: React.FC = () => {
             </PermissionGate>
             <PermissionGate permission="product:edit">
               <button
-                onClick={() => setBatchCategoryOpen(true)}
+                onClick={() => {
+                  // 类目选项来自服务端，默认选中第一项，避免空值提交被拦下。
+                  setTargetBatchCategory(categoryOptions[0]?.code ?? '');
+                  setBatchCategoryOpen(true);
+                }}
                 className="px-3 py-1.5 bg-blue-700 hover:bg-blue-600 text-white rounded-lg text-xs font-semibold shadow-xs transition-colors flex items-center gap-1.5"
               >
                 <Layers className="w-3.5 h-3.5" />
@@ -1378,16 +1404,56 @@ export const ProductManagementView: React.FC = () => {
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-gray-700 mb-1">
-                  商品主图 URL
-                </label>
-                <input
-                  type="url"
-                  value={formData.imageUrl}
-                  onChange={(e) => setFormData({ ...formData, imageUrl: e.target.value })}
-                  placeholder="https://..."
-                  className="w-full h-[36px] px-3 rounded-lg border border-gray-300 focus:border-blue-500 outline-none text-sm"
-                />
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-semibold text-gray-700">商品主图</label>
+                  <div className="flex items-center gap-3">
+                    <label className={`inline-flex items-center gap-1 text-[11px] font-medium text-blue-600 hover:text-blue-700 cursor-pointer ${coverUploading ? 'opacity-60 pointer-events-none' : ''}`}>
+                      {coverUploading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
+                      {coverUploading ? '上传中…' : '上传图片'}
+                      <input
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp,image/gif"
+                        className="hidden"
+                        disabled={coverUploading}
+                        onChange={(event) => {
+                          const file = event.target.files?.[0];
+                          if (file) void handleCoverUpload(file);
+                          event.target.value = '';
+                        }}
+                      />
+                    </label>
+                    {formData.imageUrl && (
+                      <button
+                        type="button"
+                        onClick={() => setFormData({ ...formData, imageUrl: '' })}
+                        className="text-[11px] text-gray-400 hover:text-rose-600"
+                      >
+                        清除
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <div className="flex items-start gap-3">
+                  <div className="w-20 h-20 shrink-0 rounded-lg border border-gray-200 bg-slate-50 overflow-hidden flex items-center justify-center">
+                    {formData.imageUrl ? (
+                      <img src={formData.imageUrl} alt="商品主图预览" className="w-full h-full object-cover" />
+                    ) : (
+                      <ImageIcon className="w-6 h-6 text-gray-300" />
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <input
+                      type="url"
+                      value={formData.imageUrl}
+                      onChange={(e) => setFormData({ ...formData, imageUrl: e.target.value })}
+                      placeholder="可上传图片，也可填写外部图片地址"
+                      className="w-full h-[36px] px-3 rounded-lg border border-gray-300 focus:border-blue-500 outline-none text-sm"
+                    />
+                    <p className="mt-1 text-[11px] text-gray-400">
+                      支持 JPG、PNG、WEBP、GIF，单张不超过 10MB，上传后文件保存在 MinIO；外链会原样保存。
+                    </p>
+                  </div>
+                </div>
               </div>
 
               <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-4">

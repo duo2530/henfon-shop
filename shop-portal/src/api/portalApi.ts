@@ -76,12 +76,72 @@ export interface PortalProductPage {
   pages: number;
 }
 
-/** 门户启用类目记录，用于把门户筛选同步到服务端分页查询。 */
+/** 门户启用类目记录，层级与父子关系由后端下发，门户据此还原类目树。 */
 export interface PortalCategoryRecord {
   id: number;
+  parentId?: number;
   categoryName: string;
   categoryCode?: string;
+  levelNo?: number;
+  sortNo?: number;
   status?: number;
+  iconUrl?: string;
+}
+
+/** 门户导航使用的类目节点，children 为空表示叶子类目。 */
+export interface PortalCategoryNode {
+  id: string;
+  name: string;
+  code: string;
+  level: number;
+  iconUrl?: string;
+  children: PortalCategoryNode[];
+}
+
+/** 全部商品伪类目，与后端类目 ID 不会冲突。 */
+export const ALL_CATEGORY_ID = 'all';
+
+/**
+ * 把后端扁平类目列表还原成类目树。
+ * 后端按 parentId、sortNo 排好序，这里保持其顺序，父节点缺失的类目挂到第一层，避免整枝丢失。
+ */
+export function buildCategoryTree(records: PortalCategoryRecord[]): PortalCategoryNode[] {
+  const nodes = new Map<string, PortalCategoryNode>();
+  records.forEach((record) => {
+    nodes.set(String(record.id), {
+      id: String(record.id),
+      name: record.categoryName,
+      code: record.categoryCode || '',
+      level: record.levelNo || 1,
+      iconUrl: record.iconUrl,
+      children: [],
+    });
+  });
+  const roots: PortalCategoryNode[] = [];
+  records.forEach((record) => {
+    const node = nodes.get(String(record.id));
+    if (!node) return;
+    const parent = record.parentId ? nodes.get(String(record.parentId)) : undefined;
+    if (parent) parent.children.push(node);
+    else roots.push(node);
+  });
+  return roots;
+}
+
+/**
+ * 在类目树中查找节点，并返回从一级到命中的完整路径。
+ * 门户用这条路径做面包屑，也用它判断当前筛选落在第几级。
+ */
+export function findCategoryPath(
+  tree: PortalCategoryNode[],
+  predicate: (node: PortalCategoryNode) => boolean
+): PortalCategoryNode[] {
+  for (const node of tree) {
+    if (predicate(node)) return [node];
+    const childPath = findCategoryPath(node.children, predicate);
+    if (childPath.length > 0) return [node, ...childPath];
+  }
+  return [];
 }
 
 interface MarketingCouponRecord {
@@ -262,7 +322,8 @@ function delay(milliseconds: number): Promise<void> {
 
 /**
  * 把后端类目名归一化为门户前端的类目 slug。
- * 商品列表与 Banner 类目跳转共用这一份映射，避免两边口径漂移。
+ * 仅在商品记录缺少 categoryId 时作为兜底：门户导航已改为按类目 ID 选中，
+ * 类目名（尤其是三级叶子名）无法稳定映射回某一个 slug。
  */
 export function mapCategory(categoryName?: string): Product['category'] {
   const value = categoryName || '';
@@ -282,7 +343,7 @@ function mapProduct(record: CatalogProductRecord): Product {
     id: `prod-${record.id}`,
     title: record.productName,
     subtitle: record.shortDescription || '',
-    category: mapCategory(record.categoryName),
+    category: record.categoryId != null ? String(record.categoryId) : mapCategory(record.categoryName),
     categoryLabel: record.categoryName || '精选商品',
     brand: record.brandName || 'HENFON',
     price,

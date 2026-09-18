@@ -31,7 +31,11 @@ export type NavigationTab =
   | 'operation_logs';
 
 export type ProductStatus = 'active' | 'inactive';
-export type ProductCategory = 'electronics' | 'clothing' | 'home' | 'beauty' | 'food';
+/**
+ * 商品类目标识，直接沿用后台 catalog_category.category_code。
+ * 类目是一棵树且可以增删，因此不再收窄为固定字面量联合，避免新类目被静默映射成错误分类。
+ */
+export type ProductCategory = string;
 
 export interface Product {
   id: string;
