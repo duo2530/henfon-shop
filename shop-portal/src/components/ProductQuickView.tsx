@@ -67,6 +67,30 @@ export function sanitizeProductRichText(value: string): string {
     .trim();
 }
 
+/**
+ * 播放视频，并吞掉「播放被中断」这一类的正常拒绝。
+ *
+ * video.play() 返回的 Promise 在兑现前遇到 pause() 或元素卸载会抛 AbortError：
+ * 悬停快速进出、切换媒体、关闭弹窗都会触发，属于预期行为，不该当作播放失败刷控制台。
+ * 只有其它错误（如格式不支持）才值得告警。
+ *
+ * @param video 视频元素
+ * @param onPlaying 开始播放后的回调
+ */
+function playVideoSafely(video: HTMLVideoElement, onPlaying?: () => void) {
+  const playback = video.play();
+  if (!playback || typeof playback.then !== 'function') {
+    onPlaying?.();
+    return;
+  }
+  playback
+    .then(() => onPlaying?.())
+    .catch((error: unknown) => {
+      if (error instanceof DOMException && error.name === 'AbortError') return;
+      console.warn('商品视频播放失败', error);
+    });
+}
+
 interface ProductQuickViewProps {
   product: Product | null;
   /** 详情接口加载状态。 */
@@ -300,7 +324,8 @@ const ProductQuickViewContent: React.FC<Omit<ProductQuickViewProps, 'product'> &
         type: 'video',
         url: product.videoUrl,
         poster: product.videoPoster || product.images[0],
-        duration: product.videoDuration || '0:15',
+        // 后端不提供时长，这里不填默认值：编出来的「0:15」会与实际视频对不上。
+        duration: product.videoDuration,
         title: '商品动态演示',
       });
     }
@@ -371,14 +396,7 @@ const ProductQuickViewContent: React.FC<Omit<ProductQuickViewProps, 'product'> &
     setIsHovered(true);
     if (isCurrentVideo && !videoLoadError && isInViewport && videoRef.current) {
       videoRef.current.muted = isMuted;
-      videoRef.current
-        .play()
-        .then(() => {
-          setIsPlaying(true);
-        })
-        .catch((err) => {
-          console.log('Video autoplay prevented:', err);
-        });
+      playVideoSafely(videoRef.current, () => setIsPlaying(true));
     }
   };
 
@@ -401,7 +419,7 @@ const ProductQuickViewContent: React.FC<Omit<ProductQuickViewProps, 'product'> &
       setIsPlaying(false);
     } else {
       videoRef.current.muted = isMuted;
-      videoRef.current.play().then(() => setIsPlaying(true)).catch(console.error);
+      playVideoSafely(videoRef.current, () => setIsPlaying(true));
     }
   };
 
@@ -616,8 +634,8 @@ const ProductQuickViewContent: React.FC<Omit<ProductQuickViewProps, 'product'> &
                       onPause={() => setIsPlaying(false)}
                       onTimeUpdate={handleTimeUpdate}
                       onEnded={() => setIsPlaying(false)}
-                      onError={(e) => {
-                        console.warn('Video failed to load or play', e);
+                      onError={() => {
+                        console.warn('商品视频加载失败', currentMedia.url);
                         setIsPlaying(false);
                         setVideoLoadError(true);
                       }}
@@ -844,7 +862,7 @@ const ProductQuickViewContent: React.FC<Omit<ProductQuickViewProps, 'product'> &
                   </div>
                   <div className="text-[11px] text-zinc-400 flex items-center justify-between px-0.5">
                     <span>
-                      {isCurrentVideo ? `▶ 当前为 ${currentMedia.duration || '视频'} 演示模式` : `第 ${activeMediaIndex + 1} / ${mediaList.length} 张媒体图`}
+                      {isCurrentVideo ? '▶ 当前为视频演示模式' : `第 ${activeMediaIndex + 1} / ${mediaList.length} 张媒体图`}
                     </span>
                     <span className="text-[10px] text-zinc-400">支持键盘或左右箭头切换</span>
                   </div>
@@ -1225,7 +1243,75 @@ const ProductQuickViewContent: React.FC<Omit<ProductQuickViewProps, 'product'> &
   );
 };
 
+/**
+ * 只有商品 ID、详情还没到手时的过渡态。
+ *
+ * 列表里没有该商品（轮播直链进入）时会先挂只带 ID 的占位对象，
+ * 这时不能直接把空标题、0 元价格的骨架铺满弹窗，只渲染加载或失败提示。
+ */
+const ProductQuickViewPlaceholder: React.FC<{
+  error?: string | null;
+  onRetry?: () => void;
+  onClose: () => void;
+}> = ({ error, onRetry, onClose }) => {
+  useBodyScrollLock();
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-3 backdrop-blur-xs sm:p-6 animate-in fade-in duration-200"
+      onClick={onClose}
+    >
+      <div
+        className="flex items-center gap-3 rounded-2xl bg-white px-6 py-4 text-sm font-medium text-zinc-700 shadow-2xl"
+        onClick={(event) => event.stopPropagation()}
+        role={error ? 'alert' : 'status'}
+        aria-live="polite"
+      >
+        {error ? (
+          <>
+            <span className="text-rose-600">{error}</span>
+            {onRetry && (
+              <button
+                type="button"
+                onClick={onRetry}
+                className="rounded-lg border border-zinc-300 px-3 py-1.5 text-xs font-semibold text-zinc-700 hover:bg-zinc-100"
+              >
+                重新加载
+              </button>
+            )}
+          </>
+        ) : (
+          <>
+            <span
+              className="h-4 w-4 animate-spin rounded-full border-2 border-zinc-300 border-t-zinc-900"
+              aria-hidden="true"
+            />
+            正在加载商品详情…
+          </>
+        )}
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="关闭商品详情"
+          className="rounded-full p-1.5 text-zinc-500 hover:bg-zinc-100"
+        >
+          <X className="w-4 h-4" />
+        </button>
+      </div>
+    </div>
+  );
+};
+
 export const ProductQuickView: React.FC<ProductQuickViewProps> = (props) => {
+  // 标题为空说明手里只有一个占位对象，详情还没回来（或已失败）。
+  if (props.product && !props.product.title) {
+    return (
+      <ProductQuickViewPlaceholder
+        error={props.detailError}
+        onRetry={props.onRetryDetail}
+        onClose={props.onClose}
+      />
+    );
+  }
   // 空产品时不挂载详情内容，避免弹窗关闭/打开过程中 Hooks 数量发生变化。
   return props.product ? <ProductQuickViewContent {...props} product={props.product} /> : null;
 };

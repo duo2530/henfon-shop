@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { ProductCard } from '../src/components/ProductCard';
-import { sanitizeProductRichText } from '../src/components/ProductQuickView';
+import { ProductQuickView, sanitizeProductRichText } from '../src/components/ProductQuickView';
 import { HeroBanner } from '../src/components/HeroBanner';
 import { OrderTracking } from '../src/components/OrderTracking';
 import { CategoryRail } from '../src/components/CategoryRail';
@@ -229,4 +229,79 @@ assert.equal(couponTagLabel('SHIPPING'), '包邮');
 assert.equal(couponTagLabel('新人立减'), '新人立减');
 assert.equal(couponTagLabel(undefined), '');
 
-console.log('shop-portal 组件冒烟测试通过：商品卡片、库存禁购、Banner 跳转数据、物流进度取数、左侧类目树（浮层与展开两态）、领券横幅与券墙（含券型中文标签）语义正常');
+// 商品带视频时，详情弹层的第一张媒体应渲染成可播放的 <video>，海报图回退到商品主图。
+const videoProduct: Product = { ...baseProduct, videoUrl: 'https://example.com/demo-product.mp4' };
+const videoMarkup = renderToStaticMarkup(
+  <ProductQuickView
+    product={videoProduct}
+    isWishlisted={false}
+    onClose={() => undefined}
+    onAddToCart={() => undefined}
+    onDirectBuy={() => undefined}
+    onToggleWishlist={() => undefined}
+  />,
+);
+assert.match(videoMarkup, /<video/);
+assert.match(videoMarkup, /src="https:\/\/example\.com\/demo-product\.mp4"/);
+assert.match(videoMarkup, /poster="https:\/\/example\.com\/headphones\.webp"/);
+assert.match(videoMarkup, /视频演示/);
+
+// 没有视频的商品不该出现空的视频位。
+const noVideoMarkup = renderToStaticMarkup(
+  <ProductQuickView
+    product={baseProduct}
+    isWishlisted={false}
+    onClose={() => undefined}
+    onAddToCart={() => undefined}
+    onDirectBuy={() => undefined}
+    onToggleWishlist={() => undefined}
+  />,
+);
+assert.doesNotMatch(noVideoMarkup, /<video/);
+
+// 从轮播直链进入时，商品不一定落在当前分页的商品列表里，App 会先挂一个只有 ID 的占位对象：
+// 详情回来之前只能看到加载提示，不能把空标题、¥0、空媒体位这些骨架铺满弹窗。
+const placeholderProduct: Product = {
+  ...baseProduct,
+  id: 'prod-7',
+  title: '',
+  subtitle: '',
+  price: 0,
+  originalPrice: 0,
+  badge: undefined,
+  images: [],
+};
+const placeholderMarkup = renderToStaticMarkup(
+  <ProductQuickView
+    product={placeholderProduct}
+    detailLoading
+    isWishlisted={false}
+    onClose={() => undefined}
+    onAddToCart={() => undefined}
+    onDirectBuy={() => undefined}
+    onToggleWishlist={() => undefined}
+  />,
+);
+assert.match(placeholderMarkup, /正在加载商品详情…/);
+assert.doesNotMatch(placeholderMarkup, /¥/);
+assert.doesNotMatch(placeholderMarkup, /<video/);
+assert.doesNotMatch(placeholderMarkup, /测试降噪耳机/);
+
+// 占位对象的详情接口失败时要给出错误和重试入口，而不是留一张空白弹窗。
+const placeholderErrorMarkup = renderToStaticMarkup(
+  <ProductQuickView
+    product={placeholderProduct}
+    detailError="商品详情不存在或已下架"
+    onRetryDetail={() => undefined}
+    isWishlisted={false}
+    onClose={() => undefined}
+    onAddToCart={() => undefined}
+    onDirectBuy={() => undefined}
+    onToggleWishlist={() => undefined}
+  />,
+);
+assert.match(placeholderErrorMarkup, /商品详情不存在或已下架/);
+assert.match(placeholderErrorMarkup, /重新加载/);
+assert.match(placeholderErrorMarkup, /aria-label="关闭商品详情"/);
+
+console.log('shop-portal 组件冒烟测试通过：商品卡片、库存禁购、Banner 跳转数据、物流进度取数、左侧类目树（浮层与展开两态）、领券横幅与券墙（含券型中文标签）、商品详情视频位与占位加载态语义正常');

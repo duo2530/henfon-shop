@@ -619,6 +619,14 @@ export async function fetchPortalProductDetail(productId: string): Promise<Produ
   }
   product.features = (detail.features || []).map((item) => item.featureText);
   product.specs = Object.fromEntries((detail.specs || []).map((item) => [item.specName, item.specValue]));
+  // 视频单独取出来交给详情弹层的播放器（ProductQuickView 只认 videoUrl 这个字段）。
+  // 不能混进 images：图片位是按 <img> 渲染的，把 mp4 塞进去只会得到一个加载失败的破图。
+  const videoMedia = (detail.media || []).find(
+    (item) => (item.mediaType || '').toLowerCase() === 'video' && Boolean(item.mediaUrl)
+  );
+  if (videoMedia?.mediaUrl) {
+    product.videoUrl = videoMedia.mediaUrl;
+  }
   const mediaUrls = (detail.media || [])
     .filter((item) => (item.mediaType || '').toLowerCase() !== 'video')
     .map((item) => item.mediaUrl)

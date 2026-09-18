@@ -1470,7 +1470,7 @@ export const ProductManagementView: React.FC = () => {
                   <div className="space-y-2">
                     {productContent.media.map((media, index) => (
                       <div key={`${media.objectKey}-${index}`} className="flex items-center gap-2 bg-white rounded-lg border border-gray-200 p-2">
-                        {media.mediaType === 'VIDEO' ? <div className="w-12 h-8 rounded bg-slate-200 text-[10px] text-slate-600 flex items-center justify-center">VIDEO</div> : <img src={media.mediaUrl} alt="商品媒体" className="w-12 h-8 rounded object-cover bg-slate-100" />}
+                        {media.mediaType === 'VIDEO' ? <video src={media.mediaUrl} muted playsInline preload="metadata" className="w-12 h-8 rounded object-cover bg-slate-900" /> : <img src={media.mediaUrl} alt="商品媒体" className="w-12 h-8 rounded object-cover bg-slate-100" />}
                         <div className="min-w-0 flex-1"><div className="text-[11px] text-gray-700 truncate">{media.objectKey}</div><div className="text-[10px] text-gray-400">{media.mediaType}{media.isCover === 1 ? ' · 封面' : ''}</div></div>
                         <button type="button" onClick={() => setProductContent((previous) => ({ ...previous, media: previous.media.map((item, itemIndex) => ({ ...item, isCover: itemIndex === index ? 1 : 0 })) }))} className={`text-[10px] px-2 py-1 rounded border ${media.isCover === 1 ? 'border-blue-200 bg-blue-50 text-blue-700' : 'border-gray-200 text-gray-500 hover:text-blue-600'}`}>设为封面</button>
                         <button type="button" onClick={() => removeMedia(index)} className="px-1.5 text-gray-400 hover:text-red-600" title="删除媒体"><Trash2 className="w-3.5 h-3.5" /></button>

@@ -220,6 +220,37 @@ function mapPaymentState(status?: number): Order['paymentState'] {
   return 'pending';
 }
 
+/**
+ * 只带 ID 的商品占位对象。
+ *
+ * 轮播直链的商品不一定落在当前页商品列表里（列表按类目和排序分页），此时先挂占位对象，
+ * 真实字段由商品详情接口返回后合并覆盖，标题为空时弹层只渲染加载态。
+ *
+ * @param id 商品 ID，形如 prod-7
+ */
+function createProductStub(id: string): Product {
+  return {
+    id,
+    title: '',
+    subtitle: '',
+    category: '',
+    categoryLabel: '',
+    brand: '',
+    price: 0,
+    originalPrice: 0,
+    rating: 5,
+    reviewCount: 0,
+    salesCount: 0,
+    stock: 0,
+    images: [],
+    features: [],
+    specs: {},
+    description: '',
+    isFreeShipping: true,
+    deliveryEstimate: '',
+  };
+}
+
 export default function App() {
   // 1. Persistence & State
   const [products, setProducts] = useState<Product[]>(DEMO_MODE ? PRODUCTS : []);
@@ -1173,6 +1204,30 @@ export default function App() {
     setQuickViewTabToken((current) => current + 1);
     setQuickViewVariantSeed('');
     await loadProductQuickView(product);
+  };
+
+  /**
+   * 按商品 ID 打开商品快览，供轮播等只有 ID 的入口使用。
+   *
+   * 列表里已有该商品就直接复用；没有（不在当前分页）时挂占位对象交给详情接口补全。
+   * 这里刻意不落回本地演示商品：演示商品与线上商品只是 ID 撞号，落回去会弹出完全不相干的商品，
+   * 还会把演示数据里的外链视频一起渲染出来。
+   *
+   * @param rawProductId 商品 ID，数字或 prod-数字 两种写法都接受
+   */
+  const openProductById = async (rawProductId: string) => {
+    const normalizedId = /^\d+$/.test(rawProductId) ? `prod-${rawProductId}` : rawProductId;
+    const loaded = products.find((item) => item.id === normalizedId);
+    if (loaded) {
+      await openProduct(loaded);
+      return;
+    }
+    const productNumber = Number(normalizedId.replace(/^prod-/, ''));
+    if (!Number.isFinite(productNumber) || productNumber <= 0) {
+      showToast('该商品暂不可用', 'info');
+      return;
+    }
+    await openProduct(createProductStub(normalizedId));
   };
 
   /**
@@ -2452,21 +2507,23 @@ export default function App() {
               setProductPage(1);
             }}
             onSelectProduct={(productId) => {
-              const normalizedId = /^\d+$/.test(productId) ? `prod-${productId}` : productId;
-              const p = products.find((it) => it.id === normalizedId) || PRODUCTS.find((it) => it.id === normalizedId);
-              if (p) openProduct(p);
+              // 这条回调只服务本地兜底轮播（没有远程 Banner 时才渲染），它的商品 ID 与文案同属一份演示数据，
+              // 所以先在同源的演示数据里查，避免命中同号的线上商品导致文案与商品对不上。
+              const demoProduct = PRODUCTS.find((item) => item.id === productId);
+              if (demoProduct) {
+                void openProduct(demoProduct);
+                return;
+              }
+              void openProductById(productId);
             }}
             onNavigateBanner={(linkType, linkTarget) => {
               const target = (linkTarget || '').trim();
               if (linkType === 'PRODUCT') {
-                const normalizedId = /^\d+$/.test(target) ? `prod-${target}` : target;
-                const product = products.find((item) => item.id === normalizedId)
-                  || PRODUCTS.find((item) => item.id === normalizedId);
-                if (product) {
-                  openProduct(product);
-                } else {
+                if (!target) {
                   showToast('该 Banner 关联的商品暂不可用', 'info');
+                  return;
                 }
+                void openProductById(target);
                 return;
               }
               if (linkType === 'CATEGORY') {

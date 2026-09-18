@@ -5,6 +5,7 @@ import {
   createPortalOrder,
   createPortalPayment,
   fetchPortalPayment,
+  fetchPortalProductDetail,
   fetchPortalProducts,
   fetchPortalProductsPage,
   hasPortalMemberSession,
@@ -41,6 +42,19 @@ globalThis.fetch = (async (input: RequestInfo | URL) => {
   if (url.includes('/api/portal/auth/login')) {
     return jsonResponse({ accessToken: 'access-token', refreshToken: 'refresh-token', expiresInSeconds: 1800, memberId: 1, username: 'demo', nickname: '测试会员', memberLevel: '普通会员', points: 10, balance: 0 });
   }
+  // 详情分支必须排在列表判断之前：两者路径前缀相同，先命中列表分支就拿不到 media 了。
+  if (/\/api\/portal\/catalog\/products\/\d+$/.test(url)) {
+    return jsonResponse({
+      product: {
+        id: 7, productName: '三模机械键盘 基础款', productCode: 'PROD-SEED-003',
+        price: 399, marketPrice: 499, currentStock: 20, mainImageUrl: 'https://example.com/keyboard.jpg',
+      },
+      media: [
+        { mediaType: 'IMAGE', mediaUrl: 'https://example.com/keyboard-2.jpg', isCover: 1 },
+        { mediaType: 'VIDEO', mediaUrl: 'https://example.com/keyboard-demo.mp4', mediaTitle: '商品动态演示' },
+      ],
+    });
+  }
   if (url.includes('/api/portal/catalog/products')) {
     const current = url.includes('current=2') ? 2 : 1;
     return jsonResponse({ records: [{ id: 1001, productName: '测试商品', productCode: 'SKU-1001', categoryName: '影音', price: 199, marketPrice: 299, currentStock: 20, salesCount: 3, shortDescription: '冒烟测试商品' }], total: 41, size: url.includes('size=1') ? 1 : 20, current, pages: url.includes('size=1') ? 41 : 3 });
@@ -69,6 +83,12 @@ const productPage = await fetchPortalProductsPage({ current: 2, size: 1 });
 assert.equal(productPage.current, 2);
 assert.equal(productPage.pages, 41);
 assert.equal(productPage.total, 41);
+
+// 详情接口返回的视频要落到 videoUrl（弹层播放器只认这个字段），且不能混进图片列表被 <img> 加载。
+const productDetail = await fetchPortalProductDetail('prod-7');
+assert.equal(productDetail?.videoUrl, 'https://example.com/keyboard-demo.mp4');
+assert.deepEqual(productDetail?.images, ['https://example.com/keyboard-2.jpg', 'https://example.com/keyboard.jpg']);
+assert.ok(!productDetail?.images.some((url) => url.endsWith('.mp4')), '视频不应出现在图片列表里');
 
 const cartItemId = await addPortalCartItem(1, 1001, 1, 2001);
 assert.equal(cartItemId, 9001);
