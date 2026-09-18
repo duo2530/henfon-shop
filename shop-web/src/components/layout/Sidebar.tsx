@@ -3,9 +3,10 @@ import {
   BadgePercent, BarChart3, Boxes, ChevronDown, ChevronRight, ClipboardCheck, Coins, DollarSign,
   FileText, Image as ImageIcon, LayoutDashboard, LineChart, Lock, LogOut,
   LogIn, Menu as MenuIcon, MessageSquare, Package, Shield, ShieldCheck,
-  ShoppingBag, ShoppingCart, Settings, Sparkles, Ticket, Truck, UserCheck, Users,
+  ShoppingBag, ShoppingCart, Settings, Ticket, Truck, UserCheck, Users,
   Warehouse, X, Zap
 } from 'lucide-react';
+import { BrandMark } from '../common/BrandMark';
 import { useAdmin } from '../../context/AdminContext';
 import { MenuItem, NavigationTab } from '../../types';
 import { routeToTab } from '../../navigation/menuAdapter';
@@ -44,7 +45,7 @@ function buildNavGroups(items: MenuItem[], pending: number, urgent: number): Nav
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, onCloseMobile }) => {
-  const { currentTab, setCurrentTab, orders, todos, authorizedMenuItems, logout } = useAdmin();
+  const { currentTab, setCurrentTab, orders, todos, authorizedMenuItems, logout, confirm } = useAdmin();
   const pending = orders.filter((order) => order.status === 'pending_shipment').length;
   const urgent = todos.filter((todo) => todo.urgent).length;
   const navGroups = useMemo(() => buildNavGroups(authorizedMenuItems, pending, urgent), [authorizedMenuItems, pending, urgent]);
@@ -57,11 +58,23 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, onCloseMobile }) =
 
   const selectTab = (tab: NavigationTab) => { setCurrentTab(tab); onCloseMobile?.(); };
 
+  /**
+   * 退出前二次确认。
+   *
+   * 退出会清空本地会话，重新登录又必须再走一次图形验证码，误点代价偏高，所以先确认再调接口；
+   * 确认弹框由 AdminContext 渲染在布局之外，退出后依旧能正常收起。
+   */
+  const requestLogout = async () => {
+    if (!await confirm('退出后需要重新输入账号、密码与验证码，确定要退出吗？', '退出管理系统')) return;
+    onCloseMobile?.();
+    await logout();
+  };
+
   return <>
     {mobileOpen && <div className="fixed inset-0 bg-black/60 z-40 md:hidden backdrop-blur-xs" onClick={onCloseMobile} />}
     <aside className={`fixed top-0 left-0 h-full w-[240px] bg-white border-r border-[#E2E8F0] flex flex-col z-50 transition-transform duration-200 ease-in-out ${mobileOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}>
       <div className="p-4 px-5 border-b border-[#E2E8F0] flex items-center justify-between">
-        <div className="flex items-center gap-3"><div className="w-9 h-9 rounded-xl bg-blue-600 flex items-center justify-center text-white shadow-sm"><Sparkles className="w-5 h-5" /></div><div><h1 className="font-bold text-[16px] text-[#0F172A] tracking-tight">Henfon电商后台</h1><p className="text-[11px] text-slate-500 font-medium">E-Commerce RBAC OS</p></div></div>
+        <div className="flex items-center gap-3"><div className="w-9 h-9 rounded-xl bg-blue-600 flex items-center justify-center text-white shadow-sm"><BrandMark className="w-5 h-5" /></div><div><h1 className="font-bold text-[16px] text-[#0F172A] tracking-tight">Henfon电商后台</h1><p className="text-[11px] text-slate-500 font-medium">E-Commerce RBAC OS</p></div></div>
         {onCloseMobile && <button onClick={onCloseMobile} aria-label="关闭导航菜单" className="md:hidden text-slate-400 hover:text-slate-700 p-1"><X className="w-5 h-5" /></button>}
       </div>
       <nav aria-label="后台主导航" className="flex-1 px-3 py-4 space-y-1.5 overflow-y-auto custom-scrollbar">
@@ -72,7 +85,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, onCloseMobile }) =
         })}
         {!navGroups.length && <div className="px-4 py-8 text-xs text-slate-400">暂无可用菜单</div>}
       </nav>
-      <div className="px-3 py-3 border-t border-[#E2E8F0] space-y-1"><button onClick={logout} aria-label="退出管理系统" className="w-full flex items-center gap-3 px-3.5 py-2 rounded-lg text-xs text-slate-500 hover:bg-rose-50 hover:text-rose-600 transition-colors"><LogOut className="w-4 h-4" /><span>退出管理系统</span></button></div>
+      <div className="px-3 py-3 border-t border-[#E2E8F0] space-y-1"><button onClick={() => void requestLogout()} aria-label="退出管理系统" className="w-full flex items-center gap-3 px-3.5 py-2 rounded-lg text-xs text-slate-500 hover:bg-rose-50 hover:text-rose-600 transition-colors"><LogOut className="w-4 h-4" /><span>退出管理系统</span></button></div>
     </aside>
   </>;
 };

@@ -44,6 +44,7 @@ public class SecurityConfiguration {
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/admin/auth/login", "/api/admin/auth/refresh", "/api/admin/auth/logout",
+                                "/api/admin/auth/captcha",
                                 "/actuator/health", "/error",
                                 // 微信支付 V3 回调由平台直接调用，不携带商城 JWT，必须放行验签入口。
                                 "/api/wx/pay/notify", "/api/wx/pay/notify/v3",

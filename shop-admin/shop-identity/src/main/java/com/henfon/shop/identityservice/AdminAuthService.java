@@ -17,6 +17,7 @@ import com.henfon.shop.identity.security.AdminRefreshIdentity;
 import com.henfon.shop.identity.security.AdminTokenStore;
 import com.henfon.shop.identity.security.LoginRateLimiter;
 import com.henfon.shop.identity.security.LoginFailureTracker;
+import com.henfon.shop.identity.security.LoginCaptchaStore;
 import com.henfon.shop.integration.storage.ImageReferenceResolver;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -42,6 +43,7 @@ public class AdminAuthService {
     private final AuditLogService auditLogService;
     private final LoginRateLimiter loginRateLimiter;
     private final LoginFailureTracker loginFailureTracker;
+    private final LoginCaptchaStore loginCaptchaStore;
     private final AdminTokenStore adminTokenStore;
     private final ImageReferenceResolver imageReferenceResolver;
 
@@ -55,6 +57,7 @@ public class AdminAuthService {
      * @param auditLogService 登录审计服务
      * @param loginRateLimiter IP 登录限流器
      * @param loginFailureTracker 账号失败锁定跟踪器
+     * @param loginCaptchaStore 图形验证码存储
      * @param adminTokenStore 管理员刷新令牌存储
      * @param imageReferenceResolver 媒体引用解析器
      * @author Henfon
@@ -63,8 +66,8 @@ public class AdminAuthService {
     public AdminAuthService(SysUserMapper sysUserMapper, SysUserRoleMapper sysUserRoleMapper,
                             PasswordEncoder passwordEncoder, JwtTokenService jwtTokenService,
                             AuditLogService auditLogService, LoginRateLimiter loginRateLimiter,
-                            LoginFailureTracker loginFailureTracker, AdminTokenStore adminTokenStore,
-                            ImageReferenceResolver imageReferenceResolver) {
+                            LoginFailureTracker loginFailureTracker, LoginCaptchaStore loginCaptchaStore,
+                            AdminTokenStore adminTokenStore, ImageReferenceResolver imageReferenceResolver) {
         this.sysUserMapper = sysUserMapper;
         this.sysUserRoleMapper = sysUserRoleMapper;
         this.passwordEncoder = passwordEncoder;
@@ -72,6 +75,7 @@ public class AdminAuthService {
         this.auditLogService = auditLogService;
         this.loginRateLimiter = loginRateLimiter;
         this.loginFailureTracker = loginFailureTracker;
+        this.loginCaptchaStore = loginCaptchaStore;
         this.adminTokenStore = adminTokenStore;
         this.imageReferenceResolver = imageReferenceResolver;
     }
@@ -87,6 +91,11 @@ public class AdminAuthService {
      */
     @Transactional
     public AdminLoginResponse login(AdminLoginRequest request, String loginIp) {
+        // 图形验证码是登录链路的第一道闸，校验一次即消费，后续校验不应绕过。
+        if (!loginCaptchaStore.verify(request.captchaId(), request.captchaCode())) {
+            auditLogService.recordLogin(null, request.username(), 0, loginIp, "验证码错误或已过期");
+            throw new BusinessException("AUTH_CAPTCHA_INVALID", "验证码错误或已过期");
+        }
         if (!loginRateLimiter.allow(loginIp)) {
             auditLogService.recordLogin(null, request.username(), 0, loginIp, "登录尝试过于频繁");
             throw new BusinessException("AUTH_RATE_LIMITED", "登录尝试过于频繁，请稍后再试");

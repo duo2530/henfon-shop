@@ -152,7 +152,8 @@ mvn -pl shop-identity,shop-trade,shop-boot -am test
 
 身份认证接口：
 
-- `POST /api/admin/auth/login`：管理员登录，JSON 请求体 `{ "username": "admin", "password": "123456" }`，返回 `accessToken`、30 天 `refreshToken` 和令牌有效期。
+- `GET /api/admin/auth/captcha`：获取登录图形验证码（未登录即可调用），返回 `captchaId` 与 `imageBase64`（PNG data URL）；验证码明文只存在 Redis，有效期 5 分钟，校验一次即失效。
+- `POST /api/admin/auth/login`：管理员登录，JSON 请求体 `{ "username": "admin", "password": "123456", "captchaId": "...", "captchaCode": "A2B4" }`（验证码不区分大小写，缺失或过期返回 `AUTH_CAPTCHA_INVALID`），返回 `accessToken`、30 天 `refreshToken` 和令牌有效期。
 - `POST /api/admin/auth/refresh`：使用登录返回的 `refreshToken` 换取新的访问令牌，刷新令牌轮换后旧令牌立即失效。
 - `GET /api/admin/auth/me`：携带 `Authorization: Bearer <token>` 获取当前用户和权限
 

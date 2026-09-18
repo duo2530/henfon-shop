@@ -10,6 +10,7 @@ import com.henfon.shop.identity.mapper.SysUserRoleMapper;
 import com.henfon.shop.identity.security.AuthenticatedUser;
 import com.henfon.shop.identity.security.JwtTokenService;
 import com.henfon.shop.identity.security.AdminTokenStore;
+import com.henfon.shop.identity.security.LoginCaptchaStore;
 import com.henfon.shop.identity.security.LoginFailureTracker;
 import com.henfon.shop.identity.security.LoginRateLimiter;
 import com.henfon.shop.integration.storage.ImageReferenceResolver;
@@ -53,6 +54,8 @@ class AdminAuthServicePasswordTest {
     @Mock
     private LoginFailureTracker loginFailureTracker;
     @Mock
+    private LoginCaptchaStore loginCaptchaStore;
+    @Mock
     private AdminTokenStore adminTokenStore;
     @Mock
     private ImageReferenceResolver imageReferenceResolver;
@@ -68,8 +71,8 @@ class AdminAuthServicePasswordTest {
     @BeforeEach
     void setUp() {
         service = new AdminAuthService(sysUserMapper, sysUserRoleMapper, passwordEncoder,
-                jwtTokenService, auditLogService, loginRateLimiter, loginFailureTracker, adminTokenStore,
-                imageReferenceResolver);
+                jwtTokenService, auditLogService, loginRateLimiter, loginFailureTracker, loginCaptchaStore,
+                adminTokenStore, imageReferenceResolver);
     }
 
     /**

@@ -1800,10 +1800,20 @@ export function deleteSystemUser(id: number): Promise<void> {
   return request<void>(`/api/admin/system/users/${id}`, { method: 'DELETE' });
 }
 
-export async function loginAdmin(username: string, password: string): Promise<{ token: string; user: AdminUser }> {
+export interface LoginCaptcha {
+  captchaId: string;
+  imageBase64: string;
+}
+
+/** 获取登录图形验证码；明文只存在服务端 Redis，前端仅持有图片与标识。 */
+export function getLoginCaptcha(): Promise<LoginCaptcha> {
+  return request<LoginCaptcha>('/api/admin/auth/captcha', { method: 'GET' }, undefined);
+}
+
+export async function loginAdmin(username: string, password: string, captchaId: string, captchaCode: string): Promise<{ token: string; user: AdminUser }> {
   const data = await request<{ accessToken: string; refreshToken: string; userId: number; tenantId?: number; username: string; realName: string; avatarUrl?: string; permissions: string[] }>(
     '/api/admin/auth/login',
-    { method: 'POST', body: JSON.stringify({ username, password }) },
+    { method: 'POST', body: JSON.stringify({ username, password, captchaId, captchaCode }) },
     undefined
   );
   localStorage.setItem(TOKEN_KEY, data.accessToken);

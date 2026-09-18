@@ -93,7 +93,7 @@ interface AdminContextType {
   authLoading: boolean;
   isAuthenticated: boolean;
   currentUser: AdminUser | null;
-  login: (username: string, password: string) => Promise<void>;
+  login: (username: string, password: string, captchaId: string, captchaCode: string) => Promise<void>;
   logout: () => Promise<void>;
   /** 修改当前登录管理员本人的资料；头像传对象键或访问地址均可，服务端会归一化。 */
   updateCurrentProfile: (payload: {
@@ -634,8 +634,8 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     return () => window.clearInterval(refreshTimer);
   }, [currentTab, currentUser?.userId]);
 
-  const login = async (username: string, password: string) => {
-    const result = await loginAdmin(username, password);
+  const login = async (username: string, password: string, captchaId: string, captchaCode: string) => {
+    const result = await loginAdmin(username, password, captchaId, captchaCode);
     const menus = await getAdminMenus();
     const menuTree = backendMenusToTree(menus);
     setCurrentUser(result.user);

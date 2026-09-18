@@ -67,8 +67,9 @@ public class AuditLogInterceptor implements HandlerInterceptor {
     public void afterCompletion(HttpServletRequest request, HttpServletResponse response,
                                 Object handler, Exception exception) {
         String uri = request.getRequestURI();
-        // 登录日志和审计查询不再重复记录，避免递归写日志和无效噪声。
+        // 登录日志、验证码和审计查询不再重复记录，避免递归写日志和无效噪声。
         if (!uri.startsWith("/api/admin/") || uri.startsWith("/api/admin/auth/login")
+                || uri.startsWith("/api/admin/auth/captcha")
                 || uri.startsWith("/api/admin/audit/")) {
             return;
         }

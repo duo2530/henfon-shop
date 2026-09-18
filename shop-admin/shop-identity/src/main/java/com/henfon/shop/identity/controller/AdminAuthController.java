@@ -8,12 +8,14 @@ import com.henfon.shop.identity.dto.AdminPasswordChangeRequest;
 import com.henfon.shop.identity.dto.AdminRefreshRequest;
 import com.henfon.shop.identity.dto.AdminLogoutRequest;
 import com.henfon.shop.identity.dto.AdminProfileUpdateRequest;
+import com.henfon.shop.identity.dto.LoginCaptchaResponse;
 import com.henfon.shop.identity.security.AuthenticatedUser;
 import com.henfon.shop.identity.security.MemberTokenStore;
 import com.henfon.shop.identity.security.AdminTokenStore;
 import com.henfon.shop.identity.entity.SysMenu;
 import com.henfon.shop.identity.mapper.SysUserRoleMapper;
 import com.henfon.shop.identity.service.AdminAuthService;
+import com.henfon.shop.identity.service.LoginCaptchaService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.slf4j.MDC;
@@ -41,6 +43,7 @@ public class AdminAuthController {
     private final SysUserRoleMapper sysUserRoleMapper;
     private final MemberTokenStore memberTokenStore;
     private final AdminTokenStore adminTokenStore;
+    private final LoginCaptchaService loginCaptchaService;
 
     /**
      * 创建认证控制器。
@@ -49,15 +52,30 @@ public class AdminAuthController {
      * @param sysUserRoleMapper 用户角色数据访问对象
      * @param memberTokenStore 访问令牌黑名单存储
      * @param adminTokenStore 管理员刷新令牌存储
+     * @param loginCaptchaService 登录图形验证码服务
      * @author Henfon
      * @date 2026-08-29
      */
     public AdminAuthController(AdminAuthService adminAuthService, SysUserRoleMapper sysUserRoleMapper,
-                               MemberTokenStore memberTokenStore, AdminTokenStore adminTokenStore) {
+                               MemberTokenStore memberTokenStore, AdminTokenStore adminTokenStore,
+                               LoginCaptchaService loginCaptchaService) {
         this.adminAuthService = adminAuthService;
         this.sysUserRoleMapper = sysUserRoleMapper;
         this.memberTokenStore = memberTokenStore;
         this.adminTokenStore = adminTokenStore;
+        this.loginCaptchaService = loginCaptchaService;
+    }
+
+    /**
+     * 获取登录图形验证码，未登录即可调用。
+     *
+     * @return 验证码标识与图片
+     * @author Henfon
+     * @date 2026-09-18
+     */
+    @GetMapping("/captcha")
+    public ApiResponse<LoginCaptchaResponse> captcha() {
+        return ApiResponse.success(loginCaptchaService.create(), requestId());
     }
 
     /**
