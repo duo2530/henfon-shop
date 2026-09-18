@@ -35,6 +35,7 @@ import {
   ChevronUp,
   RefreshCw
 } from 'lucide-react';
+import { useBodyScrollLock } from '../../hooks/useBodyScrollLock';
 
 /** 标签筛选栏折叠时最多展示的标签数量，超出后由「展开全部」控制。 */
 const TAG_CHIP_COLLAPSED_LIMIT = 12;
@@ -353,6 +354,8 @@ export const UserManagementView: React.FC = () => {
     }
   };
 
+  // 弹层打开期间锁住底层文档滚动，避免出现滚动穿透。
+  useBodyScrollLock(Boolean(inspectUser) || Boolean(adjustingUser) || Boolean(taggingUser) || isAddUserModalOpen);
   return (
     <div className="space-y-6 animate-in fade-in-50 duration-200">
       {/* Page Header */}

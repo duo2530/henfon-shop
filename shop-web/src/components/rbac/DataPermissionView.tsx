@@ -20,6 +20,7 @@ import {
   Code,
   Building2
 } from 'lucide-react';
+import { useBodyScrollLock } from '../../hooks/useBodyScrollLock';
 
 export const DataPermissionView: React.FC = () => {
   const { 
@@ -174,6 +175,8 @@ export const DataPermissionView: React.FC = () => {
   const currentPreviewRule = dataRules.find(r => r.roleId === previewRole && r.module === 'orders');
   const isPhoneMasked = currentPreviewRule?.fieldMasks.includes('customer_phone_mask');
 
+  // 弹层打开期间锁住底层文档滚动，避免出现滚动穿透。
+  useBodyScrollLock(Boolean(modalMode));
   return (
     <div id="data-permission-view" className="space-y-6">
       {/* Top Banner */}

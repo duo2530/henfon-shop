@@ -4,6 +4,7 @@ import { useExportCenter } from '../../context/ExportCenterContext';
 import { Order, LogisticsStep, OrderStatus } from '../../types';
 import { listTradeOrderLogistics } from '../../api/adminApi';
 import { formatDateTime } from '../../utils/datetime';
+import { logisticsStatusLabel } from '../../utils/logisticsStatus';
 import { 
   Plus, 
   Search, 
@@ -30,6 +31,7 @@ import {
 } from 'lucide-react';
 import { PermissionGate } from '../common/PermissionGate';
 import { Pagination } from '../common/Pagination';
+import { useBodyScrollLock } from '../../hooks/useBodyScrollLock';
 
 export const OrderManagementView: React.FC = () => {
   const { 
@@ -134,7 +136,7 @@ export const OrderManagementView: React.FC = () => {
           return bySort !== 0 ? bySort : String(b.eventTime).localeCompare(String(a.eventTime));
         })
         .map((node, index) => ({
-          title: node.eventDescription || node.logisticsStatus || '物流状态更新',
+          title: node.eventDescription || logisticsStatusLabel(node.logisticsStatus) || '物流状态更新',
           time: formatDateTime(node.eventTime, '-'),
           desc: [node.logisticsCompany, node.trackingNo, node.eventLocation].filter(Boolean).join(' · '),
           status: index === 0 ? 'current' as const : 'completed' as const,
@@ -356,6 +358,8 @@ export const OrderManagementView: React.FC = () => {
     }
   };
 
+  // 弹层打开期间锁住底层文档滚动，避免出现滚动穿透。
+  useBodyScrollLock(Boolean(inspectOrder) || Boolean(shippingOrder) || isBatchShipModalOpen || Boolean(remarkOrder) || Boolean(refundOrder) || isNewOrderModalOpen);
   return (
     <div className="space-y-6 animate-in fade-in-50 duration-200">
       {/* Header Section */}

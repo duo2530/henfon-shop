@@ -4,8 +4,13 @@ import { ProductCard } from '../src/components/ProductCard';
 import { sanitizeProductRichText } from '../src/components/ProductQuickView';
 import { HeroBanner } from '../src/components/HeroBanner';
 import { OrderTracking } from '../src/components/OrderTracking';
+import { CategoryRail } from '../src/components/CategoryRail';
+import { CouponCenter } from '../src/components/CouponCenter';
+import { CouponCenterBanner } from '../src/components/CouponCenterBanner';
+import { couponTagLabel } from '../src/utils/couponTag';
 import { isEmail, AuthModal } from '../src/components/AuthModal';
-import type { Product } from '../src/types/ecommerce';
+import type { Product, Coupon } from '../src/types/ecommerce';
+import type { PortalCategoryNode } from '../src/api/portalApi';
 
 const baseProduct: Product = {
   id: 'prod-1001',
@@ -116,4 +121,112 @@ assert.match(pendingTrackingMarkup, /承运商待分配/);
 assert.doesNotMatch(pendingTrackingMarkup, /顺丰/);
 assert.doesNotMatch(pendingTrackingMarkup, /SF19837482910/);
 
-console.log('shop-portal 组件冒烟测试通过：商品卡片、库存禁购、Banner 跳转数据、物流进度取数与键盘语义正常');
+// 类目树常驻左侧：一级平铺可见，二三级默认收起，避免导航一多就在顶部看不全。
+const categoryTree: PortalCategoryNode[] = [
+  {
+    id: '1',
+    name: '数码电子',
+    code: 'ELECTRONICS',
+    level: 1,
+    children: [
+      {
+        id: '11',
+        name: '影音娱乐',
+        code: 'ELECTRONICS_AUDIO',
+        level: 2,
+        children: [{ id: '111', name: '降噪耳机', code: 'ELECTRONICS_AUDIO_ANC', level: 3, children: [] }],
+      },
+    ],
+  },
+  { id: '2', name: '家居生活', code: 'HOME', level: 1, children: [] },
+];
+
+const railMarkup = renderToStaticMarkup(
+  <CategoryRail categoryTree={categoryTree} selectedCategory="all" onSelectCategory={() => undefined} />,
+);
+assert.match(railMarkup, /aria-label="商品分类导航"/);
+assert.match(railMarkup, /全部商品/);
+assert.match(railMarkup, /数码电子/);
+assert.match(railMarkup, /家居生活/);
+assert.doesNotMatch(railMarkup, /影音娱乐/);
+assert.doesNotMatch(railMarkup, /降噪耳机/);
+assert.match(railMarkup, /aria-label="展开数码电子的下级分类"/);
+
+// 桌面左栏走京东、淘宝那套：静态只渲染一级，下级靠 hover 弹出浮层，所以标记里既没有
+// 内联展开按钮，也不该出现二三级名字；可点击性仍要靠 aria-expanded 暴露给读屏。
+const flyoutMarkup = renderToStaticMarkup(
+  <CategoryRail
+    categoryTree={categoryTree}
+    selectedCategory="all"
+    onSelectCategory={() => undefined}
+    variant="flyout"
+  />,
+);
+assert.match(flyoutMarkup, /aria-label="商品分类导航"/);
+assert.match(flyoutMarkup, /全部商品/);
+assert.match(flyoutMarkup, /数码电子/);
+assert.doesNotMatch(flyoutMarkup, /影音娱乐/);
+assert.doesNotMatch(flyoutMarkup, /降噪耳机/);
+assert.doesNotMatch(flyoutMarkup, /aria-label="展开数码电子的下级分类"/);
+assert.match(flyoutMarkup, /aria-expanded="false"/);
+assert.match(flyoutMarkup, /aria-controls="portal-category-flyout"/);
+
+// 领券中心：首页只留一行横幅（锚点也挂在横幅上），完整券墙搬进弹层。
+const couponFixtures: Coupon[] = [
+  { code: 'C1', title: '满 199 减 50', discountAmount: 50, minSpend: 199, expiresAt: '2026-10-05', description: '全场通用', tag: 'cash', category: 'all', stockPercent: 60, highlight: true },
+  { code: 'C2', title: '全场包邮券', discountAmount: 20, minSpend: 99, expiresAt: '2026-11-04', description: '包邮立减', tag: 'shipping', category: 'all', stockPercent: 30, highlight: false },
+];
+
+const couponBannerMarkup = renderToStaticMarkup(
+  <CouponCenterBanner
+    coupons={couponFixtures}
+    claimedCouponCodes={['C1']}
+    onOpenAll={() => undefined}
+    onClaimAll={() => undefined}
+  />,
+);
+assert.match(couponBannerMarkup, /id="coupon-center-section"/);
+assert.match(couponBannerMarkup, /aria-label="领券中心"/);
+assert.match(couponBannerMarkup, /1 张可领/);
+assert.match(couponBannerMarkup, /已领 1\/2 张 · 最高可省 ¥70/);
+assert.match(couponBannerMarkup, /aria-label="查看全部优惠券"/);
+// 横幅只报统计数字，不铺券面：券标题只应出现在券墙（弹层）里。
+assert.doesNotMatch(couponBannerMarkup, /满 199 减 50/);
+
+// 全部领完时一键领取置灰，文案换成「已全部领取」。
+const couponBannerAllClaimed = renderToStaticMarkup(
+  <CouponCenterBanner
+    coupons={couponFixtures}
+    claimedCouponCodes={['C1', 'C2']}
+    onOpenAll={() => undefined}
+    onClaimAll={() => undefined}
+  />,
+);
+assert.match(couponBannerAllClaimed, /已全部领取/);
+assert.match(couponBannerAllClaimed, /disabled/);
+
+// 券墙本体只作弹层内容：不再自带 section 锚点与页面级间距。
+const couponWallMarkup = renderToStaticMarkup(
+  <CouponCenter
+    coupons={couponFixtures}
+    claimedCouponCodes={['C1']}
+    onClaimCoupon={() => undefined}
+    onClaimAllCoupons={() => undefined}
+  />,
+);
+assert.doesNotMatch(couponWallMarkup, /coupon-center-section/);
+assert.match(couponWallMarkup, /满 199 减 50/);
+
+// 券型在库里是 cash / shipping 这类标识，券卡上必须显示中文。
+assert.match(couponWallMarkup, /tracking-wider[^>]*>满减</);
+assert.match(couponWallMarkup, /tracking-wider[^>]*>包邮</);
+assert.doesNotMatch(couponWallMarkup, />cash</);
+assert.doesNotMatch(couponWallMarkup, />shipping</);
+
+// 映射本身：大小写不敏感、未知值与中文自定义文案原样返回。
+assert.equal(couponTagLabel('cash'), '满减');
+assert.equal(couponTagLabel('SHIPPING'), '包邮');
+assert.equal(couponTagLabel('新人立减'), '新人立减');
+assert.equal(couponTagLabel(undefined), '');
+
+console.log('shop-portal 组件冒烟测试通过：商品卡片、库存禁购、Banner 跳转数据、物流进度取数、左侧类目树（浮层与展开两态）、领券横幅与券墙（含券型中文标签）语义正常');

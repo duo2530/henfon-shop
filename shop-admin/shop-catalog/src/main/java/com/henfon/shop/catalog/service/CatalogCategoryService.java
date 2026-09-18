@@ -14,6 +14,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
@@ -50,16 +51,51 @@ public class CatalogCategoryService {
     /**
      * 查询启用类目列表。
      *
+     * <p>上级类目被停用后，其整棵子树同样不再下发：门户拿到的是一张平表、由前端拼树，
+     * 父节点缺失的子节点会被顶成一级类目。库里状态不改写，上级重新启用后下级自动恢复。</p>
+     *
      * @return 类目列表
      * @author Henfon
      * @date 2026-08-29
      */
     public List<CatalogCategory> listEnabled() {
         // 商品编辑页只展示启用类目，停用类目仍保留在后台数据库中。
-        return withAccessibleIcon(catalogCategoryMapper.selectList(new LambdaQueryWrapper<CatalogCategory>()
-                .eq(CatalogCategory::getStatus, 1)
+        List<CatalogCategory> all = catalogCategoryMapper.selectList(new LambdaQueryWrapper<CatalogCategory>()
                 .orderByAsc(CatalogCategory::getParentId)
-                .orderByAsc(CatalogCategory::getSortNo)));
+                .orderByAsc(CatalogCategory::getSortNo));
+        Set<Long> hidden = collectDisabledSubtreeIds(all);
+        return withAccessibleIcon(all.stream()
+                .filter(category -> category.getStatus() != null && category.getStatus() == 1)
+                .filter(category -> !hidden.contains(category.getId()))
+                .toList());
+    }
+
+    /**
+     * 汇总「自身停用或任一祖先停用」的类目 ID。
+     *
+     * @param all 全部未删除类目
+     * @return 不应在门户与管理端选择器里出现的类目 ID
+     * @author Henfon
+     * @date 2026-09-18
+     */
+    private Set<Long> collectDisabledSubtreeIds(List<CatalogCategory> all) {
+        Set<Long> hidden = new HashSet<>();
+        for (CatalogCategory category : all) {
+            if (category.getStatus() == null || category.getStatus() != 1) {
+                hidden.add(category.getId());
+            }
+        }
+        boolean expanded = true;
+        while (expanded) {
+            expanded = false;
+            for (CatalogCategory category : all) {
+                Long parentId = category.getParentId();
+                if (parentId != null && parentId != 0L && hidden.contains(parentId) && hidden.add(category.getId())) {
+                    expanded = true;
+                }
+            }
+        }
+        return hidden;
     }
 
     /**

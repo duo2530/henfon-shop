@@ -21,6 +21,7 @@ import {
   Truck,
   X
 } from 'lucide-react';
+import { useBodyScrollLock } from '../../hooks/useBodyScrollLock';
 
 interface SupplierForm {
   id?: number;
@@ -171,6 +172,8 @@ export const SupplierManagementView: React.FC = () => {
     });
   }, [searchTerm, statusFilter, suppliers]);
 
+  // 弹层打开期间锁住底层文档滚动，避免出现滚动穿透。
+  useBodyScrollLock(Boolean(editingSupplier));
   return (
     <div className="space-y-6 animate-in fade-in-50 duration-200">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">

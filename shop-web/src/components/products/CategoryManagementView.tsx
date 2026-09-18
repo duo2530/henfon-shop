@@ -26,6 +26,7 @@ import {
   uploadStorageFile
 } from '../../api/adminApi';
 import { useAdmin } from '../../context/AdminContext';
+import { useBodyScrollLock } from '../../hooks/useBodyScrollLock';
 
 interface CategoryNode extends BackendCatalogCategory {
   children: CategoryNode[];
@@ -92,6 +93,32 @@ function descendantsOf(id: number, categories: BackendCatalogCategory[]): Set<nu
   return result;
 }
 
+/**
+ * 汇总「自身停用或任一祖先停用」的类目 ID。
+ *
+ * 门户导航收到的是一张平表、由前端拼树，父类目停用后子节点会被顶成一级；
+ * 因此服务端读取时会按父链把整棵子树滤掉，这里用同一口径标注，
+ * 避免管理员看到「开关还开着、门户却不显示」而找不到原因。
+ */
+function collectDisabledBranchIds(categories: BackendCatalogCategory[]): Set<number> {
+  const disabled = new Set<number>();
+  categories.forEach((category) => {
+    if (category.status !== 1) disabled.add(category.id);
+  });
+  let expanded = true;
+  while (expanded) {
+    expanded = false;
+    categories.forEach((category) => {
+      const parentId = category.parentId || 0;
+      if (parentId !== 0 && disabled.has(parentId) && !disabled.has(category.id)) {
+        disabled.add(category.id);
+        expanded = true;
+      }
+    });
+  }
+  return disabled;
+}
+
 function formFromCategory(category: BackendCatalogCategory): CategoryForm {
   return {
     id: category.id,
@@ -122,6 +149,8 @@ export const CategoryManagementView: React.FC = () => {
 
   const tree = useMemo(() => buildTree(categories), [categories]);
   const rows = useMemo(() => flattenTree(tree), [tree]);
+  // 自身停用或上级停用的节点在门户与商品编辑选择器里都不会出现。
+  const disabledBranchIds = useMemo(() => collectDisabledBranchIds(categories), [categories]);
   const parentOptions = useMemo(() => {
     const excluded = editing?.id ? new Set([editing.id, ...descendantsOf(editing.id, categories)]) : new Set<number>();
     return rows.filter(({ category }) => !excluded.has(category.id));
@@ -214,6 +243,13 @@ export const CategoryManagementView: React.FC = () => {
 
   const toggleStatus = async (category: BackendCatalogCategory) => {
     if (!requirePermission('catalog:category:query', '修改类目状态')) return;
+    if (category.status === 1) {
+      const descendants = descendantsOf(category.id, categories);
+      if (descendants.size > 0
+        && !await confirm(`停用「${category.categoryName}」后，其下 ${descendants.size} 个子类目会一并从门户导航与商品类目选择器中隐藏（子类目自身状态不变，重新启用上级即恢复）。确定停用吗？`, '停用商品类目')) {
+        return;
+      }
+    }
     try {
       await updateCatalogCategoryStatus(category.id, category.status === 1 ? 0 : 1);
       showToast(category.status === 1 ? '类目已停用' : '类目已启用', 'success');
@@ -272,6 +308,8 @@ export const CategoryManagementView: React.FC = () => {
   const renderRows = (nodes: CategoryNode[], depth = 0): React.ReactNode => nodes.map((category) => {
     const hasChildren = category.children.length > 0;
     const expanded = expandedIds.has(category.id);
+    // 自身仍为启用，但父链上有停用类目——门户不展示，开关必须置灰，否则管理员会反复点。
+    const hiddenByDisabledParent = category.status === 1 && disabledBranchIds.has(category.id);
     const siblings = categories.filter((item) => (item.parentId || 0) === (category.parentId || 0));
     const sortedSiblings = siblings.slice().sort((a, b) => (a.sortNo || 0) - (b.sortNo || 0) || a.id - b.id);
     const position = sortedSiblings.findIndex((item) => item.id === category.id);
@@ -281,17 +319,18 @@ export const CategoryManagementView: React.FC = () => {
           {hasChildren ? <button type="button" onClick={() => toggleExpanded(category.id)} className="rounded p-0.5 text-slate-400 hover:bg-slate-200" aria-label={expanded ? '收起子类目' : '展开子类目'}>{expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}</button> : <span className="w-5" />}
           <GripVertical className="h-4 w-4 shrink-0 text-slate-300" aria-hidden="true" />
           <FolderTree className={`h-4 w-4 shrink-0 ${depth === 0 ? 'text-blue-500' : 'text-slate-400'}`} />
-          <span className="truncate font-medium text-slate-800">{category.categoryName}</span>
+          <span className={`truncate font-medium ${hiddenByDisabledParent ? 'text-slate-400' : 'text-slate-800'}`}>{category.categoryName}</span>
+          {hiddenByDisabledParent && <span className="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-500" title="上级类目已停用，门户导航与商品类目选择器都不展示该节点">随上级停用</span>}
           <span className="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[10px] text-slate-500">{category.categoryCode}</span>
         </div>
         <div className="text-xs text-slate-500">{category.levelNo ? `第${category.levelNo}级` : `第${depth + 1}级`} · {category.parentId ? `父级 #${category.parentId}` : '根类目'}</div>
-        <div><span className={`rounded-full px-2 py-1 text-[11px] font-semibold ${category.status === 1 ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>{category.status === 1 ? '启用' : '停用'}</span></div>
+        <div><span title={hiddenByDisabledParent ? '上级类目已停用，该节点不会出现在门户导航与商品类目选择器中' : undefined} className={`rounded-full px-2 py-1 text-[11px] font-semibold ${category.status === 1 ? (hiddenByDisabledParent ? 'bg-slate-100 text-slate-500' : 'bg-emerald-50 text-emerald-700') : 'bg-slate-100 text-slate-500'}`}>{category.status === 1 ? '启用' : '停用'}</span></div>
         <div className="flex items-center justify-end gap-1">
           <button type="button" onClick={() => void reorder(category, -1)} disabled={position <= 0} className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-blue-600 disabled:cursor-not-allowed disabled:opacity-30" title="上移"><ArrowUp className="h-4 w-4" /></button>
           <button type="button" onClick={() => void reorder(category, 1)} disabled={position < 0 || position >= sortedSiblings.length - 1} className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-blue-600 disabled:cursor-not-allowed disabled:opacity-30" title="下移"><ArrowDown className="h-4 w-4" /></button>
           <button type="button" onClick={() => openCreate(category.id)} className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-blue-600" title="新增子类目"><Plus className="h-4 w-4" /></button>
           <button type="button" onClick={() => openEdit(category)} className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-blue-600" title="编辑"><Edit3 className="h-4 w-4" /></button>
-          <button type="button" onClick={() => void toggleStatus(category)} className={`rounded p-1 ${category.status === 1 ? 'text-emerald-500 hover:text-amber-600' : 'text-slate-400 hover:text-emerald-600'}`} title={category.status === 1 ? '停用' : '启用'}><Power className="h-4 w-4" /></button>
+          <button type="button" onClick={() => void toggleStatus(category)} disabled={hiddenByDisabledParent} className={`rounded p-1 disabled:cursor-not-allowed disabled:opacity-30 ${category.status === 1 ? 'text-emerald-500 hover:text-amber-600' : 'text-slate-400 hover:text-emerald-600'}`} title={hiddenByDisabledParent ? '上级类目停用中，需先启用上级' : category.status === 1 ? '停用' : '启用'}><Power className="h-4 w-4" /></button>
           <button type="button" onClick={() => void remove(category)} className="rounded p-1 text-slate-400 hover:text-red-600" title="删除"><Trash2 className="h-4 w-4" /></button>
         </div>
       </div>
@@ -299,6 +338,8 @@ export const CategoryManagementView: React.FC = () => {
     </React.Fragment>;
   });
 
+  // 弹层打开期间锁住底层文档滚动，避免出现滚动穿透。
+  useBodyScrollLock(Boolean(editing));
   return <div className="animate-in fade-in-50 space-y-6 duration-200">
     <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
       <div><div className="flex items-center gap-2"><h2 className="text-xl font-bold tracking-tight text-[#191C1E] md:text-2xl">商品类目维护</h2><span className="rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-700">Catalog</span></div><p className="mt-0.5 text-xs text-[#434655] md:text-sm">维护商品类目层级、编码、排序及上下架状态，最多支持三级类目。</p></div>

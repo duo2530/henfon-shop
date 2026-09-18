@@ -12,6 +12,7 @@ import {
   Sparkles,
   ExternalLink
 } from 'lucide-react';
+import { useBodyScrollLock } from '../../hooks/useBodyScrollLock';
 
 interface TopNavbarProps {
   onOpenMobileMenu: () => void;
@@ -50,6 +51,8 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
     setAvatarLoadFailed(false);
   }, [avatarUrl]);
 
+  // 弹层打开期间锁住底层文档滚动，避免出现滚动穿透。
+  useBodyScrollLock(profileOpen || helpModalOpen);
   return (
     <>
       <header

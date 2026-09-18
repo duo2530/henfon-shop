@@ -164,6 +164,26 @@ export const ProductManagementView: React.FC = () => {
     [categoryOptions, selectedCategory]
   );
 
+  /**
+   * 正在编辑的商品挂在一个已被停用（自身停用或随上级停用）的类目上时，补一条只读选项。
+   *
+   * 启用类目接口不再下发这些类目，缺了这条选项下拉框会显示成第一项，
+   * 保存时 categoryId 就被静默改成别的类目——类目停用是导航层面的意图，不该连带改商品归属。
+   */
+  const hiddenEditingCategory = useMemo(() => {
+    if (!editingProduct || editingProduct.categoryId === undefined) return null;
+    if (categoryOptions.some((option) => option.id === editingProduct.categoryId)) return null;
+    const name = editingProduct.categoryName || editingProduct.category;
+    return { id: editingProduct.categoryId, code: editingProduct.category, name, label: `${name}（类目已停用）` };
+  }, [editingProduct, categoryOptions]);
+
+  /** 表单类目可能是被隐藏的类目，ID 与名称都要能回退到那条只读选项。 */
+  const formCategoryId = () => categoryId(formData.category)
+    ?? (hiddenEditingCategory?.code === formData.category ? hiddenEditingCategory.id : undefined);
+  const formCategoryName = () => (hiddenEditingCategory?.code === formData.category
+    ? hiddenEditingCategory.name
+    : categoryName(formData.category));
+
   // Filtered & Sorted Products
   const filteredProducts = useMemo(() => {
     return products
@@ -394,7 +414,7 @@ export const ProductManagementView: React.FC = () => {
       showToast('请输入商品名称', 'error');
       return;
     }
-    if (categoryOptions.length === 0 || !categoryId(formData.category)) {
+    if (categoryOptions.length === 0 || !formCategoryId()) {
       showToast('商品类目数据不可用，无法保存商品', 'error');
       return;
     }
@@ -404,7 +424,7 @@ export const ProductManagementView: React.FC = () => {
       if (!requirePermission('product:edit', '编辑商品')) return;
       updateProduct(editingProduct.id, {
         name: formData.name,
-        categoryId: categoryId(formData.category),
+        categoryId: formCategoryId(),
         category: formData.category,
         price: formData.price,
         costPrice: formData.costPrice,
@@ -416,14 +436,14 @@ export const ProductManagementView: React.FC = () => {
         sku: formData.sku,
         tags: formData.tags,
         description: formData.description,
-        categoryName: categoryName(formData.category)
+        categoryName: formCategoryName()
       });
       persistedProductId = Number.isFinite(Number(editingProduct.id)) ? Number(editingProduct.id) : null;
     } else {
       if (!requirePermission('product:add', '新建商品')) return;
       persistedProductId = await addProduct({
         name: formData.name,
-        categoryId: categoryId(formData.category),
+        categoryId: formCategoryId(),
         category: formData.category,
         price: formData.price,
         costPrice: formData.costPrice,
@@ -435,7 +455,7 @@ export const ProductManagementView: React.FC = () => {
         sku: formData.sku,
         tags: formData.tags,
         description: formData.description,
-        categoryName: categoryName(formData.category)
+        categoryName: formCategoryName()
       });
     }
     if (persistedProductId !== null) {
@@ -1195,10 +1215,18 @@ export const ProductManagementView: React.FC = () => {
                     }
                     className="w-full h-[36px] px-3 rounded-lg border border-gray-300 focus:border-blue-500 outline-none text-sm bg-white"
                   >
+                    {hiddenEditingCategory && (
+                      <option value={hiddenEditingCategory.code}>{hiddenEditingCategory.label}</option>
+                    )}
                     {categoryOptions.map((option) => (
                       <option key={option.id} value={option.code}>{option.name}</option>
                     ))}
                   </select>
+                  {hiddenEditingCategory && formData.category === hiddenEditingCategory.code && (
+                    <p className="mt-1 text-[11px] text-gray-500">
+                      该类目已停用或随上级停用，门户不展示；保持不改则商品归属不变。
+                    </p>
+                  )}
                 </div>
 
                 <div>

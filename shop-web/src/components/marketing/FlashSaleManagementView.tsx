@@ -18,6 +18,7 @@ import { FlashSaleDetailView } from './FlashSaleDetailView';
 import { PermissionDenied } from '../common/PermissionGate';
 import { useAdmin } from '../../context/AdminContext';
 import { formatMinute } from '../../utils/datetime';
+import { useBodyScrollLock } from '../../hooks/useBodyScrollLock';
 
 type StatusFilter = '' | '0' | '1' | '2';
 type ItemForm = {
@@ -323,6 +324,8 @@ export const FlashSaleManagementView: React.FC = () => {
     setPicker(null);
   };
 
+  // 弹层打开期间锁住底层文档滚动，避免出现滚动穿透。
+  useBodyScrollLock(Boolean(modal && canSave));
   if (!canQuery) return <PermissionDenied title="暂无秒杀活动查看权限" />;
 
   // 详情视图替换整个列表：返回时只清掉活动ID，列表的筛选条件与页码原样保留。

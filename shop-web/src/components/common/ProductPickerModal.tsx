@@ -10,6 +10,7 @@ import {
 } from '../../api/adminApi';
 import { Pagination } from './Pagination';
 import { useAdmin } from '../../context/AdminContext';
+import { useBodyScrollLock } from '../../hooks/useBodyScrollLock';
 
 /** 弹窗确认后返回的选择项，字段可直接填充活动明细行。 */
 export interface ProductPickerSelection {
@@ -180,6 +181,8 @@ export const ProductPickerModal: React.FC<ProductPickerModalProps> = ({
     onConfirm(mode === 'single' ? selection.slice(0, 1) : selection);
   };
 
+  // 组件挂载即代表弹层打开，期间锁住底层文档滚动，避免出现滚动穿透。
+  useBodyScrollLock();
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-[2px]" role="presentation">
       <div role="dialog" aria-modal="true" aria-label="选择商品" className="flex max-h-[90vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl animate-in fade-in zoom-in-95 duration-200">

@@ -29,6 +29,7 @@ import {
   Flame, 
   AlertCircle 
 } from 'lucide-react';
+import { useBodyScrollLock } from '../../hooks/useBodyScrollLock';
 
 export interface CouponItem {
   id: string;
@@ -221,6 +222,8 @@ export const CouponManagementView: React.FC = () => {
     });
   };
 
+  // 弹层打开期间锁住底层文档滚动，避免出现滚动穿透。
+  useBodyScrollLock(Boolean(inspectCoupon) || isCreateModalOpen);
   return (
     <div className="space-y-6 animate-in fade-in-50 duration-200">
       {/* Header */}

@@ -22,6 +22,7 @@ import {
   MapPin, 
   Sparkles
 } from 'lucide-react';
+import { useBodyScrollLock } from '../../hooks/useBodyScrollLock';
 
 export const SystemUserManagementView: React.FC = () => {
   const { 
@@ -213,6 +214,8 @@ export const SystemUserManagementView: React.FC = () => {
     showToast(`已更新「${assignRoleUser.realName}」的角色绑定`, 'success');
   };
 
+  // 弹层打开期间锁住底层文档滚动，避免出现滚动穿透。
+  useBodyScrollLock(Boolean(modalMode) || Boolean(assignRoleUser));
   return (
     <div id="system-user-management-view" className="space-y-6">
       {/* Top Header Banner */}

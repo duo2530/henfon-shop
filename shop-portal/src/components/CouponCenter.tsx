@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Coupon } from '../types/ecommerce';
 import { AVAILABLE_COUPONS } from '../data/products';
+import { couponTagLabel } from '../utils/couponTag';
 import {
   Ticket,
   Sparkles,
@@ -48,7 +49,9 @@ export const CouponCenter: React.FC<CouponCenterProps> = ({
   });
 
   return (
-    <section id="coupon-center-section" className="mb-8 relative">
+    // 券墙本体，只作为 `CouponCenterModal` 的内容渲染（首页常驻的是 `CouponCenterBanner` 那一行横幅）。
+    // 锚点 id 与 `mb-8` 已移到横幅上，这里不再自带页面级间距。
+    <section className="relative">
       {/* Container Box */}
       <div className="rounded-3xl border border-amber-200/80 bg-linear-to-br from-amber-500/5 via-orange-500/5 to-amber-500/10 p-5 sm:p-7 shadow-xs overflow-hidden relative">
         {/* Background decorative watermark */}
@@ -127,7 +130,7 @@ export const CouponCenter: React.FC<CouponCenterProps> = ({
               }`}
             >
               {tab.label}
-              <span className={`ml-1.5 text-[11px] ${selectedFilter === tab.id ? 'text-zinc-300' : 'text-zinc-400'}`}>
+              <span className={`ml-1.5 text-[11px] ${selectedFilter === tab.id ? 'text-zinc-300' : 'text-zinc-500'}`}>
                 {tab.count}
               </span>
             </button>
@@ -181,7 +184,7 @@ export const CouponCenter: React.FC<CouponCenterProps> = ({
                             : 'bg-amber-100 text-amber-900 border border-amber-300/60'
                         }`}
                       >
-                        {coupon.tag}
+                        {couponTagLabel(coupon.tag)}
                       </span>
                     )}
                   </div>
@@ -200,7 +203,7 @@ export const CouponCenter: React.FC<CouponCenterProps> = ({
                 {/* Bottom Section: Quota & Action Button */}
                 <div className="p-3 sm:px-4 bg-zinc-50/60 flex items-center justify-between gap-3">
                   <div className="min-w-0 flex-1">
-                    <div className="flex items-center justify-between text-[10px] text-zinc-400 font-medium mb-1">
+                    <div className="flex items-center justify-between text-[11px] text-zinc-500 font-medium mb-1">
                       <span>已抢 {stockPct}%</span>
                       <span className="flex items-center gap-0.5">
                         <Clock className="w-2.5 h-2.5" />

@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
+import { join, relative } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const api = readFileSync(new URL('../src/api/adminApi.ts', import.meta.url), 'utf8');
 const login = readFileSync(new URL('../src/components/auth/AdminLogin.tsx', import.meta.url), 'utf8');
@@ -29,9 +31,29 @@ assert.match(products, /useBodyScrollLock/);
 assert.match(detailModal, /useBodyScrollLock/);
 assert.match(scrollLock, /body\.style\.overflow = 'hidden'/);
 
+// 全屏弹层逐个核对：新页面漏接滚动锁时这里会失败。
+// ExportCenter 是按钮旁的下载下拉（透明点击层，不是弹层），唯一不接入的文件。
+const componentsDir = new URL('../src/components', import.meta.url);
+const componentsRoot = fileURLToPath(componentsDir);
+const unlockedModals = readdirSync(componentsDir, { withFileTypes: true, recursive: true })
+  .filter((entry) => entry.isFile() && entry.name.endsWith('.tsx'))
+  .map((entry) => join(entry.parentPath ?? entry.path, entry.name))
+  .filter((file) => {
+    const source = readFileSync(file, 'utf8');
+    return source.includes('fixed inset-0') && !source.includes('useBodyScrollLock');
+  })
+  .map((file) => relative(componentsRoot, file).replace(/\\/g, '/'));
+assert.deepEqual(unlockedModals, ['layout/ExportCenter.tsx']);
+
 // 商品挂在三级类目上：按类目筛选必须展开子树，商品列表必须按页取全量。
 const adminContext = readFileSync(new URL('../src/context/AdminContext.tsx', import.meta.url), 'utf8');
 assert.match(products, /collectCategorySubtreeIds/);
 assert.match(adminContext, /listAllCatalogProducts/);
 
-console.log('shop-web 管理流程冒烟检查通过：登录 → 商品 → 订单/发货 → 经营报表入口均存在，弹层滚动锁在详情与商品弹层均已接入');
+// 类目停用按父链隐藏：管理端要标注「随上级停用」、置灰开关，并在停用有下级的类目时二次确认。
+const categoryView = readFileSync(new URL('../src/components/products/CategoryManagementView.tsx', import.meta.url), 'utf8');
+assert.match(categoryView, /collectDisabledBranchIds/);
+assert.match(categoryView, /随上级停用/);
+assert.match(categoryView, /子类目会一并从门户导航/);
+
+console.log('shop-web 管理流程冒烟检查通过：登录 → 商品 → 订单/发货 → 经营报表入口均存在，全屏弹层滚动锁与类目父链隐藏已接入');

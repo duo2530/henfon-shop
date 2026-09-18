@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
+import { couponTagLabel } from '../utils/couponTag';
 import {
   X,
   User,
@@ -366,7 +367,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                             <h5 className="text-xs font-bold text-zinc-900">{c.title}</h5>
                             {c.tag && (
                               <span className="text-[9px] px-1.5 py-0.2 rounded bg-amber-100 text-amber-800 font-bold">
-                                {c.tag}
+                                {couponTagLabel(c.tag)}
                               </span>
                             )}
                           </div>

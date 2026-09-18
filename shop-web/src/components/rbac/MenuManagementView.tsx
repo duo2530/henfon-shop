@@ -31,6 +31,7 @@ import {
   Lock,
   Settings
 } from 'lucide-react';
+import { useBodyScrollLock } from '../../hooks/useBodyScrollLock';
 
 export const MenuManagementView: React.FC = () => {
   const { menuItems, addMenuItem, updateMenuItem, deleteMenuItem, confirm } = useAdmin();
@@ -345,6 +346,8 @@ export const MenuManagementView: React.FC = () => {
     });
   };
 
+  // 弹层打开期间锁住底层文档滚动，避免出现滚动穿透。
+  useBodyScrollLock(Boolean(modalMode));
   return (
     <div id="menu-management-view" className="space-y-6">
       {/* Top Header */}

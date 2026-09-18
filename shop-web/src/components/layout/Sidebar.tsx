@@ -10,6 +10,7 @@ import { BrandMark } from '../common/BrandMark';
 import { useAdmin } from '../../context/AdminContext';
 import { MenuItem, NavigationTab } from '../../types';
 import { routeToTab } from '../../navigation/menuAdapter';
+import { useBodyScrollLock } from '../../hooks/useBodyScrollLock';
 
 interface SidebarProps { mobileOpen?: boolean; onCloseMobile?: () => void; }
 interface NavItem { id: NavigationTab; label: string; icon: React.ReactNode; badge?: number; }
@@ -70,6 +71,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ mobileOpen, onCloseMobile }) =
     await logout();
   };
 
+  // 弹层打开期间锁住底层文档滚动，避免出现滚动穿透。
+  useBodyScrollLock(Boolean(mobileOpen));
   return <>
     {mobileOpen && <div className="fixed inset-0 bg-black/60 z-40 md:hidden backdrop-blur-xs" onClick={onCloseMobile} />}
     <aside className={`fixed top-0 left-0 h-full w-[240px] bg-white border-r border-[#E2E8F0] flex flex-col z-50 transition-transform duration-200 ease-in-out ${mobileOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}>

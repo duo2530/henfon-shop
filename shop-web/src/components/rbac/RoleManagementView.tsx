@@ -17,6 +17,7 @@ import {
   Sparkles,
   Info
 } from 'lucide-react';
+import { useBodyScrollLock } from '../../hooks/useBodyScrollLock';
 
 export const RoleManagementView: React.FC = () => {
   const { 
@@ -141,6 +142,8 @@ export const RoleManagementView: React.FC = () => {
     }
   };
 
+  // 弹层打开期间锁住底层文档滚动，避免出现滚动穿透。
+  useBodyScrollLock(Boolean(modalMode) || Boolean(scopeModalRole) || Boolean(viewMembersRole));
   return (
     <div id="role-management-view" className="space-y-6">
       {/* Top Banner / Header */}

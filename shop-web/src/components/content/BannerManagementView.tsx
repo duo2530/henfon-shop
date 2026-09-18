@@ -3,6 +3,7 @@ import { Edit3, ExternalLink, Image as ImageIcon, Loader2, Plus, RefreshCw, Save
 import { BackendContentBanner, deleteContentBanner, listContentBanners, saveContentBanner, updateContentBannerStatus, uploadStorageFile } from '../../api/adminApi';
 import { useAdmin } from '../../context/AdminContext';
 import { formatDate } from '../../utils/datetime';
+import { useBodyScrollLock } from '../../hooks/useBodyScrollLock';
 
 interface BannerForm {
   id?: number;
@@ -103,6 +104,8 @@ export const BannerManagementView: React.FC = () => {
   /** 手动改动图片地址时丢弃旧预览，避免显示与输入不一致的图片。 */
   const updateImageUrl = (value: string) => setEditing((current) => current ? { ...current, imageUrl: value, imageAccessUrl: '' } : current);
 
+  // 弹层打开期间锁住底层文档滚动，避免出现滚动穿透。
+  useBodyScrollLock(Boolean(editing));
   return (
     <div className="space-y-6 animate-in fade-in-50 duration-200">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4"><div><div className="flex items-center gap-2"><h2 className="text-xl md:text-2xl font-bold text-[#191C1E] tracking-tight">轮播海报与页面装修</h2><span className="text-xs bg-rose-50 text-rose-700 font-semibold px-2 py-0.5 rounded-full border border-rose-200">视觉营销</span></div><p className="text-xs md:text-sm text-[#434655] mt-0.5">配置首页焦点轮播、活动公告及定时发布内容。</p></div><button onClick={() => setEditing({ ...emptyForm })} className="h-[36px] px-4 rounded-lg bg-[#2563EB] text-white hover:bg-blue-700 flex items-center justify-center gap-2 text-xs font-semibold shadow-xs"><Plus className="w-4 h-4" />新增轮播海报</button></div>

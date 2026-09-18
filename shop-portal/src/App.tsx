@@ -14,7 +14,11 @@ import { CompareModal } from './components/CompareModal';
 import { CompareFloatingBar } from './components/CompareFloatingBar';
 import { AuthModal, AuthMode, PRESET_TEST_USERS } from './components/AuthModal';
 import { UserProfileModal } from './components/UserProfileModal';
-import { CouponCenter } from './components/CouponCenter';
+import { CouponCenterBanner } from './components/CouponCenterBanner';
+import { CouponCenterModal } from './components/CouponCenterModal';
+import { CategoryRail } from './components/CategoryRail';
+import { useBodyScrollLock } from './hooks/useBodyScrollLock';
+import { logisticsStatusLabel } from './utils/logisticsStatus';
 import { ToastContainer, ToastMessage } from './components/Toast';
 import { PRODUCTS, AVAILABLE_COUPONS, CATEGORIES } from './data/products';
 import {
@@ -101,6 +105,7 @@ import {
   Heart,
   Scale,
   Zap,
+  X,
 } from 'lucide-react';
 
 const DEMO_MODE = import.meta.env.VITE_DEMO_MODE === 'true';
@@ -187,7 +192,7 @@ function mapPortalOrderItem(item: PortalOrderItemRecord, products: Product[]): i
 
 function mapPortalLogistics(logistics: PortalOrderLogisticsRecord[]): Order['trackingSteps'] {
   return logistics.map((event) => ({
-    title: event.eventDescription || event.logisticsStatus || '物流状态更新',
+    title: event.eventDescription || logisticsStatusLabel(event.logisticsStatus) || '物流状态更新',
     time: formatPortalDate(event.eventTime),
     completed: true,
     description: event.eventDescription || '',
@@ -731,19 +736,19 @@ export default function App() {
           setCompareHistory(mappedCompareHistory);
           setLastComparedProductIds(mappedCompareHistory[0].productIds);
         }
-        if (remoteAddresses.length > 0) {
-          setMemberAddresses(remoteAddresses.map((address) => ({
-            id: String(address.id),
-            receiverName: address.receiverName,
-            phone: address.receiverPhone,
-            province: address.province,
-            city: address.city,
-            district: address.district,
-            detail: address.detailAddress,
-            tag: address.addressTag as '家' | '公司' | '学校' | undefined,
-            isDefault: address.isDefault === 1,
-          })));
-        }
+        // 地址属于会员私有数据，接口返回什么就覆盖什么（含空数组），
+        // 否则换号登录后接口返回空数组时会残留上一位会员的地址。
+        setMemberAddresses(remoteAddresses.map((address) => ({
+          id: String(address.id),
+          receiverName: address.receiverName,
+          phone: address.receiverPhone,
+          province: address.province,
+          city: address.city,
+          district: address.district,
+          detail: address.detailAddress,
+          tag: address.addressTag as '家' | '公司' | '学校' | undefined,
+          isDefault: address.isDefault === 1,
+        })));
         // 物流轨迹优先走独立接口，详情接口作为兼容回退，同时补齐商品明细。
         const details = await Promise.all(remoteOrders.map(async (order) => {
           let remoteLogistics: PortalOrderLogisticsRecord[] | null = null;
@@ -968,6 +973,12 @@ export default function App() {
   const [completedOrder, setCompletedOrder] = useState<Order | null>(null);
   const [isOrdersOpen, setIsOrdersOpen] = useState(false);
   const [isWishlistOpen, setIsWishlistOpen] = useState(false);
+  // 类目树常驻页面左侧；窄屏放不下，收进抽屉由顶部「分类」按钮拉起。
+  const [isCategoryDrawerOpen, setIsCategoryDrawerOpen] = useState(false);
+  useBodyScrollLock(isCategoryDrawerOpen);
+  // 领券中心：首页只留一行横幅，完整券墙在这个弹层里。
+  const [isCouponCenterOpen, setIsCouponCenterOpen] = useState(false);
+  useBodyScrollLock(isCouponCenterOpen);
   const [invoiceModal, setInvoiceModal] = useState<{ order: Order; existing: PortalInvoiceRecord | null } | null>(null);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
 
@@ -1041,6 +1052,7 @@ export default function App() {
       setCurrentUser(null);
       setPaymentPolling(null);
       clearPortalMemberToken();
+      resetMemberScopedState();
       showToast('登录已过期，请重新登录', 'error');
     };
     window.addEventListener('henfon:member-session-expired', handleSessionExpired);
@@ -1056,6 +1068,12 @@ export default function App() {
     };
   }, []);
 
+  /** 切换类目后回到第一页，避免停留在越界页看到空列表。 */
+  const handleSelectCategory = useCallback((categoryId: string) => {
+    setSelectedCategory(categoryId);
+    setProductPage(1);
+  }, []);
+
   // Auth Handlers
   const handleOpenAuth = (mode: AuthMode = 'login-pwd') => {
     setAuthModalMode(mode);
@@ -1067,6 +1085,23 @@ export default function App() {
     showToast(message, 'success');
   };
 
+  /**
+   * 清空会员级数据。
+   * 退出登录（含会话过期）后这些数据仍留在内存与 localStorage 里，
+   * 下一位账号登录前会一直被展示出来，所以必须在会话结束时就地清掉。
+   */
+  const resetMemberScopedState = () => {
+    setMemberAddresses([]);
+    setOrders([]);
+    setWishlist([]);
+    setAfterSales([]);
+    setCompareHistory([]);
+    setLastComparedProductIds([]);
+    setReviewedProductIds([]);
+    // 服务端购物车条目归属上一位会员，游客在本地加购的条目保留。
+    setCartItems((previous) => previous.filter((item) => !item.id.startsWith('server-')));
+  };
+
   const handleLogout = () => {
     // 服务端优先吊销当前令牌；即使接口不可用也清理本地会话，避免继续携带旧令牌。
     void logoutPortalMember()
@@ -1074,6 +1109,7 @@ export default function App() {
       .finally(() => {
         setCurrentUser(null);
         clearPortalMemberToken();
+        resetMemberScopedState();
         showToast('您已成功退出登录', 'info');
       });
   };
@@ -1814,11 +1850,9 @@ export default function App() {
     showToast('已取消使用优惠券', 'info');
   };
 
+  // 券墙移入弹层后，「领券中心」的四处入口（顶栏、个人中心菜单、购物车、Banner 跳转）统一直接打开弹层。
   const handleOpenCouponCenter = () => {
-    const el = document.getElementById('coupon-center-section');
-    if (el) {
-      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }
+    setIsCouponCenterOpen(true);
   };
 
   // Checkout Handlers
@@ -2373,7 +2407,6 @@ export default function App() {
         ordersCount={orders.length}
         searchQuery={searchQuery}
         categoryTree={categoryTree}
-        selectedCategory={selectedCategory}
         currentUser={currentUser}
         claimedCouponsCount={claimedCoupons.length}
         products={products}
@@ -2381,10 +2414,7 @@ export default function App() {
           setSearchQuery(query);
           setProductPage(1);
         }}
-        onCategorySelect={(cat) => {
-          setSelectedCategory(cat);
-          setProductPage(1);
-        }}
+        onCategorySelect={handleSelectCategory}
         onSelectProduct={openProduct}
         onOpenCart={() => setIsCartOpen(true)}
         onOpenWishlist={() => setIsWishlistOpen(true)}
@@ -2392,12 +2422,29 @@ export default function App() {
         onOpenAuth={handleOpenAuth}
         onOpenUserProfile={() => setIsUserProfileModalOpen(true)}
         onOpenCouponCenter={handleOpenCouponCenter}
+        onOpenCategoryDrawer={() => setIsCategoryDrawerOpen(true)}
         onLogout={handleLogout}
       />
 
       <main id="portal-main-content" tabIndex={-1} aria-label="商城主要内容" className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-6 md:py-8">
-        {/* Promotional Hero Carousel & Benefits (show only when no active text search query) */}
-        {!searchQuery && selectedCategory === ALL_CATEGORY_ID && (
+        <div className="lg:grid lg:grid-cols-[220px_minmax(0,1fr)] lg:items-start lg:gap-6">
+          {/* 类目树常驻左侧：顶部导航放不下全部一级类目，改由左栏承载。
+              左栏不能加 overflow，否则会把一级类目 hover 出来的下级浮层裁掉。
+              z 取在 Navbar(z-30) 与主内容(z-20 以内) 之间：左栏自己是 sticky（会创建堆叠上下文），
+              浮层的 z 只在左栏内部生效，不给左栏提层级就会被商品卡、HeroBanner 盖住；
+              但也不能到 z-30，否则左栏会反过来盖住 Navbar 的搜索下拉。 */}
+          <aside className="hidden rounded-2xl border border-zinc-200/90 bg-white p-3 shadow-xs lg:sticky lg:top-28 lg:z-[25] lg:block">
+            <CategoryRail
+              categoryTree={categoryTree}
+              selectedCategory={selectedCategory}
+              onSelectCategory={handleSelectCategory}
+              variant="flyout"
+            />
+          </aside>
+
+          <div className="min-w-0">
+        {/* 轮播与权益条只在搜索态隐藏：切类目后仍保留，否则运营位一进类目就消失。 */}
+        {!searchQuery && (
           <HeroBanner
             banners={banners}
             onExploreCategory={(cat) => {
@@ -2439,8 +2486,7 @@ export default function App() {
                 return;
               }
               if (linkType === 'COUPON') {
-                const element = document.getElementById('coupon-center-section');
-                element?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                setIsCouponCenterOpen(true);
                 if (target) {
                   const coupon = coupons.find((item) => String(item.id) === target || item.code === target);
                   if (coupon) {
@@ -2492,42 +2538,35 @@ export default function App() {
           </section>
         )}
 
-        {/* Homepage Coupon Claiming Center (领券中心) */}
-        <div id="coupon-center-section" className="mb-8 scroll-mt-24">
-          <CouponCenter
-            coupons={coupons}
-            claimedCouponCodes={claimedCouponCodes}
-            appliedCoupon={appliedCoupon}
-            onClaimCoupon={handleClaimCoupon}
-            onClaimAllCoupons={handleClaimAllCoupons}
-            onUseCoupon={(c) => {
-              handleApplyCoupon(c.code);
-              setIsCartOpen(true);
-            }}
-          />
-        </div>
+        {/* 领券中心：首屏只留一行横幅。原位置的完整券墙约 400px 高，夹在轮播与商品之间会把商品挤出首屏。 */}
+        <CouponCenterBanner
+          coupons={coupons}
+          claimedCouponCodes={claimedCouponCodes}
+          onOpenAll={handleOpenCouponCenter}
+          onClaimAll={handleClaimAllCoupons}
+        />
 
         {/* Filter & Sort Controls Toolbar */}
+        {/* 左栏占掉 220px 后，桌面端主内容可用宽度只有 988px：原先「结果区（约 360px）+ 全部筛选控件（约 760px）」并排必然换行，
+            而 justify-between 下换行后的第二行从右半容器起点起排，看起来就是控件散落在标题下面。
+            这里拆成主行（结果 + 排序/视图）与筛选行（属性筛选 + 对比工具）两组，各自独立换行。 */}
         <section className="mb-6 bg-white rounded-2xl border border-zinc-200/90 p-4 sm:p-5 shadow-xs">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-            {/* Left: Results Count & Active Filters */}
-            <div className="flex items-center gap-3 flex-wrap">
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-bold text-zinc-900">
-                  {selectedCategoryPath.length > 0
-                    ? selectedCategoryPath.map((node) => node.name).join(' / ')
-                    : '全部优选商品'}
+          <div className="flex items-center justify-between gap-4">
+            {/* 主行左：结果标题与已生效条件 */}
+            <div className="flex min-w-0 flex-wrap items-center gap-2 sm:gap-3">
+              <span className="truncate text-sm font-bold text-zinc-900">
+                {selectedCategoryPath.length > 0
+                  ? selectedCategoryPath.map((node) => node.name).join(' / ')
+                  : '全部优选商品'}
+              </span>
+              <span className="text-xs px-2 py-0.5 rounded-full bg-zinc-100 text-zinc-600 font-semibold">
+                共 {productPageTotal || filteredProducts.length} 款
+              </span>
+              {selectedCategoryPath.length > 1 && (
+                <span className="text-xs px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 font-semibold">
+                  第 {selectedCategoryPath.length} 级类目
                 </span>
-                <span className="text-xs px-2 py-0.5 rounded-full bg-zinc-100 text-zinc-600 font-semibold">
-                  共 {productPageTotal || filteredProducts.length} 款
-                </span>
-                {selectedCategoryPath.length > 1 && (
-                  <span className="text-xs px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 font-semibold">
-                    第 {selectedCategoryPath.length} 级类目
-                  </span>
-                )}
-              </div>
-
+              )}
               {selectedCategoryPath.length > 0 && (
                 <button
                   onClick={() => { setSelectedCategory(ALL_CATEGORY_ID); setProductPage(1); }}
@@ -2536,7 +2575,6 @@ export default function App() {
                   清除分类筛选
                 </button>
               )}
-
               {searchQuery && (
                 <div className="flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg bg-zinc-100 text-zinc-800">
                   <span>搜索: "{searchQuery}"</span>
@@ -2547,98 +2585,8 @@ export default function App() {
               )}
             </div>
 
-            {/* Right: Quick toggles & Sort selector & View Mode */}
-            <div className="flex items-center gap-2.5 sm:gap-3 flex-wrap">
-              <label className="flex items-center gap-2 text-xs text-zinc-500">
-                <span className="sr-only">SKU 筛选</span>
-                <input
-                  value={skuKeyword}
-                  onChange={(event) => { setSkuKeyword(event.target.value); setProductPage(1); }}
-                  placeholder="筛选 SKU 编码/规格"
-                  aria-label="筛选 SKU 编码或规格"
-                  className="h-8 w-40 rounded-xl border border-zinc-200 px-3 text-xs text-zinc-700 outline-none focus:border-zinc-500"
-                />
-              </label>
-              {/* Compare Mode Button */}
-              <div className="flex items-center gap-1.5">
-                <button
-                  onClick={() => {
-                    const nextMode = !isCompareMode;
-                    setIsCompareMode(nextMode);
-                    if (nextMode && compareProductIds.length > 0) {
-                      setIsCompareBarVisible(true);
-                    }
-                    showToast(
-                      nextMode
-                        ? '已开启对比模式，可在商品卡片上勾选最多 3 款商品进行对比'
-                        : '已退出对比模式',
-                      'info'
-                    );
-                  }}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-medium border transition flex items-center gap-1.5 ${
-                    isCompareMode
-                      ? 'bg-amber-400 border-amber-400 text-zinc-950 font-bold shadow-xs'
-                      : 'bg-white text-zinc-700 border-zinc-200 hover:bg-zinc-50'
-                  }`}
-                  title="开启/关闭商品对比模式"
-                  aria-pressed={isCompareMode}
-                >
-                  <Scale className="w-3.5 h-3.5" />
-                  <span>对比模式</span>
-                  {compareProductIds.length > 0 && (
-                    <span
-                      className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
-                        isCompareMode ? 'bg-zinc-900 text-white' : 'bg-amber-100 text-amber-900'
-                      }`}
-                    >
-                      {compareProductIds.length}/3
-                    </span>
-                  )}
-                </button>
-
-                {/* Quick Restore Last Compare Shortcut if active compare is empty */}
-                {compareProductIds.length === 0 && lastComparedProductsList.length > 0 && (
-                  <button
-                    onClick={handleRestoreLastCompare}
-                    className="px-2.5 py-1.5 rounded-xl text-xs font-medium text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-200/80 transition flex items-center gap-1 shadow-2xs"
-                    title={`恢复上次对比组合（${lastComparedProductsList.map((p) => p.title).join(' vs ')}）`}
-                  >
-                    <RotateCcw className="w-3 h-3 text-amber-600" />
-                    <span>恢复上次对比</span>
-                  </button>
-                )}
-              </div>
-
-              {/* Only In Stock Toggle */}
-              <button
-                onClick={() => { setOnlyInStock(!onlyInStock); setProductPage(1); }}
-                aria-pressed={onlyInStock}
-                aria-label="仅看现货"
-                className={`px-3 py-1.5 rounded-xl text-xs font-medium border transition flex items-center gap-1.5 ${
-                  onlyInStock
-                    ? 'bg-zinc-900 text-white border-zinc-900'
-                    : 'bg-white text-zinc-600 border-zinc-200 hover:bg-zinc-50'
-                }`}
-              >
-                <Check className={`w-3.5 h-3.5 ${onlyInStock ? 'opacity-100' : 'opacity-0'}`} />
-                仅看现货
-              </button>
-
-              {/* Only Discount Toggle */}
-              <button
-                onClick={() => { setOnlyDiscount(!onlyDiscount); setProductPage(1); }}
-                aria-pressed={onlyDiscount}
-                aria-label="限时特惠"
-                className={`px-3 py-1.5 rounded-xl text-xs font-medium border transition flex items-center gap-1.5 ${
-                  onlyDiscount
-                    ? 'bg-zinc-900 text-white border-zinc-900'
-                    : 'bg-white text-zinc-600 border-zinc-200 hover:bg-zinc-50'
-                }`}
-              >
-                <Check className={`w-3.5 h-3.5 ${onlyDiscount ? 'opacity-100' : 'opacity-0'}`} />
-                限时特惠
-              </button>
-
+            {/* 主行右：排序与视图。shrink-0 保证这两个最常用的控件永远留在主行右侧 */}
+            <div className="flex shrink-0 items-center gap-2 sm:gap-3">
               {/* Sort Dropdown */}
               <div className="relative flex items-center">
                 <select
@@ -2687,11 +2635,107 @@ export default function App() {
               </div>
             </div>
           </div>
+
+          {/* 筛选行：属性筛选与对比工具，与主行用分隔线分段 */}
+          <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-zinc-100 pt-3 sm:gap-3">
+            <label className="flex items-center gap-2 text-xs text-zinc-500">
+              <span className="sr-only">SKU 筛选</span>
+              <input
+                value={skuKeyword}
+                onChange={(event) => { setSkuKeyword(event.target.value); setProductPage(1); }}
+                placeholder="筛选 SKU 编码/规格"
+                aria-label="筛选 SKU 编码或规格"
+                className="h-8 w-40 rounded-xl border border-zinc-200 px-3 text-xs text-zinc-700 outline-none focus:border-zinc-500"
+              />
+            </label>
+
+            {/* Only In Stock Toggle */}
+            <button
+              onClick={() => { setOnlyInStock(!onlyInStock); setProductPage(1); }}
+              aria-pressed={onlyInStock}
+              aria-label="仅看现货"
+              className={`px-3 py-1.5 rounded-xl text-xs font-medium border transition flex items-center gap-1.5 ${
+                onlyInStock
+                  ? 'bg-zinc-900 text-white border-zinc-900'
+                  : 'bg-white text-zinc-600 border-zinc-200 hover:bg-zinc-50'
+              }`}
+            >
+              <Check className={`w-3.5 h-3.5 ${onlyInStock ? 'opacity-100' : 'opacity-0'}`} />
+              仅看现货
+            </button>
+
+            {/* Only Discount Toggle */}
+            <button
+              onClick={() => { setOnlyDiscount(!onlyDiscount); setProductPage(1); }}
+              aria-pressed={onlyDiscount}
+              aria-label="限时特惠"
+              className={`px-3 py-1.5 rounded-xl text-xs font-medium border transition flex items-center gap-1.5 ${
+                onlyDiscount
+                  ? 'bg-zinc-900 text-white border-zinc-900'
+                  : 'bg-white text-zinc-600 border-zinc-200 hover:bg-zinc-50'
+              }`}
+            >
+              <Check className={`w-3.5 h-3.5 ${onlyDiscount ? 'opacity-100' : 'opacity-0'}`} />
+              限时特惠
+            </button>
+
+            {/* Compare Mode Button */}
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={() => {
+                  const nextMode = !isCompareMode;
+                  setIsCompareMode(nextMode);
+                  if (nextMode && compareProductIds.length > 0) {
+                    setIsCompareBarVisible(true);
+                  }
+                  showToast(
+                    nextMode
+                      ? '已开启对比模式，可在商品卡片上勾选最多 3 款商品进行对比'
+                      : '已退出对比模式',
+                    'info'
+                  );
+                }}
+                className={`px-3 py-1.5 rounded-xl text-xs font-medium border transition flex items-center gap-1.5 ${
+                  isCompareMode
+                    ? 'bg-amber-400 border-amber-400 text-zinc-950 font-bold shadow-xs'
+                    : 'bg-white text-zinc-700 border-zinc-200 hover:bg-zinc-50'
+                }`}
+                title="开启/关闭商品对比模式"
+                aria-pressed={isCompareMode}
+              >
+                <Scale className="w-3.5 h-3.5" />
+                <span>对比模式</span>
+                {compareProductIds.length > 0 && (
+                  <span
+                    className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+                      isCompareMode ? 'bg-zinc-900 text-white' : 'bg-amber-100 text-amber-900'
+                    }`}
+                  >
+                    {compareProductIds.length}/3
+                  </span>
+                )}
+              </button>
+
+              {/* Quick Restore Last Compare Shortcut if active compare is empty */}
+              {compareProductIds.length === 0 && lastComparedProductsList.length > 0 && (
+                <button
+                  onClick={handleRestoreLastCompare}
+                  className="px-2.5 py-1.5 rounded-xl text-xs font-medium text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-200/80 transition flex items-center gap-1 shadow-2xs"
+                  title={`恢复上次对比组合（${lastComparedProductsList.map((p) => p.title).join(' vs ')}）`}
+                >
+                  <RotateCcw className="w-3 h-3 text-amber-600" />
+                  <span>恢复上次对比</span>
+                </button>
+              )}
+            </div>
+          </div>
         </section>
 
         {/* Product Grid / List Section */}
+        {/* 左栏吃掉 220px 后，lg 断点（1024）下主内容只剩约 730px，4 列会把卡片压到 170px 左右（标题断行、价格与按钮挤成一团）。
+            改成 md 起 3 列、xl 起 4 列，各断点下列宽都稳定在 230px 上下。 */}
         {productPageLoading && products.length === 0 ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-6" aria-label="商品加载中" aria-busy="true">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6" aria-label="商品加载中" aria-busy="true">
             {Array.from({ length: 8 }).map((_, index) => (
               <div key={index} className="h-[360px] rounded-3xl border border-zinc-200 bg-white p-4 shadow-xs animate-pulse">
                 <div className="h-48 rounded-2xl bg-zinc-100" />
@@ -2746,7 +2790,7 @@ export default function App() {
           <div
             className={
               `${productPageLoading ? 'opacity-60 pointer-events-none' : ''} ${viewMode === 'grid'
-                ? 'grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-6'
+                ? 'grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-6'
                 : 'space-y-4'}`
             }
           >
@@ -2794,7 +2838,56 @@ export default function App() {
             </button>
           </nav>
         )}
+          </div>
+        </div>
       </main>
+
+      {/* 窄屏类目抽屉：类目树在 lg 以下折叠为左侧抽屉 */}
+      {isCategoryDrawerOpen && (
+        <div className="fixed inset-0 z-50 lg:hidden" role="presentation">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setIsCategoryDrawerOpen(false)} />
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="全部分类"
+            className="absolute left-0 top-0 h-full w-full max-w-xs overflow-y-auto bg-white p-4 shadow-2xl"
+          >
+            <div className="mb-3 flex items-center justify-between">
+              <span className="text-sm font-bold text-zinc-900">全部分类</span>
+              <button
+                type="button"
+                onClick={() => setIsCategoryDrawerOpen(false)}
+                aria-label="关闭分类"
+                className="rounded-lg p-1 text-zinc-400 transition hover:bg-zinc-100 hover:text-zinc-700"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <CategoryRail
+              categoryTree={categoryTree}
+              selectedCategory={selectedCategory}
+              onSelectCategory={handleSelectCategory}
+              onNavigate={() => setIsCategoryDrawerOpen(false)}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* 领券中心弹层：完整券墙（筛选、逐张领取、一键领取都在里面） */}
+      <CouponCenterModal
+        open={isCouponCenterOpen}
+        onClose={() => setIsCouponCenterOpen(false)}
+        coupons={coupons}
+        claimedCouponCodes={claimedCouponCodes}
+        appliedCoupon={appliedCoupon}
+        onClaimCoupon={handleClaimCoupon}
+        onClaimAllCoupons={handleClaimAllCoupons}
+        onUseCoupon={(c) => {
+          handleApplyCoupon(c.code);
+          setIsCouponCenterOpen(false);
+          setIsCartOpen(true);
+        }}
+      />
 
       {/* Footer */}
       <footer className="mt-16 bg-white border-t border-zinc-200">

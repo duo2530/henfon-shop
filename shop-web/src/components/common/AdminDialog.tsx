@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { AlertTriangle, Check, X } from 'lucide-react';
+import { useBodyScrollLock } from '../../hooks/useBodyScrollLock';
 
 export interface AdminDialogRequest {
   kind: 'confirm' | 'prompt';
@@ -22,6 +23,8 @@ export const AdminDialog: React.FC<AdminDialogProps> = ({ request, onResolve }) 
     setValue(request?.defaultValue || '');
   }, [request]);
 
+  // 弹层打开期间锁住底层文档滚动，避免出现滚动穿透。
+  useBodyScrollLock(Boolean(request));
   if (!request) return null;
 
   const close = (result: boolean | string | null) => onResolve(request, result);

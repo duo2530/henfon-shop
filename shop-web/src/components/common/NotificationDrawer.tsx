@@ -25,6 +25,7 @@ import {
   X,
   type LucideIcon
 } from 'lucide-react';
+import { useBodyScrollLock } from '../../hooks/useBodyScrollLock';
 
 interface NotificationDrawerProps {
   open: boolean;
@@ -125,6 +126,8 @@ export const NotificationDrawer: React.FC<NotificationDrawerProps> = ({ open, on
     void load();
   }, [open, load]);
 
+  // 弹层打开期间锁住底层文档滚动，避免出现滚动穿透。
+  useBodyScrollLock(Boolean(open));
   if (!open) return null;
 
   /** 切换筛选条件时回到第一页，避免停留在越界页看到空列表。 */
