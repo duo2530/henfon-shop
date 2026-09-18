@@ -285,7 +285,7 @@ CREATE TABLE IF NOT EXISTS `content_review` (
   `variant_summary` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '购买规格',
   `image_urls` text COLLATE utf8mb4_unicode_ci COMMENT '评价图片 URL JSON 数组',
   `helpful_count` int unsigned NOT NULL DEFAULT '0' COMMENT '有帮助数量',
-  `status` tinyint unsigned NOT NULL DEFAULT '1' COMMENT '状态：1展示，0隐藏',
+  `status` tinyint unsigned NOT NULL DEFAULT '1' COMMENT '状态：1展示，0待审核，2审核未通过',
   `reviewed_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) COMMENT '评价时间',
   `reply_content` varchar(2000) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '商家回复内容',
   `replied_at` datetime(3) DEFAULT NULL COMMENT '商家回复时间',

@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useAdmin } from '../../context/AdminContext';
-import { listContentReviews, replyContentReview, updateContentReviewStatus } from '../../api/adminApi';
+import { listContentReviews, replyContentReview, updateContentReviewStatus, countPendingContentReviews } from '../../api/adminApi';
 import { formatDateTime } from '../../utils/datetime';
 import { 
   Star, 
@@ -8,6 +8,7 @@ import {
   Search, 
   ThumbsUp, 
   CheckCircle, 
+  XCircle,
   CornerDownRight, 
   ShieldCheck, 
   AlertCircle, 
@@ -32,9 +33,10 @@ export interface ReviewItem {
 }
 
 function reviewStatus(status: number): ReviewItem['status'] {
-  // 后端约定：0隐藏、1展示；后台审核接口不再使用演示态“待审核”。
+  // 后端约定：0待审核、1已通过（门户展示）、2审核未通过（门户隐藏）。
   if (status === 1) return 'approved';
-  return 'hidden';
+  if (status === 2) return 'hidden';
+  return 'pending';
 }
 
 function parseReviewImages(imageUrls?: string): string[] {
@@ -56,8 +58,22 @@ export const ReviewManagementView: React.FC = () => {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [replyingId, setReplyingId] = useState<string | null>(null);
   const [statusUpdatingId, setStatusUpdatingId] = useState<string | null>(null);
+  const [pendingCount, setPendingCount] = useState(0);
   const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'all' | '0' | '1'>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | '0' | '1' | '2'>('all');
+
+  const loadPendingCount = useCallback(async () => {
+    try {
+      setPendingCount(await countPendingContentReviews());
+    } catch {
+      // 待审数量只用于提示，取不到时静默归零，不影响列表本身。
+      setPendingCount(0);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadPendingCount();
+  }, [loadPendingCount]);
 
   const loadReviews = useCallback(async () => {
     setLoading(true);
@@ -118,8 +134,7 @@ export const ReviewManagementView: React.FC = () => {
     }
   };
 
-  const handleToggleStatus = async (review: ReviewItem) => {
-    const nextStatus = review.status === 'approved' ? 0 : 1;
+  const handleChangeStatus = async (review: ReviewItem, nextStatus: 1 | 2) => {
     const previous = reviews;
     const nextFrontendStatus: ReviewItem['status'] = nextStatus === 1 ? 'approved' : 'hidden';
     setStatusUpdatingId(review.id);
@@ -127,7 +142,8 @@ export const ReviewManagementView: React.FC = () => {
     setReviews((prev) => prev.map((item) => item.id === review.id ? { ...item, status: nextFrontendStatus } : item));
     try {
       await updateContentReviewStatus(Number(review.id), nextStatus);
-      showToast(nextStatus === 1 ? '评价已通过审核' : '评价已隐藏', 'success');
+      showToast(nextStatus === 1 ? '评价已通过审核，门户商品页立即展示' : '评价未通过审核，门户不再展示', 'success');
+      void loadPendingCount();
     } catch (error) {
       setReviews(previous);
       showToast(error instanceof Error ? error.message : '评价状态更新失败，请稍后重试', 'error');
@@ -167,13 +183,14 @@ export const ReviewManagementView: React.FC = () => {
         </div>
         <select
           value={statusFilter}
-          onChange={(event) => setStatusFilter(event.target.value as 'all' | '0' | '1')}
+          onChange={(event) => setStatusFilter(event.target.value as 'all' | '0' | '1' | '2')}
           className="h-[36px] px-3 text-sm rounded-lg border border-[#E2E8F0] bg-white text-gray-700 outline-none"
-          aria-label="评价展示状态"
+          aria-label="评价审核状态"
         >
           <option value="all">全部状态</option>
-          <option value="1">已展示</option>
-          <option value="0">已隐藏</option>
+          <option value="0">待审核{pendingCount > 0 ? `（${pendingCount}）` : ''}</option>
+          <option value="1">已通过</option>
+          <option value="2">未通过</option>
         </select>
         <button
           type="button"
@@ -183,6 +200,21 @@ export const ReviewManagementView: React.FC = () => {
           <RefreshCw className="w-4 h-4" />刷新
         </button>
       </div>
+
+      {/* 待审提示：门户提交的评价默认进入待审核，不通过审核不会在商品页出现。 */}
+      {pendingCount > 0 && statusFilter !== '0' && (
+        <div className="flex flex-wrap items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-xs text-amber-800" role="status">
+          <ShieldCheck className="w-4 h-4 shrink-0" />
+          <span>有 <strong>{pendingCount}</strong> 条评价待审核，通过后才会在门户商品页展示。</span>
+          <button
+            type="button"
+            onClick={() => setStatusFilter('0')}
+            className="ml-auto font-semibold underline hover:text-amber-900"
+          >
+            只看待审核
+          </button>
+        </div>
+      )}
 
       {/* Review List */}
       {loading && <div className="flex items-center text-sm text-gray-500"><Loader2 className="w-4 h-4 mr-2 animate-spin" />正在加载真实评价数据…</div>}
@@ -206,11 +238,25 @@ export const ReviewManagementView: React.FC = () => {
           >
             <div className="flex items-start justify-between gap-4 mb-3">
               <div className="flex items-center gap-3">
-                <img
-                  src={rev.userAvatar}
-                  alt={rev.userName}
-                  className="w-10 h-10 rounded-full object-cover border border-gray-200"
-                />
+                {rev.userAvatar ? (
+                  <img
+                    src={rev.userAvatar}
+                    alt={rev.userName}
+                    className="w-10 h-10 rounded-full object-cover border border-gray-200"
+                    onError={(event) => {
+                      // 头像地址失效时退回首字母占位，避免裂图。
+                      const target = event.currentTarget;
+                      target.style.display = 'none';
+                      target.nextElementSibling?.classList.remove('hidden');
+                    }}
+                  />
+                ) : null}
+                <div
+                  className={`w-10 h-10 rounded-full bg-blue-50 text-blue-700 border border-blue-100 items-center justify-center text-sm font-bold shrink-0 ${rev.userAvatar ? 'hidden' : 'flex'}`}
+                  aria-hidden="true"
+                >
+                  {(rev.userName || '会').trim().charAt(0).toUpperCase()}
+                </div>
                 <div>
                   <div className="flex items-center gap-2">
                     <span className="font-bold text-gray-900 text-sm">{rev.userName}</span>
@@ -288,17 +334,53 @@ export const ReviewManagementView: React.FC = () => {
             <div className="flex items-center justify-between text-xs text-gray-400 pt-2 border-t border-gray-100">
               <span className="flex items-center gap-2">{rev.createdAt} · 赞同 {rev.likes}
                 <span className={`px-1.5 py-0.5 rounded ${rev.status === 'approved' ? 'bg-emerald-50 text-emerald-700' : rev.status === 'hidden' ? 'bg-gray-100 text-gray-600' : 'bg-amber-50 text-amber-700'}`}>
-                  {rev.status === 'approved' ? '已通过' : rev.status === 'hidden' ? '已隐藏' : '待审核'}
+                  {rev.status === 'approved' ? '已通过' : rev.status === 'hidden' ? '未通过' : '待审核'}
                 </span>
               </span>
-              <button
-                type="button"
-                disabled={statusUpdatingId === rev.id}
-                onClick={() => void handleToggleStatus(rev)}
-                className="text-gray-500 hover:text-amber-600 font-semibold disabled:opacity-50"
-              >
-                {statusUpdatingId === rev.id ? '处理中…' : rev.status === 'approved' ? '隐藏评价' : rev.status === 'hidden' ? '重新展示' : '通过审核'}
-              </button>
+              <div className="flex items-center gap-2">
+                {rev.status === 'pending' && (
+                  <>
+                    <button
+                      type="button"
+                      disabled={statusUpdatingId === rev.id}
+                      onClick={() => void handleChangeStatus(rev, 1)}
+                      className="inline-flex items-center gap-1 rounded-md bg-emerald-600 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+                    >
+                      <CheckCircle className="w-3.5 h-3.5" />
+                      {statusUpdatingId === rev.id ? '处理中…' : '通过'}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={statusUpdatingId === rev.id}
+                      onClick={() => void handleChangeStatus(rev, 2)}
+                      className="inline-flex items-center gap-1 rounded-md border border-rose-200 px-2.5 py-1 text-[11px] font-semibold text-rose-600 hover:bg-rose-50 disabled:opacity-50"
+                    >
+                      <XCircle className="w-3.5 h-3.5" />
+                      拒绝
+                    </button>
+                  </>
+                )}
+                {rev.status === 'approved' && (
+                  <button
+                    type="button"
+                    disabled={statusUpdatingId === rev.id}
+                    onClick={() => void handleChangeStatus(rev, 2)}
+                    className="font-semibold text-gray-500 hover:text-rose-600 disabled:opacity-50"
+                  >
+                    {statusUpdatingId === rev.id ? '处理中…' : '隐藏评价'}
+                  </button>
+                )}
+                {rev.status === 'hidden' && (
+                  <button
+                    type="button"
+                    disabled={statusUpdatingId === rev.id}
+                    onClick={() => void handleChangeStatus(rev, 1)}
+                    className="font-semibold text-gray-500 hover:text-emerald-600 disabled:opacity-50"
+                  >
+                    {statusUpdatingId === rev.id ? '处理中…' : '通过审核'}
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         ))}

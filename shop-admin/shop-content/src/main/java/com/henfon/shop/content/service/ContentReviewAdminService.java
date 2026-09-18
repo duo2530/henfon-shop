@@ -7,12 +7,17 @@ import com.henfon.shop.common.exception.BusinessException;
 import com.henfon.shop.content.dto.ContentReviewReplyRequest;
 import com.henfon.shop.content.entity.ContentReview;
 import com.henfon.shop.content.mapper.ContentReviewMapper;
+import com.henfon.shop.identity.entity.MemberUser;
+import com.henfon.shop.identity.mapper.MemberUserMapper;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.time.LocalDateTime;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 /**
  * 商品评价后台审核应用服务，负责审核、隐藏和商家回复。
@@ -23,12 +28,17 @@ import java.time.LocalDateTime;
 @Service
 public class ContentReviewAdminService {
 
-    private static final int HIDDEN = 0;
+    /** 会员提交后的初始状态，门户不展示。 */
+    private static final int PENDING = 0;
+    /** 审核通过，门户商品页展示并计入评分统计。 */
     private static final int VISIBLE = 1;
+    /** 审核未通过，门户不展示，会员可在「我的评价」看到处理结果。 */
+    private static final int HIDDEN = 2;
 
     private final ContentReviewMapper reviewMapper;
     private final ContentNotificationService notificationService;
     private final ContentImageUrlResolver imageUrlResolver;
+    private final MemberUserMapper memberUserMapper;
 
     /**
      * 创建评价后台审核服务。
@@ -36,15 +46,17 @@ public class ContentReviewAdminService {
      * @param reviewMapper 评价数据访问对象
      * @param notificationService 会员通知服务
      * @param imageUrlResolver 图片地址解析器
+     * @param memberUserMapper 会员数据访问对象
      * @author Henfon
      * @date 2026-09-04
      */
     @Autowired
     public ContentReviewAdminService(ContentReviewMapper reviewMapper, ContentNotificationService notificationService,
-                                     ContentImageUrlResolver imageUrlResolver) {
+                                     ContentImageUrlResolver imageUrlResolver, MemberUserMapper memberUserMapper) {
         this.reviewMapper = reviewMapper;
         this.notificationService = notificationService;
         this.imageUrlResolver = imageUrlResolver;
+        this.memberUserMapper = memberUserMapper;
     }
 
     /**
@@ -74,8 +86,51 @@ public class ContentReviewAdminService {
         if (result != null && result.getRecords() != null) {
             // 审核页要直接看晒单图，这里重签一次，存储值保持对象键不动。
             result.getRecords().forEach(this::resignImages);
+            fillMemberAvatars(result.getRecords());
         }
         return result;
+    }
+
+    /**
+     * 补齐并重签评价中的会员头像。
+     *
+     * <p>历史评价没有快照头像，按会员ID批量回查当前头像兜底，再统一重签成
+     * 当前有效的访问地址；外链头像原样透传。</p>
+     *
+     * @param reviews 评价列表
+     * @author Henfon
+     * @date 2026-09-18
+     */
+    private void fillMemberAvatars(List<ContentReview> reviews) {
+        if (reviews == null || reviews.isEmpty()) {
+            return;
+        }
+        List<Long> missingMemberIds = reviews.stream()
+                .filter(review -> review != null && review.getMemberId() != null
+                        && !StringUtils.hasText(review.getMemberAvatarUrl()))
+                .map(ContentReview::getMemberId)
+                .distinct()
+                .toList();
+        Map<Long, String> avatarById = new HashMap<>();
+        if (!missingMemberIds.isEmpty()) {
+            List<MemberUser> members = memberUserMapper.selectBatchIds(missingMemberIds);
+            if (members != null) {
+                members.stream()
+                        .filter(member -> member != null && StringUtils.hasText(member.getAvatarUrl()))
+                        .forEach(member -> avatarById.put(member.getId(), member.getAvatarUrl()));
+            }
+        }
+        for (ContentReview review : reviews) {
+            if (review == null) {
+                continue;
+            }
+            if (!StringUtils.hasText(review.getMemberAvatarUrl()) && review.getMemberId() != null) {
+                review.setMemberAvatarUrl(avatarById.get(review.getMemberId()));
+            }
+            if (StringUtils.hasText(review.getMemberAvatarUrl())) {
+                review.setMemberAvatarUrl(imageUrlResolver.accessUrl(review.getMemberAvatarUrl()));
+            }
+        }
     }
 
     /**
@@ -92,17 +147,33 @@ public class ContentReviewAdminService {
     }
 
     /**
+     * 统计待审核评价数量，供后台审核入口提示待办。
+     *
+     * @return 待审核评价条数
+     * @author Henfon
+     * @date 2026-09-18
+     */
+    public long pendingCount() {
+        Long count = reviewMapper.selectCount(
+                new LambdaQueryWrapper<ContentReview>().eq(ContentReview::getStatus, PENDING));
+        return count == null ? 0L : count;
+    }
+
+    /**
      * 审核或隐藏评价。
      *
+     * <p>只接受审核结果：1 通过、2 未通过。0 是会员提交后的待审核态，由提交流程写入，
+     * 后台不能把已处理的评价改回待审核。</p>
+     *
      * @param id 评价ID
-     * @param status 目标状态，1展示、0隐藏
+     * @param status 目标状态，1通过、2未通过
      * @author Henfon
      * @date 2026-08-30
      */
     @Transactional
     public void updateStatus(Long id, Integer status) {
         if (status == null || (status != VISIBLE && status != HIDDEN)) {
-            throw new BusinessException("CONTENT_REVIEW_STATUS_INVALID", "评价状态必须为0或1");
+            throw new BusinessException("CONTENT_REVIEW_STATUS_INVALID", "评价状态只能设置为1（通过）或2（未通过）");
         }
         ContentReview review = getRequired(id);
         Integer previousStatus = review.getStatus();
@@ -118,7 +189,7 @@ public class ContentReviewAdminService {
         if (!Integer.valueOf(status).equals(previousStatus) && notificationService != null
                 && review.getMemberId() != null) {
             String eventType = status == VISIBLE ? "REVIEW_APPROVED" : "REVIEW_HIDDEN";
-            String title = status == VISIBLE ? "评价审核通过" : "评价已隐藏";
+            String title = status == VISIBLE ? "评价审核通过" : "评价未通过审核";
             String content = status == VISIBLE
                     ? "您提交的商品评价已审核通过，感谢您的分享。"
                     : "您提交的商品评价未通过审核，暂不对外展示。";

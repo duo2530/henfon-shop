@@ -6,6 +6,8 @@ import com.henfon.shop.content.dto.ContentReviewFollowupRequest;
 import com.henfon.shop.content.dto.ContentReviewSubmitRequest;
 import com.henfon.shop.content.mapper.ContentBannerMapper;
 import com.henfon.shop.content.mapper.ContentReviewMapper;
+import com.henfon.shop.identity.entity.MemberUser;
+import com.henfon.shop.identity.mapper.MemberUserMapper;
 import com.henfon.shop.trade.service.TradeOrderService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -44,6 +46,9 @@ class ContentPortalServiceTest {
     @Mock
     private ContentImageUrlResolver imageUrlResolver;
 
+    @Mock
+    private MemberUserMapper memberUserMapper;
+
     /**
      * 创建被测服务，统一注入图片地址解析器替身。
      *
@@ -52,7 +57,8 @@ class ContentPortalServiceTest {
      * @date 2026-09-17
      */
     private ContentPortalService newService() {
-        return new ContentPortalService(bannerMapper, reviewMapper, tradeOrderService, imageUrlResolver);
+        return new ContentPortalService(bannerMapper, reviewMapper, tradeOrderService, imageUrlResolver,
+                memberUserMapper);
     }
 
     /**
@@ -175,5 +181,52 @@ class ContentPortalServiceTest {
         ArgumentCaptor<ContentReview> captor = ArgumentCaptor.forClass(ContentReview.class);
         verify(reviewMapper).insert(captor.capture());
         assertEquals("[\"media/a.png\"]", captor.getValue().getImageUrls());
+    }
+
+    /**
+     * 校验同一会员对同一商品重复提交评价时直接拒绝。
+     *
+     * @author Henfon
+     * @date 2026-09-18
+     */
+    @Test
+    void shouldRejectDuplicateReview() {
+        when(tradeOrderService.hasPurchasedProduct(7L, 100L)).thenReturn(true);
+        when(reviewMapper.selectCount(any())).thenReturn(1L);
+
+        BusinessException exception = assertThrows(BusinessException.class,
+                () -> newService().submitReview(100L, 7L, "会员",
+                        new ContentReviewSubmitRequest(5, "再来一条", null, null)));
+
+        assertEquals("CONTENT_REVIEW_ALREADY_EXISTS", exception.getCode());
+        verify(reviewMapper, org.mockito.Mockito.never()).insert(any(ContentReview.class));
+    }
+
+    /**
+     * 校验提交评价时快照会员当前头像并归一化为稳定引用。
+     *
+     * @author Henfon
+     * @date 2026-09-18
+     */
+    @Test
+    void shouldSnapshotMemberAvatarWhenSubmitting() {
+        MemberUser member = new MemberUser();
+        member.setId(7L);
+        member.setAvatarUrl("media/avatar/7.png");
+        when(tradeOrderService.hasPurchasedProduct(7L, 100L)).thenReturn(true);
+        when(memberUserMapper.selectById(7L)).thenReturn(member);
+        when(imageUrlResolver.normalizeReference("media/avatar/7.png")).thenReturn("media/avatar/7.png");
+        when(reviewMapper.insert(any(ContentReview.class))).thenAnswer(invocation -> {
+            ContentReview inserted = invocation.getArgument(0);
+            inserted.setId(32L);
+            return 1;
+        });
+
+        newService().submitReview(100L, 7L, "会员",
+                new ContentReviewSubmitRequest(5, "很好用", null, null));
+
+        ArgumentCaptor<ContentReview> captor = ArgumentCaptor.forClass(ContentReview.class);
+        verify(reviewMapper).insert(captor.capture());
+        assertEquals("media/avatar/7.png", captor.getValue().getMemberAvatarUrl());
     }
 }

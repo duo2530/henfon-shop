@@ -21,6 +21,10 @@ interface OrdersModalProps {
   onRetryLogistics?: (order: Order) => Promise<Order['trackingSteps']>;
   /** 点击订单商品行的「评价」，跳转到该商品的买家评价页签。 */
   onReviewOrderItem?: (item: OrderItem) => Promise<void> | void;
+  /** 点击已评价商品行的「查看」，打开个人中心的我的评价。 */
+  onViewReview?: (item: OrderItem) => void;
+  /** 已评价过的商品ID集合，这些商品行不再提供评价入口。 */
+  reviewedProductIds?: string[];
 }
 
 export const OrdersModal: React.FC<OrdersModalProps> = ({
@@ -39,6 +43,8 @@ export const OrdersModal: React.FC<OrdersModalProps> = ({
   onApplyInvoice,
   onRetryLogistics,
   onReviewOrderItem,
+  onViewReview,
+  reviewedProductIds = [],
 }) => {
   const [expandedOrderId, setExpandedOrderId] = useState<string | null>(
     orders[0]?.id || null
@@ -330,13 +336,30 @@ export const OrdersModal: React.FC<OrdersModalProps> = ({
                                 ¥{(item.price * item.quantity).toFixed(2)}
                               </span>
                               {canReviewOrder && onReviewOrderItem && (
-                                <button
-                                  type="button"
-                                  onClick={() => void onReviewOrderItem(item)}
-                                  className="rounded-md border border-zinc-900 px-2 py-1 text-[11px] font-semibold text-zinc-900 transition hover:bg-zinc-900 hover:text-white"
-                                >
-                                  评价
-                                </button>
+                                reviewedProductIds.includes(item.productId) ? (
+                                  <span className="flex shrink-0 items-center gap-1.5">
+                                    <span className="rounded-md border border-zinc-200 px-2 py-1 text-[11px] font-semibold text-zinc-400">
+                                      已评价
+                                    </span>
+                                    {onViewReview && (
+                                      <button
+                                        type="button"
+                                        onClick={() => onViewReview(item)}
+                                        className="rounded-md border border-sky-200 bg-sky-50 px-2 py-1 text-[11px] font-semibold text-sky-700 transition hover:bg-sky-100"
+                                      >
+                                        查看
+                                      </button>
+                                    )}
+                                  </span>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() => void onReviewOrderItem(item)}
+                                    className="rounded-md border border-zinc-900 px-2 py-1 text-[11px] font-semibold text-zinc-900 transition hover:bg-zinc-900 hover:text-white"
+                                  >
+                                    评价
+                                  </button>
+                                )
                               )}
                             </div>
                           </div>

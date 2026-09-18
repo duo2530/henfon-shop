@@ -12,6 +12,8 @@ import com.henfon.shop.content.entity.ContentBanner;
 import com.henfon.shop.content.entity.ContentReview;
 import com.henfon.shop.content.mapper.ContentBannerMapper;
 import com.henfon.shop.content.mapper.ContentReviewMapper;
+import com.henfon.shop.identity.entity.MemberUser;
+import com.henfon.shop.identity.mapper.MemberUserMapper;
 import com.henfon.shop.trade.service.TradeOrderService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -20,6 +22,7 @@ import org.springframework.util.StringUtils;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -36,6 +39,7 @@ public class ContentPortalService {
     private final ContentReviewMapper reviewMapper;
     private final TradeOrderService tradeOrderService;
     private final ContentImageUrlResolver imageUrlResolver;
+    private final MemberUserMapper memberUserMapper;
 
     /** 单次评价统计允许的商品数量上限。 */
     private static final int MAX_SUMMARY_PRODUCT_IDS = 100;
@@ -47,15 +51,18 @@ public class ContentPortalService {
      * @param reviewMapper 评价数据访问对象
      * @param tradeOrderService 订单应用服务
      * @param imageUrlResolver 图片地址解析器
+     * @param memberUserMapper 会员数据访问对象
      * @author Henfon
      * @date 2026-08-29
      */
     public ContentPortalService(ContentBannerMapper bannerMapper, ContentReviewMapper reviewMapper,
-                                TradeOrderService tradeOrderService, ContentImageUrlResolver imageUrlResolver) {
+                                TradeOrderService tradeOrderService, ContentImageUrlResolver imageUrlResolver,
+                                MemberUserMapper memberUserMapper) {
         this.bannerMapper = bannerMapper;
         this.reviewMapper = reviewMapper;
         this.tradeOrderService = tradeOrderService;
         this.imageUrlResolver = imageUrlResolver;
+        this.memberUserMapper = memberUserMapper;
     }
 
     /**
@@ -109,6 +116,7 @@ public class ContentPortalService {
             return Collections.emptyList();
         }
         reviews.forEach(this::resignReviewImages);
+        fillMemberAvatars(reviews);
         return reviews;
     }
 
@@ -137,6 +145,7 @@ public class ContentPortalService {
                         .orderByDesc(ContentReview::getCreatedAt));
         if (result != null && result.getRecords() != null) {
             result.getRecords().forEach(this::resignReviewImages);
+            fillMemberAvatars(result.getRecords());
         }
         return result;
     }
@@ -212,6 +221,7 @@ public class ContentPortalService {
                         .orderByDesc(ContentReview::getId));
         if (result != null && result.getRecords() != null) {
             result.getRecords().forEach(this::resignReviewImages);
+            fillMemberAvatars(result.getRecords());
         }
         return result;
     }
@@ -306,6 +316,48 @@ public class ContentPortalService {
     }
 
     /**
+     * 补齐并重签评价中的会员头像。
+     *
+     * <p>历史评价的 member_avatar_url 可能为空，这里按会员ID批量回查当前头像兜底，
+     * 有值的引用统一重签成当前有效的访问地址，外链原样透传。</p>
+     *
+     * @param reviews 评价列表
+     * @author Henfon
+     * @date 2026-09-18
+     */
+    private void fillMemberAvatars(List<ContentReview> reviews) {
+        if (reviews == null || reviews.isEmpty()) {
+            return;
+        }
+        List<Long> missingMemberIds = reviews.stream()
+                .filter(review -> review != null && review.getMemberId() != null
+                        && !StringUtils.hasText(review.getMemberAvatarUrl()))
+                .map(ContentReview::getMemberId)
+                .distinct()
+                .toList();
+        Map<Long, String> avatarById = new HashMap<>();
+        if (!missingMemberIds.isEmpty()) {
+            List<MemberUser> members = memberUserMapper.selectBatchIds(missingMemberIds);
+            if (members != null) {
+                members.stream()
+                        .filter(member -> member != null && StringUtils.hasText(member.getAvatarUrl()))
+                        .forEach(member -> avatarById.put(member.getId(), member.getAvatarUrl()));
+            }
+        }
+        for (ContentReview review : reviews) {
+            if (review == null) {
+                continue;
+            }
+            if (!StringUtils.hasText(review.getMemberAvatarUrl()) && review.getMemberId() != null) {
+                review.setMemberAvatarUrl(avatarById.get(review.getMemberId()));
+            }
+            if (StringUtils.hasText(review.getMemberAvatarUrl())) {
+                review.setMemberAvatarUrl(imageUrlResolver.accessUrl(review.getMemberAvatarUrl()));
+            }
+        }
+    }
+
+    /**
      * 保存门户会员评价，初始状态为待审核。
      *
      * @param productId 商品ID
@@ -324,10 +376,22 @@ public class ContentPortalService {
         if (!tradeOrderService.hasPurchasedProduct(memberId, productId)) {
             throw new BusinessException("CONTENT_REVIEW_PURCHASE_REQUIRED", "购买过该商品后才能评价");
         }
+        // 同一会员对同一商品只允许一条评价，重复提交直接拒绝，想补充内容走追评。
+        Long existing = reviewMapper.selectCount(new LambdaQueryWrapper<ContentReview>()
+                .eq(ContentReview::getMemberId, memberId)
+                .eq(ContentReview::getProductId, productId));
+        if (existing != null && existing > 0) {
+            throw new BusinessException("CONTENT_REVIEW_ALREADY_EXISTS", "您已评价过该商品，可在个人中心查看或追评");
+        }
         ContentReview review = new ContentReview();
         review.setProductId(productId);
         review.setMemberId(memberId);
         review.setMemberName(StringUtils.hasText(memberName) ? memberName.trim() : "会员");
+        // 快照会员当前头像，与会员名一样定格在评价时刻，避免之后换头像连带改动历史评价。
+        MemberUser member = memberUserMapper.selectById(memberId);
+        if (member != null && StringUtils.hasText(member.getAvatarUrl())) {
+            review.setMemberAvatarUrl(imageUrlResolver.normalizeReference(member.getAvatarUrl()));
+        }
         review.setRating(request.rating());
         review.setReviewContent(request.reviewContent().trim());
         review.setVariantSummary(StringUtils.hasText(request.variantSummary()) ? request.variantSummary().trim() : null);

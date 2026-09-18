@@ -285,8 +285,8 @@ export interface BackendContentReview {
   /** 评价图片地址 JSON 数组，后台审核页面用于晒单预览。 */
   imageUrls?: string;
   helpfulCount: number;
-  /** 后端约定：0 隐藏，1 展示。 */
-  status: 0 | 1;
+  /** 后端约定：0 待审核、1 已通过（门户展示）、2 审核未通过（门户隐藏）。 */
+  status: 0 | 1 | 2;
   reviewedAt?: string;
   replyContent?: string;
   repliedAt?: string;
@@ -1187,8 +1187,13 @@ export function listContentReviews(params: { current?: number; size?: number; pr
   return request<BackendPage<BackendContentReview>>(`/api/admin/content/reviews?${query.toString()}`);
 }
 
-export function updateContentReviewStatus(id: number, status: 0 | 1): Promise<void> {
+export function updateContentReviewStatus(id: number, status: 1 | 2): Promise<void> {
   return request<void>(`/api/admin/content/reviews/${id}/status?status=${status}`, { method: 'PUT' });
+}
+
+/** 待审核评价数量，后台据此提示审核待办。 */
+export function countPendingContentReviews(): Promise<number> {
+  return request<number>('/api/admin/content/reviews/pending-count');
 }
 
 export function replyContentReview(id: number, replyContent: string): Promise<void> {

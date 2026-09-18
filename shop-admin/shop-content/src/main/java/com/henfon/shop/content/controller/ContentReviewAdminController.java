@@ -65,10 +65,23 @@ public class ContentReviewAdminController {
     }
 
     /**
-     * 审核或隐藏评价。
+     * 统计待审核评价数量，后台据此提示审核待办。
+     *
+     * @return 待审核评价条数
+     * @author Henfon
+     * @date 2026-09-18
+     */
+    @GetMapping("/pending-count")
+    @PreAuthorize("hasAuthority('content:review:query')")
+    public ApiResponse<Long> pendingCount() {
+        return ApiResponse.success(reviewService.pendingCount(), requestId());
+    }
+
+    /**
+     * 审核评价，通过后门户商品页立即展示。
      *
      * @param id 评价ID
-     * @param status 目标状态，1展示、0隐藏
+     * @param status 目标状态，1通过、2未通过
      * @return 空响应
      * @author Henfon
      * @date 2026-08-30

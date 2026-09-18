@@ -52,6 +52,7 @@ import {
   confirmPortalOrder,
   fetchPortalProductDetail,
   fetchPortalProducts,
+  fetchPortalMyReviews,
   mapCategory,
   logoutPortalMember,
   updatePortalMemberProfile,
@@ -516,6 +517,33 @@ export default function App() {
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [authModalMode, setAuthModalMode] = useState<AuthMode>('login-pwd');
   const [isUserProfileModalOpen, setIsUserProfileModalOpen] = useState(false);
+  // 当前会员已评价过的商品ID集合，用于隐藏重复评价入口。
+  const [reviewedProductIds, setReviewedProductIds] = useState<string[]>([]);
+  // 订单「查看」评价时递增，触达个人中心展开「我的评价」并高亮对应商品。
+  const [reviewsViewToken, setReviewsViewToken] = useState(0);
+  const [highlightReviewProductId, setHighlightReviewProductId] = useState<number | null>(null);
+
+  // 登录后拉一次本人评价，标记哪些商品已评价过；退出登录则清空标记。
+  useEffect(() => {
+    if (!resolveMemberId(currentUser)) {
+      setReviewedProductIds([]);
+      return;
+    }
+    let cancelled = false;
+    fetchPortalMyReviews(1, 100)
+      .then((page) => {
+        if (cancelled) return;
+        setReviewedProductIds((page.records || [])
+          .map((record) => `prod-${record.productId}`)
+          .filter((id, index, all) => all.indexOf(id) === index));
+      })
+      .catch((error) => {
+        if (!cancelled) console.warn('我的评价加载失败，暂不标记已评价商品', error);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [currentUser]);
 
   // 邮件重置链接直接打开密码重置表单，避免用户还需在登录页手动寻找入口。
   useEffect(() => {
@@ -1144,8 +1172,23 @@ export default function App() {
     void openProductReview(fallback, item.variantsSummary);
   };
 
+  /**
+   * 从订单已评价商品行点「查看」：关闭订单弹窗并打开个人中心的「我的评价」。
+   *
+   * @param item 订单商品明细
+   */
+  const handleViewReviewFromOrder = (item: OrderItem) => {
+    const productNumber = Number(String(item.productId || '').replace(/^prod-/, ''));
+    setIsOrdersOpen(false);
+    setHighlightReviewProductId(Number.isFinite(productNumber) && productNumber > 0 ? productNumber : null);
+    setReviewsViewToken((current) => current + 1);
+    setIsUserProfileModalOpen(true);
+  };
+
   // 评价提交后刷新当前商品的评价统计（新评价待审核，公开条数通常不变）。
-  const handleReviewSubmitted = () => {
+  const handleReviewSubmitted = (productId: string) => {
+    // 同一商品只允许一条评价，提交成功后立即记入已评价集合，收起发表表单。
+    setReviewedProductIds((current) => current.includes(productId) ? current : [...current, productId]);
     const current = quickViewProduct;
     if (!current) return;
     void mergeReviewStats([current]).then(([enriched]) => {
@@ -2793,6 +2836,14 @@ export default function App() {
         reviewVariantSeed={quickViewVariantSeed}
         onRequireLogin={() => handleOpenAuth('login-pwd')}
         onReviewSubmitted={handleReviewSubmitted}
+        hasReviewed={quickViewProduct ? reviewedProductIds.includes(quickViewProduct.id) : false}
+        onViewMyReviews={() => {
+          const productNumber = Number(String(quickViewProduct?.id || '').replace(/^prod-/, ''));
+          setHighlightReviewProductId(Number.isFinite(productNumber) && productNumber > 0 ? productNumber : null);
+          setReviewsViewToken((current) => current + 1);
+          setQuickViewProduct(null);
+          setIsUserProfileModalOpen(true);
+        }}
         isWishlisted={quickViewProduct ? wishlist.includes(quickViewProduct.id) : false}
         onClose={() => setQuickViewProduct(null)}
         onAddToCart={(p, variants, qty) => {
@@ -2880,6 +2931,8 @@ export default function App() {
         onApplyInvoice={handleApplyInvoice}
         onRetryLogistics={handleRetryLogistics}
         onReviewOrderItem={handleReviewOrderItem}
+        onViewReview={handleViewReviewFromOrder}
+        reviewedProductIds={reviewedProductIds}
       />
 
       <WishlistModal
@@ -2953,7 +3006,12 @@ export default function App() {
         claimedCoupons={claimedCoupons}
         orders={orders}
         products={products}
-        onClose={() => setIsUserProfileModalOpen(false)}
+        reviewsViewToken={reviewsViewToken}
+        highlightProductId={highlightReviewProductId}
+        onClose={() => {
+          setIsUserProfileModalOpen(false);
+          setHighlightReviewProductId(null);
+        }}
         onUpdateUser={handleUpdateUser}
         onLogout={handleLogout}
         onOpenOrders={() => {

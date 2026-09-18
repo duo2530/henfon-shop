@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   X,
   User,
@@ -36,6 +36,10 @@ interface UserProfileModalProps {
   orders?: Order[];
   /** 已加载的商品，用于把评价里的商品ID还原成商品名。 */
   products?: Product[];
+  /** 订单「查看」评价时递增，用于重复触发展开「我的评价」。 */
+  reviewsViewToken?: number;
+  /** 需要高亮定位的评价所属商品ID。 */
+  highlightProductId?: number | null;
   onClose: () => void;
   onUpdateUser: (updatedUser: UserProfile) => void;
   onLogout: () => void;
@@ -71,6 +75,8 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
   claimedCoupons = [],
   orders = [],
   products = [],
+  reviewsViewToken = 0,
+  highlightProductId = null,
   onClose,
   onUpdateUser,
   onLogout,
@@ -91,6 +97,23 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
   const [reviewProductTitles, setReviewProductTitles] = useState<Record<number, string>>({});
   const [followupDraft, setFollowupDraft] = useState<Record<number, string>>({});
   const [followupSubmittingId, setFollowupSubmittingId] = useState<number | null>(null);
+  /** 高亮评价项的引用，用于从订单「查看」进入时滚动定位。 */
+  const highlightReviewRef = useRef<HTMLDivElement | null>(null);
+
+  // 从订单「查看」进入时自动展开「我的评价」，靠递增标记支持在同一商品上重复触发。
+  useEffect(() => {
+    if (!isOpen || reviewsViewToken <= 0) return;
+    setShowReviewsView(true);
+  }, [isOpen, reviewsViewToken]);
+
+  // 展开后把目标商品的那条评价滚到视野内，避免评价较多时用户还要自己找。
+  useEffect(() => {
+    if (!isOpen || !showReviewsView || highlightProductId == null) return;
+    const timer = window.setTimeout(() => {
+      highlightReviewRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 150);
+    return () => window.clearTimeout(timer);
+  }, [isOpen, showReviewsView, highlightProductId, reviewsViewToken, myReviews]);
 
   // 打开个人中心即加载自己的评价，展开前就能看到条数；后端评价只存商品ID，这里补齐商品名。
   useEffect(() => {
@@ -190,7 +213,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-zinc-950/70 backdrop-blur-sm animate-in fade-in duration-200">
       <div
-        className="relative w-full max-w-lg bg-white rounded-3xl shadow-2xl border border-zinc-100 overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]"
+        className="relative w-full max-w-2xl bg-white rounded-3xl shadow-2xl border border-zinc-100 overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header with VIP Banner */}
@@ -565,8 +588,15 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                     {myReviews.map((review) => {
                       const statusMeta = reviewStatusMeta(review.status);
                       const reviewImages = parsePortalReviewImageUrls(review.imageUrls);
+                      const isHighlighted = highlightProductId != null && review.productId === highlightProductId;
                       return (
-                        <div key={review.id} className="rounded-xl border border-zinc-100 bg-zinc-50/70 p-3 space-y-1.5">
+                        <div
+                          key={review.id}
+                          ref={isHighlighted ? highlightReviewRef : undefined}
+                          className={`rounded-xl border p-3 space-y-1.5 ${isHighlighted
+                            ? 'border-sky-300 bg-sky-50/60 ring-1 ring-sky-200'
+                            : 'border-zinc-100 bg-zinc-50/70'}`}
+                        >
                           <div className="flex items-center justify-between gap-2">
                             <span className="truncate text-[11px] font-bold text-zinc-900">
                               {reviewProductTitles[review.productId] || `商品 #${review.productId}`}

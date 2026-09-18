@@ -83,7 +83,11 @@ interface ProductQuickViewProps {
   /** 未登录时点击提交评价回调，用于拉起登录弹窗。 */
   onRequireLogin?: () => void;
   /** 评价提交成功回调，用于刷新商品评价统计。 */
-  onReviewSubmitted?: () => void;
+  onReviewSubmitted?: (productId: string) => void;
+  /** 当前会员是否已评价过该商品，已评价时不再展示发表表单。 */
+  hasReviewed?: boolean;
+  /** 已评价时点击「查看我的评价」，跳转到个人中心的我的评价。 */
+  onViewMyReviews?: () => void;
   isWishlisted: boolean;
   onClose: () => void;
   onAddToCart: (product: Product, variants: Record<string, string>, quantity: number) => void;
@@ -101,6 +105,8 @@ const ProductQuickViewContent: React.FC<Omit<ProductQuickViewProps, 'product'> &
   reviewVariantSeed,
   onRequireLogin,
   onReviewSubmitted,
+  hasReviewed = false,
+  onViewMyReviews,
   isWishlisted,
   onClose,
   onAddToCart,
@@ -232,7 +238,7 @@ const ProductQuickViewContent: React.FC<Omit<ProductQuickViewProps, 'product'> &
       setReviewVariant('');
       setReviewImages([]);
       setReviewNotice('评价已提交，审核通过后展示');
-      onReviewSubmitted?.();
+      onReviewSubmitted?.(product.id);
     } catch (error) {
       setReviewError(error instanceof Error ? error.message : '评价提交失败，请稍后重试');
     } finally {
@@ -555,7 +561,7 @@ const ProductQuickViewContent: React.FC<Omit<ProductQuickViewProps, 'product'> &
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 animate-in fade-in duration-200">
       <div 
-        className="bg-white rounded-3xl border border-zinc-200 shadow-2xl max-w-4xl w-full overflow-hidden relative flex flex-col max-h-[92vh]"
+        className="bg-white rounded-3xl border border-zinc-200 shadow-2xl w-full sm:w-4/5 max-w-none overflow-hidden relative flex flex-col max-h-[92vh]"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Close Button */}
@@ -1169,6 +1175,21 @@ const ProductQuickViewContent: React.FC<Omit<ProductQuickViewProps, 'product'> &
                   </button>
                 )}
                 {reviewNotice && <div className="text-xs text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-lg px-3 py-2">{reviewNotice}</div>}
+                {hasReviewed ? (
+                  <div className="border border-zinc-200 rounded-2xl p-4 text-xs text-zinc-500 space-y-2">
+                    <div className="text-sm font-bold text-zinc-900">你已评价过该商品</div>
+                    <p>评价提交后不可重复发表；审核通过后可在「个人中心 · 我的评价」里补充追评。</p>
+                    {onViewMyReviews && (
+                      <button
+                        type="button"
+                        onClick={onViewMyReviews}
+                        className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs font-semibold text-sky-700 transition hover:bg-sky-100"
+                      >
+                        查看我的评价
+                      </button>
+                    )}
+                  </div>
+                ) : (
                 <div className="border border-zinc-200 rounded-2xl p-4 space-y-3">
                   <div className="text-sm font-bold text-zinc-900">发表评价</div>
                   <div className="flex items-center gap-2"><span className="text-xs text-zinc-500">评分</span>{[1, 2, 3, 4, 5].map((score) => <button type="button" key={score} onClick={() => setReviewRating(score)} className="p-0.5"><Star className={`w-4 h-4 ${score <= reviewRating ? 'fill-amber-400 text-amber-400' : 'text-zinc-300'}`} /></button>)}</div>
@@ -1192,6 +1213,7 @@ const ProductQuickViewContent: React.FC<Omit<ProductQuickViewProps, 'product'> &
                   </div>
                   <button type="button" disabled={reviewSubmitting || reviewUploading} onClick={() => void submitReview()} className="rounded-lg bg-zinc-900 px-4 py-2 text-xs font-bold text-white disabled:opacity-50">{reviewSubmitting ? '提交中…' : '提交评价'}</button>
                 </div>
+                )}
               </div>
             )}
           </div>
