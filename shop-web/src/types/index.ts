@@ -222,12 +222,3 @@ export interface DailySalesData {
   orders: number; // 订单笔数 (单)
   avgOrderValue?: number;
 }
-
-export interface NotificationItem {
-  id: string;
-  title: string;
-  content: string;
-  time: string;
-  read: boolean;
-  type: 'order' | 'stock' | 'system';
-}

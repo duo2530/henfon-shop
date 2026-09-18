@@ -1179,6 +1179,34 @@ export function deleteStorageFile(objectKey: string): Promise<void> {
   return request<void>(`/api/admin/storage?objectKey=${encodeURIComponent(objectKey)}`, { method: 'DELETE' });
 }
 
+/** 后台通知中心列表项：平台发给会员的站内通知投递记录。 */
+export interface BackendContentNotification {
+  id: number;
+  memberId?: number;
+  memberName: string;
+  memberAccount?: string;
+  orderId?: number;
+  businessId?: string;
+  eventType: string;
+  title: string;
+  content: string;
+  /** 会员本人的已读状态：0 未读、1 已读。 */
+  readStatus: 0 | 1;
+  readAt?: string;
+  /** 运营的已读状态，与会员已读相互独立，标记它不会改变会员端的未读提示。 */
+  adminReadStatus: 0 | 1;
+  adminReadAt?: string;
+  createdAt?: string;
+}
+
+/** 后台通知中心统计概览。 */
+export interface BackendContentNotificationSummary {
+  total: number;
+  adminUnread: number;
+  memberUnread: number;
+  eventTypes: Array<{ eventType: string; count: number }>;
+}
+
 export function listContentReviews(params: { current?: number; size?: number; productId?: number; status?: number; keyword?: string } = {}): Promise<BackendPage<BackendContentReview>> {
   const query = new URLSearchParams({ current: String(params.current || 1), size: String(params.size || 100) });
   if (params.productId !== undefined) query.set('productId', String(params.productId));
@@ -1201,6 +1229,37 @@ export function replyContentReview(id: number, replyContent: string): Promise<vo
     method: 'PUT',
     body: JSON.stringify({ replyContent }),
   });
+}
+
+export function listContentNotifications(params: {
+  current?: number;
+  size?: number;
+  eventType?: string;
+  adminReadStatus?: 0 | 1;
+  memberReadStatus?: 0 | 1;
+  keyword?: string;
+  memberId?: number;
+} = {}): Promise<BackendPage<BackendContentNotification>> {
+  const query = new URLSearchParams({ current: String(params.current || 1), size: String(params.size || 20) });
+  if (params.eventType) query.set('eventType', params.eventType);
+  if (params.adminReadStatus !== undefined) query.set('adminReadStatus', String(params.adminReadStatus));
+  if (params.memberReadStatus !== undefined) query.set('memberReadStatus', String(params.memberReadStatus));
+  if (params.keyword) query.set('keyword', params.keyword);
+  if (params.memberId !== undefined) query.set('memberId', String(params.memberId));
+  return request<BackendPage<BackendContentNotification>>(`/api/admin/content/notifications?${query.toString()}`);
+}
+
+export function getContentNotificationSummary(): Promise<BackendContentNotificationSummary> {
+  return request<BackendContentNotificationSummary>('/api/admin/content/notifications/summary');
+}
+
+export function markContentNotificationRead(id: number): Promise<void> {
+  return request<void>(`/api/admin/content/notifications/${id}/read`, { method: 'PUT' });
+}
+
+/** 把全部运营未读通知标记为已读，返回本次更新条数。 */
+export function markAllContentNotificationsRead(): Promise<number> {
+  return request<number>('/api/admin/content/notifications/read-all', { method: 'PUT' });
 }
 
 export function listContentBanners(params: { current?: number; size?: number; keyword?: string; status?: number } = {}): Promise<BackendPage<BackendContentBanner>> {

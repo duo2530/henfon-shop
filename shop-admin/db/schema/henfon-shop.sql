@@ -261,6 +261,8 @@ CREATE TABLE IF NOT EXISTS `content_notification` (
   `dedupe_key` varchar(200) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '通知幂等键',
   `read_status` tinyint unsigned NOT NULL DEFAULT '0' COMMENT '已读状态：0未读，1已读',
   `read_at` datetime(3) DEFAULT NULL COMMENT '阅读时间',
+  `admin_read_status` tinyint unsigned NOT NULL DEFAULT '0' COMMENT '运营已读：0未读，1已读',
+  `admin_read_at` datetime(3) DEFAULT NULL COMMENT '运营阅读时间',
   `created_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) COMMENT '创建时间',
   `updated_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3) COMMENT '更新时间',
   `is_deleted` tinyint unsigned NOT NULL DEFAULT '0' COMMENT '逻辑删除：0否，1是',
@@ -268,6 +270,7 @@ CREATE TABLE IF NOT EXISTS `content_notification` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_content_notification_dedupe` (`member_id`,`dedupe_key`,`is_deleted`),
   KEY `idx_content_notification_member_read` (`member_id`,`read_status`,`created_at`),
+  KEY `idx_content_notification_admin_read` (`admin_read_status`,`created_at`),
   KEY `idx_content_notification_order` (`order_id`,`created_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='会员站内通知表';
 

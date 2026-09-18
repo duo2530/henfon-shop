@@ -22,12 +22,11 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
   onOpenMobileMenu, 
   onOpenNotifications 
 }) => {
-  const { searchQuery, setSearchQuery, notifications, setCurrentTab, showToast, authorizedMenuItems, currentUser, products, orders, users } = useAdmin();
+  const { searchQuery, setSearchQuery, notificationUnreadCount, setCurrentTab, showToast, authorizedMenuItems, currentUser, products, orders, users } = useAdmin();
   const [profileOpen, setProfileOpen] = useState(false);
   const [helpModalOpen, setHelpModalOpen] = useState(false);
   const [avatarLoadFailed, setAvatarLoadFailed] = useState(false);
 
-  const unreadNotificationsCount = notifications.filter((n) => !n.read).length;
   const hasSettingsMenu = containsMenuTab(authorizedMenuItems, 'settings');
   const displayName = currentUser?.realName || currentUser?.username || '管理员';
   const permissionLabel = currentUser?.permissions?.length ? `已授权 ${currentUser.permissions.length} 项` : '暂无权限';
@@ -100,7 +99,7 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
             aria-label="Notifications"
           >
             <Bell className="w-5 h-5" />
-            {unreadNotificationsCount > 0 && (
+            {notificationUnreadCount > 0 && (
               <span className="absolute top-1.5 right-1.5 w-2.5 h-2.5 bg-red-500 rounded-full ring-2 ring-white animate-pulse" />
             )}
           </button>

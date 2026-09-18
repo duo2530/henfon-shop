@@ -8,7 +8,6 @@ import {
   UserStatus,
   TodoItem, 
   NavigationTab, 
-  NotificationItem,
   Role,
   MenuItem,
   SystemUser,
@@ -71,8 +70,11 @@ import {
   updateTradeOrderRemark,
   refundTradeOrder,
   listInventoryWarnings,
-  listTradeAfterSales
-  ,auditTradeOrder
+  listTradeAfterSales,
+  auditTradeOrder,
+  getContentNotificationSummary,
+  markContentNotificationRead,
+  markAllContentNotificationsRead
 } from '../api/adminApi';
 import { backendMenusToTree, containsMenuTab, firstMenuTab } from '../navigation/menuAdapter';
 import { backendDataRulesToFrontend, backendDepartmentsToFrontend, backendMembersToFrontend, backendMenusToFrontend, backendRolesToFrontend, backendUsersToFrontend } from '../navigation/identityAdapter';
@@ -116,7 +118,8 @@ interface AdminContextType {
   catalogCategories: Array<{ id: number; code: ProductCategory; name: string }>;
   logisticsCarriers: BackendLogisticsCarrier[];
   todos: TodoItem[];
-  notifications: NotificationItem[];
+  /** 服务端统计的运营未读通知数，顶栏红点据此显示。 */
+  notificationUnreadCount: number;
   searchQuery: string;
   setSearchQuery: (query: string) => void;
   toasts: Toast[];
@@ -189,8 +192,10 @@ interface AdminContextType {
   resolveTodo: (id: string) => void;
   
   // Notification actions
-  markNotificationAsRead: (id: string) => void;
-  markAllNotificationsAsRead: () => void;
+  markNotificationAsRead: (id: number) => Promise<void>;
+  markAllNotificationsAsRead: () => Promise<number>;
+  /** 重新统计运营未读通知数，标记已读后调用。 */
+  refreshNotificationUnreadCount: () => Promise<void>;
 }
 
 const AdminContext = createContext<AdminContextType | undefined>(undefined);
@@ -294,7 +299,7 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   const [logisticsCarriers, setLogisticsCarriers] = useState<BackendLogisticsCarrier[]>([]);
   // 工作台待办和通知只展示服务端同步结果，避免把本地演示数据误当成线上业务数据。
   const [todos, setTodos] = useState<TodoItem[]>([]);
-  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const [notificationUnreadCount, setNotificationUnreadCount] = useState<number>(0);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [dialog, setDialog] = useState<AdminDialogRequest | null>(null);
@@ -519,14 +524,30 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     }
   };
 
-  // 根据真实售后与库存接口生成工作台待办和管理员通知。
+  /**
+   * 重新统计运营未读通知数。
+   *
+   * 通知中心的数据源是会员站内通知投递记录，未读数由服务端统计，
+   * 前端只缓存这个数字供顶栏红点使用，列表本身由抽屉按需分页拉取。
+   */
+  const refreshNotificationUnreadCount = async () => {
+    try {
+      const summary = await getContentNotificationSummary();
+      setNotificationUnreadCount(Number(summary?.adminUnread ?? 0));
+    } catch (error) {
+      // 统计接口不可用时按无未读处理，避免红点常亮却点不出内容。
+      setNotificationUnreadCount(0);
+      console.warn('通知统计接口暂不可用，已按无未读处理', error);
+    }
+  };
+
+  // 工作台待办取自真实的售后与库存接口；顶栏通知另走后端通知中心，这里顺带刷新未读数。
   const hydrateDashboardTasks = async () => {
     const [afterSalesResult, warningsResult] = await Promise.allSettled([
       listTradeAfterSales({ status: 10, size: 200 }),
       listInventoryWarnings()
     ]);
     const nextTodos: TodoItem[] = [];
-    const nextNotifications: NotificationItem[] = [];
 
     if (afterSalesResult.status === 'fulfilled') {
       const count = Number(afterSalesResult.value.total ?? afterSalesResult.value.records?.length ?? 0);
@@ -539,14 +560,6 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
           count,
           urgent: true,
           linkTab: 'orders'
-        });
-        nextNotifications.push({
-          id: 'notification-after-sale-pending',
-          title: '售后申请待审核',
-          content: `当前有 ${count} 个售后申请等待管理员审核。`,
-          time: '刚刚同步',
-          read: false,
-          type: 'order'
         });
       }
     }
@@ -563,23 +576,11 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
           urgent: true,
           linkTab: 'products'
         });
-        nextNotifications.push({
-          id: 'notification-stock-warning',
-          title: '库存安全库存预警',
-          content: `当前有 ${count} 个库存台账低于安全库存。`,
-          time: '刚刚同步',
-          read: false,
-          type: 'stock'
-        });
       }
     }
 
     setTodos(nextTodos);
-    setNotifications((previous) => nextNotifications.map((notification) => ({
-      ...notification,
-      // 刷新数据时保留当前会话内的已读状态。
-      read: previous.find((item) => item.id === notification.id)?.read ?? notification.read
-    })));
+    await refreshNotificationUnreadCount();
   };
 
   const loadAdminSession = async () => {
@@ -1598,15 +1599,27 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   };
 
   // Notification Methods
-  const markNotificationAsRead = (id: string) => {
-    setNotifications((prev) =>
-      prev.map((n) => (n.id === id ? { ...n, read: true } : n))
-    );
+  /** 标记单条通知为运营已读，并同步顶栏未读数。 */
+  const markNotificationAsRead = async (id: number) => {
+    try {
+      await markContentNotificationRead(id);
+      await refreshNotificationUnreadCount();
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : '标记已读失败', 'error');
+    }
   };
 
-  const markAllNotificationsAsRead = () => {
-    setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
-    showToast('所有通知已标记为已读', 'info');
+  /** 把全部未读通知标记为已读，返回本次更新条数。 */
+  const markAllNotificationsAsRead = async () => {
+    try {
+      const updated = await markAllContentNotificationsRead();
+      await refreshNotificationUnreadCount();
+      showToast(updated > 0 ? `已标记 ${updated} 条通知为已读` : '当前没有未读通知', 'info');
+      return Number(updated ?? 0);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : '标记已读失败', 'error');
+      return 0;
+    }
   };
 
   return (
@@ -1630,7 +1643,8 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         catalogCategories,
         logisticsCarriers,
         todos,
-        notifications,
+        notificationUnreadCount,
+        refreshNotificationUnreadCount,
         searchQuery,
         setSearchQuery,
         toasts,
