@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 import { Check, Copy, X } from 'lucide-react';
 import QRCode from 'qrcode';
 import { Order } from '../types/ecommerce';
@@ -16,6 +17,7 @@ interface PaymentModalProps {
  * @description 支付回调完成前保持页面可见，并由父页面持续轮询支付状态。
  */
 export const PaymentModal: React.FC<PaymentModalProps> = ({ order, onClose }) => {
+  useBodyScrollLock();
   const codeUrl = order.paymentCodeUrl;
   const [qrDataUrl, setQrDataUrl] = useState('');
 

@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
+import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 import { Product, ProductReview } from '../types/ecommerce';
 import { fetchPortalProductReviews, hasPortalMemberSession, submitPortalProductReview, uploadPortalMedia } from '../api/portalApi';
 import {
@@ -113,6 +114,7 @@ const ProductQuickViewContent: React.FC<Omit<ProductQuickViewProps, 'product'> &
   onDirectBuy,
   onToggleWishlist,
 }) => {
+  useBodyScrollLock();
   const [activeMediaIndex, setActiveMediaIndex] = useState(0);
   const [activeTab, setActiveTab] = useState<'details' | 'specs' | 'reviews'>('details');
   const [quantity, setQuantity] = useState(1);

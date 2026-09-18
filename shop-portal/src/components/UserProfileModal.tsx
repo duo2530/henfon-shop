@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 import {
   X,
   User,
@@ -84,6 +85,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
   onOpenWishlist,
   onOpenCouponCenter,
 }) => {
+  useBodyScrollLock(isOpen);
   const [isEditing, setIsEditing] = useState(false);
   const [showCouponsView, setShowCouponsView] = useState(false);
   const [nickname, setNickname] = useState(user?.nickname || '');

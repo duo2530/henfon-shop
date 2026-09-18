@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 import { CartItem, Address, Coupon, Order } from '../types/ecommerce';
 import { INITIAL_ADDRESSES } from '../data/products';
 import { quotePortalFreight } from '../api/portalApi';
@@ -72,6 +73,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   onDeleteAddress,
   onSetDefaultAddress,
 }) => {
+  useBodyScrollLock(isOpen);
   const safeItems = items || [];
 
   const [addresses, setAddresses] = useState<Address[]>(initialAddresses ?? INITIAL_ADDRESSES);

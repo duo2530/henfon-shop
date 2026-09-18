@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 import { CartItem, Coupon } from '../types/ecommerce';
 import { quotePortalFreight } from '../api/portalApi';
 import {
@@ -55,6 +56,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
   onOpenCouponCenter,
   onClearInvalidItems,
 }) => {
+  useBodyScrollLock(isOpen);
   const [couponInput, setCouponInput] = useState('');
   const [couponError, setCouponError] = useState('');
   const [showCouponSelector, setShowCouponSelector] = useState(false);

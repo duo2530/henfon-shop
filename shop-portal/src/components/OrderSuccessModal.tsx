@@ -1,4 +1,5 @@
 import React from 'react';
+import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 import { Order } from '../types/ecommerce';
 import { CheckCircle2, ArrowRight, MapPin, X } from 'lucide-react';
 import { OrderTracking } from './OrderTracking';
@@ -16,6 +17,7 @@ export const OrderSuccessModal: React.FC<OrderSuccessModalProps> = ({
   onViewAllOrders,
   onContinueShopping,
 }) => {
+  useBodyScrollLock(order != null);
   if (!order) return null;
 
   return (

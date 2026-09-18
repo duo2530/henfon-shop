@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 import { Product } from '../types/ecommerce';
 import {
   X,
@@ -59,6 +60,7 @@ export const CompareModal: React.FC<CompareModalProps> = ({
   lastComparedProducts = [],
   onRestoreLastCompare,
 }) => {
+  useBodyScrollLock(isOpen);
   const [activeTab, setActiveTab] = useState<'table' | 'charts'>('table');
   const [onlyDifferences, setOnlyDifferences] = useState<boolean>(false);
 

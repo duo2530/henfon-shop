@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 import {
   X,
   Lock,
@@ -118,6 +119,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   onClose,
   onLoginSuccess,
 }) => {
+  useBodyScrollLock(isOpen);
   const [mode, setMode] = useState<AuthMode>(initialMode);
   const [showPassword, setShowPassword] = useState(false);
   const [agreedTerms, setAgreedTerms] = useState(true);

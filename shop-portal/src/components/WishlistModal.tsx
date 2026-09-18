@@ -1,4 +1,5 @@
 import React from 'react';
+import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 import { Product } from '../types/ecommerce';
 import { Heart, ShoppingBag, Trash2, X, ArrowRight } from 'lucide-react';
 
@@ -19,6 +20,7 @@ export const WishlistModal: React.FC<WishlistModalProps> = ({
   onRemoveWishlist,
   onQuickView,
 }) => {
+  useBodyScrollLock(isOpen);
   if (!isOpen) return null;
 
   return (

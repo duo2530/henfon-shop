@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 import { Order, OrderItem } from '../types/ecommerce';
 import { PortalAfterSaleCreatePayload, PortalAfterSaleRecord, uploadPortalMedia } from '../api/portalApi';
 import { Package, X, ChevronDown, ChevronUp, RotateCcw, Receipt, Upload, Trash2 } from 'lucide-react';
@@ -46,6 +47,7 @@ export const OrdersModal: React.FC<OrdersModalProps> = ({
   onViewReview,
   reviewedProductIds = [],
 }) => {
+  useBodyScrollLock(isOpen);
   const [expandedOrderId, setExpandedOrderId] = useState<string | null>(
     orders[0]?.id || null
   );

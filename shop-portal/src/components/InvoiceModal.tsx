@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 import { Building2, CheckCircle2, Clock3, Download, FileText, Mail, X, XCircle } from 'lucide-react';
 import { Order } from '../types/ecommerce';
 import { PortalInvoiceRecord } from '../api/portalApi';
@@ -47,6 +48,7 @@ export const InvoiceModal: React.FC<InvoiceModalProps> = ({
   onClose,
   onSubmit,
 }) => {
+  useBodyScrollLock();
   const [invoiceType, setInvoiceType] = useState<1 | 2>(existing?.invoiceType === 2 ? 2 : 1);
   const [title, setTitle] = useState(defaultTitle);
   const [taxNo, setTaxNo] = useState('');
