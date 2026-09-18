@@ -175,9 +175,14 @@ public class Kuaidi100LogisticsProvider implements LogisticsProvider {
         }
         try {
             JsonNode root = objectMapper.readTree(response);
-            String apiStatus = text(root, "status");
             String message = StringUtils.hasText(text(root, "message")) ? text(root, "message") : "查询成功";
-            if (StringUtils.hasText(apiStatus) && !"200".equals(apiStatus)) {
+            // 快递100 的失败响应形如 {"result":false,"returnCode":"503","message":"验证签名失败"}，
+            // 既没有 status 也没有 data；只按 status 判断会把失败当成「成功且暂无轨迹」静默放过。
+            String returnCode = text(root, "returnCode");
+            String apiStatus = text(root, "status");
+            if ("false".equalsIgnoreCase(text(root, "result"))
+                    || (StringUtils.hasText(returnCode) && !"200".equals(returnCode))
+                    || (StringUtils.hasText(apiStatus) && !"200".equals(apiStatus))) {
                 return LogisticsTrackResult.failure(providerCode(), trackingNo, message);
             }
 
@@ -272,8 +277,10 @@ public class Kuaidi100LogisticsProvider implements LogisticsProvider {
     /**
      * 计算快递100要求的 MD5 签名。
      *
+     * <p>快递100只接受 32 位大写摘要，提交小写会被判为「验证签名失败」（returnCode 503）。</p>
+     *
      * @param value 待签名文本
-     * @return 小写十六进制摘要
+     * @return 32 位大写十六进制摘要
      * @author Henfon
      * @date 2026-09-01
      */
@@ -282,7 +289,7 @@ public class Kuaidi100LogisticsProvider implements LogisticsProvider {
             byte[] digest = MessageDigest.getInstance("MD5").digest(value.getBytes(StandardCharsets.UTF_8));
             StringBuilder result = new StringBuilder(digest.length * 2);
             for (byte item : digest) {
-                result.append(String.format("%02x", item & 0xff));
+                result.append(String.format("%02X", item & 0xff));
             }
             return result.toString();
         } catch (NoSuchAlgorithmException exception) {

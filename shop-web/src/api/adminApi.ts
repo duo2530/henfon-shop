@@ -183,10 +183,18 @@ export interface BackendCatalogProduct {
   currentStock: number;
   safetyStock: number;
   salesCount: number;
+  /** 默认计费重量（克），未设置时由运费服务按 1000 克兜底。 */
+  weightGram?: number;
   mainImageUrl?: string;
   tagsCsv?: string;
   status: number;
+  /** 审核状态：0 待审核、1 已通过、2 已驳回。 */
+  auditStatus?: number;
+  auditRemark?: string;
   createdAt?: string;
+  updatedAt?: string;
+  remark?: string;
+  version?: number;
 }
 
 export interface BackendCatalogCategory {

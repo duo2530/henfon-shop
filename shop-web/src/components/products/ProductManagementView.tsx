@@ -36,6 +36,9 @@ import {
 } from '../../api/adminApi';
 import { PermissionGate } from '../common/PermissionGate';
 import { Pagination } from '../common/Pagination';
+import { ProductDetailModal } from './ProductDetailModal';
+import { useBodyScrollLock } from '../../hooks/useBodyScrollLock';
+import { collectCategorySubtreeIds } from '../../navigation/catalogAdapter';
 
 type ProductContentDraft = {
   features: string[];
@@ -124,6 +127,10 @@ export const ProductManagementView: React.FC = () => {
   const [adjustedStockValue, setAdjustedStockValue] = useState<number>(0);
   const [stockAdjustReason, setStockAdjustReason] = useState<string>('日常盘点入库');
 
+  // 商品模块的弹层都高过一屏或自带滚动区，打开期间锁住底层文档滚动；
+  // 商品详情弹层在子组件内自行加锁，不在此处重复判断。
+  useBodyScrollLock(isModalOpen || batchCategoryOpen || Boolean(deleteConfirmId) || Boolean(stockAdjustProduct));
+
   // Form states for Add/Edit
   const [formData, setFormData] = useState({
     name: '',
@@ -150,6 +157,13 @@ export const ProductManagementView: React.FC = () => {
     return Array.from(set);
   }, [products]);
 
+  // 商品挂在三级类目上，选中的一级/二级类目要先展开成整棵子树的类目 ID，
+  // 否则按 code 精确匹配只会得到 0 条。
+  const categoryScopeIds = useMemo(
+    () => (selectedCategory === 'all' ? null : collectCategorySubtreeIds(categoryOptions, selectedCategory)),
+    [categoryOptions, selectedCategory]
+  );
+
   // Filtered & Sorted Products
   const filteredProducts = useMemo(() => {
     return products
@@ -159,7 +173,7 @@ export const ProductManagementView: React.FC = () => {
           item.name.toLowerCase().includes((searchTerm || searchQuery).toLowerCase()) ||
           item.sku.toLowerCase().includes((searchTerm || searchQuery).toLowerCase());
         const matchesCategory =
-          selectedCategory === 'all' || item.category === selectedCategory;
+          !categoryScopeIds || (item.categoryId !== undefined && categoryScopeIds.has(item.categoryId));
         const matchesStatus =
           selectedStatus === 'all' || item.status === selectedStatus;
         
@@ -183,7 +197,7 @@ export const ProductManagementView: React.FC = () => {
           return valA < valB ? 1 : -1;
         }
       });
-  }, [products, searchTerm, searchQuery, selectedCategory, selectedStatus, stockFilter, tagFilter, sortBy, sortOrder]);
+  }, [products, searchTerm, searchQuery, categoryScopeIds, selectedStatus, stockFilter, tagFilter, sortBy, sortOrder]);
 
   // Paginated records
   const totalEntries = filteredProducts.length;
@@ -1014,102 +1028,21 @@ export const ProductManagementView: React.FC = () => {
         </div>
       </div>
 
-      {/* Product Detail Modal */}
+      {/* 商品详情弹层：主档、图文、SKU、库存台账与评价统一在组件内分区呈现 */}
       {detailProduct && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-xs">
-          <div className="bg-white rounded-xl max-w-xl w-full p-6 border border-gray-200 shadow-2xl animate-in zoom-in-95 duration-150">
-            <div className="flex items-center justify-between pb-3 border-b border-gray-200">
-              <div className="flex items-center gap-2">
-                <span className="px-2 py-0.5 text-xs font-semibold rounded bg-blue-100 text-blue-700">
-                  {detailProduct.categoryName}
-                </span>
-                <h3 className="text-base font-bold text-gray-900">
-                  商品档案详情
-                </h3>
-              </div>
-              <button
-                onClick={() => setDetailProduct(null)}
-                className="text-gray-400 hover:text-gray-600 p-1 rounded-lg"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="py-4 space-y-4 text-sm">
-              <div className="flex items-start gap-4">
-                <img
-                  src={detailProduct.imageUrl}
-                  alt={detailProduct.name}
-                  className="w-24 h-24 rounded-lg object-cover border border-gray-200 shadow-sm"
-                />
-                <div className="space-y-1">
-                  <h4 className="font-bold text-gray-900 text-base">{detailProduct.name}</h4>
-                  <p className="text-xs text-gray-500 font-mono">SKU 编码: {detailProduct.sku}</p>
-                  <p className="text-xs text-gray-600 mt-1 leading-relaxed">
-                    {detailProduct.description || '暂无详细描述信息。'}
-                  </p>
-                  {detailProduct.tags && detailProduct.tags.length > 0 && (
-                    <div className="flex flex-wrap gap-1 mt-2">
-                      {detailProduct.tags.map((t) => (
-                        <span key={t} className="px-2 py-0.5 bg-blue-50 text-blue-700 text-xs rounded-full font-medium">
-                          #{t}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Financial & Stock Matrix */}
-              <div className="grid grid-cols-3 gap-3 p-3 bg-gray-50 rounded-xl border border-gray-200 text-center">
-                <div>
-                  <div className="text-xs text-gray-500">零售标价</div>
-                  <div className="text-base font-bold text-gray-900 mt-0.5">¥{detailProduct.price.toFixed(2)}</div>
-                  <div className="text-[11px] text-gray-400 line-through">原价 ¥{(detailProduct.originalPrice ?? 0).toFixed(2)}</div>
-                </div>
-                <PermissionGate permission="product:cost:view" fallback={<div className="flex items-center justify-center text-xs text-gray-400">成本信息已隐藏</div>}>
-                  <div>
-                    <div className="text-xs text-gray-500">采购成本 / 毛利率</div>
-                    <div className="text-base font-bold text-emerald-700 mt-0.5">
-                      ¥{(detailProduct.costPrice ?? 0).toFixed(2)}
-                    </div>
-                    <div className="text-[11px] text-emerald-600 font-medium">
-                      毛利率 {detailProduct.price > 0 ? Math.max(0, (((detailProduct.price - (detailProduct.costPrice ?? 0)) / detailProduct.price) * 100)).toFixed(1) : '0.0'}%
-                    </div>
-                  </div>
-                </PermissionGate>
-                <div>
-                  <div className="text-xs text-gray-500">现存可用库存</div>
-                  <div className="text-base font-bold text-blue-600 mt-0.5">{detailProduct.stock} 件</div>
-                  <div className="text-[11px] text-gray-500">安全警戒: {detailProduct.safetyStock ?? 0} 件</div>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3 text-xs text-gray-600">
-                <div className="p-2.5 bg-[#F8FAFC] rounded-lg border border-gray-200">
-                  <span className="text-gray-400 block mb-1">上架及创建时间</span>
-                  <span className="font-semibold text-gray-800">{detailProduct.createdAt}</span>
-                </div>
-                <div className="p-2.5 bg-[#F8FAFC] rounded-lg border border-gray-200">
-                  <span className="text-gray-400 block mb-1">累计成交出库</span>
-                  <span className="font-semibold text-gray-800">{detailProduct.salesCount ?? 0} 件商品</span>
-                </div>
-              </div>
-            </div>
-
-            <div className="pt-3 border-t border-gray-200 flex justify-end gap-2">
-              <button
-                onClick={() => {
-                  setDetailProduct(null);
-                  handleOpenEditModal(detailProduct);
-                }}
-                className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 text-xs font-semibold"
-              >
-                编辑此商品
-              </button>
-            </div>
-          </div>
-        </div>
+        <ProductDetailModal
+          product={detailProduct}
+          onClose={() => setDetailProduct(null)}
+          onEdit={(target) => {
+            setDetailProduct(null);
+            handleOpenEditModal(target);
+          }}
+          onAdjustStock={(target) => {
+            setDetailProduct(null);
+            setStockAdjustProduct(target);
+            setAdjustedStockValue(target.stock);
+          }}
+        />
       )}
 
       {/* Quick Stock Adjustment Modal */}
@@ -1221,7 +1154,7 @@ export const ProductManagementView: React.FC = () => {
 
       {/* Add / Edit Product Modal */}
       {isModalOpen && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-xs overflow-y-auto">
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-xs overflow-y-auto overscroll-contain">
           <div className="bg-white rounded-xl max-w-3xl w-full p-6 border border-gray-200 shadow-2xl animate-in zoom-in-95 duration-150 my-0">
             <div className="flex items-center justify-between pb-3 border-b border-gray-200">
               <h3 className="text-base font-bold text-gray-900">

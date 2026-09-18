@@ -17,6 +17,7 @@ import {
 import { formatDateTime } from '../utils/datetime';
 import {
   AdminUser,
+  BackendCatalogProduct,
   BackendLogisticsCarrier,
   BackendMemberTag,
   BackendMenu,
@@ -115,7 +116,8 @@ interface AdminContextType {
   memberTags: BackendMemberTag[];
   /** 重新拉取画像标签字典。 */
   refreshMemberTags: () => Promise<void>;
-  catalogCategories: Array<{ id: number; code: ProductCategory; name: string }>;
+  /** 服务端类目（含父子关系），商品页按类目筛选时据此展开整棵子树。 */
+  catalogCategories: Array<{ id: number; code: ProductCategory; name: string; parentId?: number }>;
   logisticsCarriers: BackendLogisticsCarrier[];
   todos: TodoItem[];
   /** 服务端统计的运营未读通知数，顶栏红点据此显示。 */
@@ -295,7 +297,7 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   const [users, setUsers] = useState<User[]>([]);
   // 画像标签字典（含每个标签的绑定人数）。筛选栏展示的是完整标签体系，不能从当前页会员数据反向推导。
   const [memberTags, setMemberTags] = useState<BackendMemberTag[]>([]);
-  const [catalogCategories, setCatalogCategories] = useState<Array<{ id: number; code: ProductCategory; name: string }>>([]);
+  const [catalogCategories, setCatalogCategories] = useState<Array<{ id: number; code: ProductCategory; name: string; parentId?: number }>>([]);
   const [logisticsCarriers, setLogisticsCarriers] = useState<BackendLogisticsCarrier[]>([]);
   // 工作台待办和通知只展示服务端同步结果，避免把本地演示数据误当成线上业务数据。
   const [todos, setTodos] = useState<TodoItem[]>([]);
@@ -488,14 +490,32 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     await refreshMemberTags();
   };
 
+  /**
+   * 拉取全部上架商品。
+   *
+   * 列表接口单页上限 200，而管理端商品页是「全量本地筛选 + 前端分页」，
+   * 只取第一页会让筛选结果天然缺一截，因此按页取完（最多 10 页兜底）。
+   */
+  const listAllCatalogProducts = async (): Promise<BackendCatalogProduct[]> => {
+    const pageSize = 200;
+    const firstPage = await listCatalogProducts({ current: 1, size: pageSize });
+    const records = [...firstPage.records];
+    const totalPages = Math.min(Math.ceil((firstPage.total || records.length) / pageSize), 10);
+    for (let page = 2; page <= totalPages; page += 1) {
+      const nextPage = await listCatalogProducts({ current: page, size: pageSize });
+      records.push(...nextPage.records);
+    }
+    return records;
+  };
+
   const hydrateCatalogMetadata = async () => {
-    const [productsResult, categoriesResult] = await Promise.allSettled([listCatalogProducts(), listCatalogCategories()]);
+    const [productsResult, categoriesResult] = await Promise.allSettled([listAllCatalogProducts(), listCatalogCategories()]);
     if (categoriesResult.status === 'fulfilled') {
       setCatalogCategories(backendCategoriesToOptions(categoriesResult.value));
     }
     if (productsResult.status === 'fulfilled') {
       const categoryMap = backendCategoriesToMap(categoriesResult.status === 'fulfilled' ? categoriesResult.value : []);
-      setProducts(backendProductsToFrontend(productsResult.value.records, categoryMap));
+      setProducts(backendProductsToFrontend(productsResult.value, categoryMap));
     } else {
       // 商品接口不可用时清空列表，避免继续展示本地演示商品。
       setProducts([]);

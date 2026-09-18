@@ -242,6 +242,10 @@ public class CatalogPortalService {
             CatalogProductMedia cover = coverMedia.get(product.getId());
             if (cover != null) {
                 product.setMainImageUrl(resolveMediaUrl(cover));
+            } else {
+                // 未维护媒体行的商品只有主图字段可依赖，库里存的是对象键，同样需要换发地址，
+                // 否则门户拿到「media/xxx.jpg」这类相对路径会解析成本站地址而 404。
+                product.setMainImageUrl(minioStorageService.resolveAccessUrl(product.getMainImageUrl()));
             }
         }
     }
@@ -263,7 +267,7 @@ public class CatalogPortalService {
     }
 
     /**
-     * 使用封面媒体覆盖商品主图地址。
+     * 用封面媒体覆盖商品主图地址；没有媒体行时改为对主图字段本身换发地址。
      *
      * @param product 商品实体
      * @param media 媒体列表
@@ -271,7 +275,11 @@ public class CatalogPortalService {
      * @date 2026-09-01
      */
     private void refreshMainImageUrl(CatalogProduct product, List<CatalogProductMedia> media) {
-        if (product == null || media == null || media.isEmpty()) {
+        if (product == null) {
+            return;
+        }
+        if (media == null || media.isEmpty()) {
+            product.setMainImageUrl(minioStorageService.resolveAccessUrl(product.getMainImageUrl()));
             return;
         }
         CatalogProductMedia cover = media.stream()

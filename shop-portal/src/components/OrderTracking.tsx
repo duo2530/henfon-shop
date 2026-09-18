@@ -93,16 +93,16 @@ const MILESTONES: MilestoneConfig[] = [
   },
   {
     key: 'shipped',
-    label: '顺丰已发货',
+    label: '已发货',
     labelEn: 'Shipped',
-    desc: '已由顺丰专车揽收并启运干线',
+    desc: '包裹已交付承运商并启运干线',
     icon: Truck,
   },
   {
     key: 'out_for_delivery',
     label: '派送中',
     labelEn: 'Out for Delivery',
-    desc: '顺丰快递员正在派送途中',
+    desc: '快递员正在派送途中',
     icon: Navigation,
   },
   {
@@ -113,6 +113,13 @@ const MILESTONES: MilestoneConfig[] = [
     icon: CheckCircle2,
   },
 ];
+
+/** 已终结的订单状态文案：这类订单不再有物流动作，阶段条改为展示订单状态。 */
+const CLOSED_STATUS_TEXT: Record<string, string> = {
+  cancelled: '订单已取消',
+  refunding: '退款处理中',
+  refunded: '已退款',
+};
 
 // Helper to normalize any incoming status string to 0..4 step index
 export function getStatusStepIndex(rawStatus?: string): number {
@@ -137,82 +144,88 @@ export function getStatusStepIndex(rawStatus?: string): number {
   return 0;
 }
 
-// Generate realistic default tracking logs based on active step index
+/**
+ * 服务端未返回轨迹时，按订单进度生成占位节点。
+ *
+ * 只描述环节本身，不编造承运商、运单号、时间与派件员信息 —— 这些一旦写死就会
+ * 与后台真实数据（如中通/圆通承运）冲突，属于「假数据」而非演示。
+ */
 function generateDefaultLogs(
   stepIndex: number,
-  orderNumber = 'ORD-2026-8899',
-  trackingNumber = 'SF19837482910',
-  addressStr = '上海市 浦东新区 科技大道 88 号'
+  orderNumber = '',
+  trackingNumber = '',
+  addressStr = ''
 ): TrackingEvent[] {
   const logs: TrackingEvent[] = [];
+  const orderTag = orderNumber ? `订单 ${orderNumber} ` : '订单 ';
 
   if (stepIndex >= 0) {
     logs.push({
       title: '订单提交成功，等待商家处理',
-      time: '2026-08-29 10:15:30',
+      time: '待同步',
       completed: true,
-      description: `订单 [${orderNumber}] 支付成功，资金已安全托管，系统已向Henfon智能仓下发拣选任务。`,
-      location: 'Henfon商城云端中心',
+      description: `${orderTag}支付已确认，系统已下发拣货任务。`,
+      location: 'Henfon 商城',
       iconType: 'order',
     });
   }
 
   if (stepIndex >= 1) {
     logs.push({
-      title: '华东智能中央仓已完成拣货打包',
-      time: '2026-08-29 11:30:15',
+      title: '仓库已完成拣货打包',
+      time: '待同步',
       completed: true,
-      description: '商品已完成防震气泡包装与电子防伪标签核验，出库封箱等待顺丰速运揽件。',
-      location: '华东智能自动化中央1号仓',
+      description: '商品已完成包装与出库核验，等待承运商揽件。',
+      location: 'Henfon 中央仓',
       iconType: 'warehouse',
     });
   } else {
     logs.push({
-      title: '仓库智能配货',
-      time: '预计今天下午',
+      title: '仓库拣货中',
+      time: '待更新',
       completed: false,
-      description: 'Henfon仓储中心正按订单顺序调度自动化拣选货位。',
-      location: 'Henfon中央仓',
+      description: '仓储中心正按订单顺序安排拣选与打包。',
+      location: 'Henfon 中央仓',
       iconType: 'warehouse',
     });
   }
 
   if (stepIndex >= 2) {
     logs.push({
-      title: '顺丰速运已揽收，航空件启运中',
-      time: '2026-08-29 14:20:00',
+      title: '承运商已揽收，运输中',
+      time: '待同步',
       completed: true,
-      description: `顺丰速运单号 [${trackingNumber}] 揽收成功，快件已通过顺丰航空特快干线发往目的地分拨中心。`,
-      location: '顺丰华东航空转运枢纽',
+      description: `${trackingNumber ? `运单号 ${trackingNumber} ` : ''}包裹已揽收并运往目的地分拨中心。`,
+      location: '承运商转运中心',
       iconType: 'transit',
     });
   } else {
     logs.push({
-      title: '顺丰速运干线运输',
-      time: '预计次日凌晨',
+      title: '等待承运商揽收',
+      time: '待更新',
       completed: false,
-      description: '快件将通过顺丰特快冷链/恒温航空专线发往目的地。',
-      location: '顺丰航空干线',
+      description: '包裹出库后将交由承运商运输。',
+      location: '承运商转运中心',
       iconType: 'transit',
     });
   }
 
   if (stepIndex >= 3) {
     logs.push({
-      title: '快件已到达目的地营业部，顺丰小哥正在派送',
-      time: '2026-08-30 08:45:10',
+      title: '快件已到达目的地，正在派送',
+      time: '待同步',
       completed: true,
-      description: `快件已到达目的地营业点，顺丰快递员【张师傅 (138-1234-5678)】正在派送中，请注意接听电话。`,
-      location: '顺丰速运目的地科技园营业部',
+      description: '快递员正在派送，请注意接听电话。',
+      location: '目的地营业部',
       iconType: 'courier',
     });
   } else {
     logs.push({
       title: '末端派送',
-      time: '预计次日上午',
+      time: '待更新',
       completed: false,
-      description: '顺丰快递员将进行送前电联并送货上门。',
-      location: '目的地营业网点',
+      description: '快件到达目的地后由快递员送货上门。',
+      location: '目的地营业部',
       iconType: 'courier',
     });
   }
@@ -220,16 +233,16 @@ function generateDefaultLogs(
   if (stepIndex >= 4) {
     logs.push({
       title: '包裹已签收，感谢您的信任！',
-      time: '2026-08-30 10:12:45',
+      time: '待同步',
       completed: true,
-      description: `快件已妥投并由【本人/智能门锁签收】，如有任何售后问题请随时联系Henfon商城 7×24 小时管家客服。`,
+      description: '包裹已妥投签收，如有售后问题请联系 Henfon 商城客服。',
       location: addressStr,
       iconType: 'done',
     });
   } else {
     logs.push({
       title: '签收妥投',
-      time: '预计 1-2 日内送达',
+      time: '待更新',
       completed: false,
       description: '收件时请核验外包装完好无损。',
       location: addressStr,
@@ -245,7 +258,7 @@ export const OrderTracking: React.FC<OrderTrackingProps> = ({
   status,
   orderNumber: propOrderNumber,
   trackingNumber: propTrackingNumber,
-  carrier = '顺丰速运 SF Express (特快专递)',
+  carrier = '',
   estimatedDelivery: propEstimatedDelivery,
   shippingAddress,
   trackingSteps,
@@ -257,9 +270,10 @@ export const OrderTracking: React.FC<OrderTrackingProps> = ({
   logisticsRetrying = false,
   className = '',
 }) => {
-  // Derive effective status
-  const currentStatusString = order ? order.status : status || 'paid';
-  const initialStepIndex = getStatusStepIndex(currentStatusString);
+  // 已终结的订单不会再有物流动作，阶段条改为展示订单状态，避免出现「已下单」这种与后台不符的进度。
+  const rawStatus = (order ? order.status : status || '').toLowerCase();
+  const closedStatusText = CLOSED_STATUS_TEXT[rawStatus];
+  const initialStepIndex = closedStatusText ? -1 : getStatusStepIndex(rawStatus);
 
   // Interactive state for simulation
   const [simulatedIndex, setSimulatedIndex] = useState<number>(initialStepIndex);
@@ -268,16 +282,16 @@ export const OrderTracking: React.FC<OrderTrackingProps> = ({
 
   const activeIndex = interactiveSimulator ? simulatedIndex : initialStepIndex;
 
-  const orderNumber = order?.orderNumber || propOrderNumber || 'ORD-2026-889921';
-  const trackingNumber = order?.trackingNumber || propTrackingNumber || 'SF19837482910';
+  // 承运商、运单号与时效一律取服务端数据：缺失时如实留空，不再回落成写死的顺丰值。
+  const orderNumber = order?.orderNumber || propOrderNumber || '';
+  const trackingNumber = order?.trackingNumber || propTrackingNumber || '';
   const effectiveCarrier = order?.carrier || carrier;
-  const estimatedDelivery =
-    order?.estimatedDelivery || propEstimatedDelivery || '预计 1-2 日内顺丰送达';
+  const estimatedDelivery = order?.estimatedDelivery || propEstimatedDelivery || '以物流轨迹为准';
 
   const address = order?.shippingAddress || shippingAddress;
   const addressText = address
     ? `${address.province} ${address.city} ${address.district} ${address.detail}`
-    : '上海市 浦东新区 科技大道 88 号';
+    : '';
 
   // Build event log list
   const effectiveLogs =
@@ -298,8 +312,8 @@ export const OrderTracking: React.FC<OrderTrackingProps> = ({
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const activeMilestone = MILESTONES[activeIndex] || MILESTONES[0];
-  const progressPercent = (activeIndex / (MILESTONES.length - 1)) * 100;
+  const activeMilestone = activeIndex >= 0 ? MILESTONES[activeIndex] || MILESTONES[0] : null;
+  const progressPercent = activeIndex >= 0 ? (activeIndex / (MILESTONES.length - 1)) * 100 : 0;
 
   return (
     <div className={`space-y-4 ${className}`}>
@@ -314,29 +328,31 @@ export const OrderTracking: React.FC<OrderTrackingProps> = ({
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="text-[11px] font-bold px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
                   <Truck className="w-3 h-3" />
-                  {effectiveCarrier}
+                  {effectiveCarrier || '承运商待分配'}
                 </span>
                 <span className="text-xs font-mono text-zinc-400">
-                  单号: <strong className="text-zinc-200">{trackingNumber}</strong>
+                  单号: <strong className="text-zinc-200">{trackingNumber || '暂无运单号'}</strong>
                 </span>
-                <button
-                  type="button"
-                  onClick={handleCopyTracking}
-                  className="p-1 rounded hover:bg-zinc-800 text-zinc-400 hover:text-white transition flex items-center gap-1 text-[11px]"
-                  title="复制顺丰运单号"
-                >
-                  {copied ? (
-                    <>
-                      <Check className="w-3 h-3 text-emerald-400" />
-                      <span className="text-emerald-400">已复制</span>
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="w-3 h-3" />
-                      <span>复制</span>
-                    </>
-                  )}
-                </button>
+                {trackingNumber ? (
+                  <button
+                    type="button"
+                    onClick={handleCopyTracking}
+                    className="p-1 rounded hover:bg-zinc-800 text-zinc-400 hover:text-white transition flex items-center gap-1 text-[11px]"
+                    title="复制运单号"
+                  >
+                    {copied ? (
+                      <>
+                        <Check className="w-3 h-3 text-emerald-400" />
+                        <span className="text-emerald-400">已复制</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3 h-3" />
+                        <span>复制</span>
+                      </>
+                    )}
+                  </button>
+                ) : null}
               </div>
 
               <div className="flex items-center gap-2 text-sm font-bold text-white pt-0.5">
@@ -346,7 +362,7 @@ export const OrderTracking: React.FC<OrderTrackingProps> = ({
                     <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                     <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
                   </span>
-                  {activeMilestone.label} ({activeMilestone.labelEn})
+                  {activeMilestone ? `${activeMilestone.label} (${activeMilestone.labelEn})` : closedStatusText}
                 </span>
               </div>
               {onRetryLogistics && trackingNumber && (
@@ -399,7 +415,7 @@ export const OrderTracking: React.FC<OrderTrackingProps> = ({
       )}
 
       {/* 2. Visual Milestone Progress Timeline (Horizontal Mode) */}
-      {(layout === 'horizontal' || layout === 'combined') && (
+      {activeIndex >= 0 && (layout === 'horizontal' || layout === 'combined') && (
         <div className="p-5 rounded-2xl bg-white border border-zinc-200/90 shadow-xs space-y-4">
           <div className="flex items-center justify-between">
             <h4 className="text-xs font-bold text-zinc-900 flex items-center gap-2">
@@ -547,6 +563,11 @@ export const OrderTracking: React.FC<OrderTrackingProps> = ({
               )}
 
               {/* Vertical Step Nodes */}
+              {effectiveLogs.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-zinc-200 bg-zinc-50/60 px-4 py-6 text-center text-xs text-zinc-500">
+                  暂无物流轨迹，节点同步后自动更新。
+                </div>
+              ) : (
               <div className="relative pl-6 space-y-5 before:absolute before:left-[11px] before:top-2 before:bottom-2 before:w-[2px] before:bg-zinc-100">
                 {effectiveLogs.map((log, idx) => {
                   const isLatestCompleted = log.completed && (idx === 0 || effectiveLogs[idx - 1]?.completed === false || idx === effectiveLogs.filter(l => l.completed).length - 1);
@@ -609,17 +630,18 @@ export const OrderTracking: React.FC<OrderTrackingProps> = ({
                   );
                 })}
               </div>
+              )}
 
               {/* Security & Official Customer Care Footer */}
               <div className="pt-3 border-t border-zinc-100 flex flex-col sm:flex-row items-center justify-between gap-2 text-[11px] text-zinc-400">
                 <div className="flex items-center gap-1.5">
                   <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
-                  <span>顺丰保价与全天候运输监控中</span>
+                  <span>承运商运输监控与保价服务中</span>
                 </div>
                 <div className="flex items-center gap-3">
                   <span className="flex items-center gap-1 hover:text-zinc-700 cursor-pointer">
                     <Phone className="w-3 h-3" />
-                    顺丰专线 95338
+                    承运商客服专线
                   </span>
                   <span>·</span>
                   <span className="hover:text-zinc-700 cursor-pointer">Henfon专属客服</span>

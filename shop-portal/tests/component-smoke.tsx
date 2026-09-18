@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { ProductCard } from '../src/components/ProductCard';
 import { sanitizeProductRichText } from '../src/components/ProductQuickView';
 import { HeroBanner } from '../src/components/HeroBanner';
+import { OrderTracking } from '../src/components/OrderTracking';
 import { isEmail, AuthModal } from '../src/components/AuthModal';
 import type { Product } from '../src/types/ecommerce';
 
@@ -104,4 +105,15 @@ const richText = sanitizeProductRichText('<p>安全介绍</p><script>alert(1)</s
 assert.match(richText, /<p>安全介绍<\/p>/);
 assert.doesNotMatch(richText, /script|onclick|javascript:/i);
 
-console.log('shop-portal 组件冒烟测试通过：商品卡片、库存禁购、Banner 跳转数据和键盘语义正常');
+// 物流进度必须跟后台真实状态走：已取消订单不套用物流里程碑，缺承运商与运单号时不得回落成写死的顺丰值。
+const closedTrackingMarkup = renderToStaticMarkup(<OrderTracking status="cancelled" />);
+assert.match(closedTrackingMarkup, /订单已取消/);
+assert.doesNotMatch(closedTrackingMarkup, /顺丰/);
+assert.doesNotMatch(closedTrackingMarkup, /SF19837482910/);
+
+const pendingTrackingMarkup = renderToStaticMarkup(<OrderTracking status="processing" />);
+assert.match(pendingTrackingMarkup, /承运商待分配/);
+assert.doesNotMatch(pendingTrackingMarkup, /顺丰/);
+assert.doesNotMatch(pendingTrackingMarkup, /SF19837482910/);
+
+console.log('shop-portal 组件冒烟测试通过：商品卡片、库存禁购、Banner 跳转数据、物流进度取数与键盘语义正常');
