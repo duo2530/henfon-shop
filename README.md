@@ -380,25 +380,114 @@ node db/seed/import-demo.mjs
 
 ### 后端
 
-配置文件在 `shop-admin/shop-boot/src/main/resources/` 下，按 Profile 分 `application.yml`、`application-dev.yml`、`application-test.yml`、`application-prod.yml`。未显式指定 `SPRING_PROFILES_ACTIVE` 时默认用 `dev`。
+配置文件在 `shop-admin/shop-boot/src/main/resources/` 下，按 Profile 分 `application.yml`、`application-dev.yml`、`application-test.yml`、`application-prod.yml`。未显式指定 `SPRING_PROFILES_ACTIVE` 时默认用 `dev`。每个值都写成 `${环境变量:默认值}`，所以同一个 jar 换环境只改环境变量，不用改代码。
 
-服务本身：端口 `8080`（`SHOP_SERVER_PORT`），上下文路径 `/`（`SHOP_CONTEXT_PATH`），上传限制单文件 20MB、单请求 50MB，健康与指标端点是 `/actuator/health`、`/actuator/info`、`/actuator/metrics`。
+服务本身：端口 `8080`（`SHOP_SERVER_PORT`），上下文路径 `/`（`SHOP_CONTEXT_PATH`），上传限制单文件 20MB、单请求 50MB（`SHOP_UPLOAD_MAX_FILE_SIZE`、`SHOP_UPLOAD_MAX_REQUEST_SIZE`），健康与指标端点是 `/actuator/health`、`/actuator/info`、`/actuator/metrics`。
 
-**MySQL**：开发环境默认 `127.0.0.1:3306`，库名 `henfon-shop`，账号 `root / 123456`。对应 `SHOP_MYSQL_URL`、`SHOP_MYSQL_USERNAME`、`SHOP_MYSQL_PASSWORD`。
+`application-dev.yml` 里已经填了可用的本机默认值（含邮箱授权码、微信支付联调参数、快递 100 测试账号），直接 `java -jar` 起就能跑。走 `docker compose` 时后端是 `prod` profile，这些默认值一律不生效，必须在 `.env` 里补齐——两条路径要改的变量不一样，下面分开标注。
 
-**Redis**：开发环境默认 `127.0.0.1:6379`，密码 `123456`，逻辑库 `0`。如果你的本地 Redis 没有密码，需要自己调整。对应 `SHOP_REDIS_HOST`、`SHOP_REDIS_PORT`、`SHOP_REDIS_PASSWORD`、`SHOP_REDIS_DATABASE`。
+下面按必需程度排，标了「必配」的不配好，几乎每个接口都会报错，其余按用到的功能取舍。
 
-**RocketMQ**：NameServer 默认 `127.0.0.1:9876`。开发环境消费监听器默认关闭（`SHOP_ROCKETMQ_CONSUMER_ENABLED=false`），免得本地没有 MQ 时反复报错；要联调订单 Outbox、通知或报表事件时，先起 RocketMQ 再把这个变量改成 `true`。
+#### MySQL（必配）
 
-**MinIO**：默认 `http://127.0.0.1:9000`，账号密钥都是 `minioadmin`，bucket 为 `shop`。不用文件上传能力时可以不启动。
+| 变量 | 说明 |
+| --- | --- |
+| `SHOP_MYSQL_URL` | JDBC 连接串。dev 默认 `jdbc:mysql://127.0.0.1:3306/henfon-shop`，带 `characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true` |
+| `SHOP_MYSQL_USERNAME` / `SHOP_MYSQL_PASSWORD` | dev 默认 `root` / `123456` |
 
-**JWT**：开发环境有默认密钥，过期时间 8 小时（`SHOP_JWT_EXPIRATION_SECONDS=28800`）。生产环境必须替换 `SHOP_JWT_SECRET`。
+库要先建好（见「快速开始」第 2 步），账号需要有该库的读写权限。
 
-**邮件与通知**：开发环境通过 163 邮箱的 SMTP 发送找回密码邮件和业务通知，站内通知与邮件开关由 `SHOP_EMAIL_NOTIFICATION_ENABLED` 控制。SMTP 账号和授权码建议全部走环境变量。
+URL 里的参数不要删：`characterEncoding=utf8`、`serverTimezone=Asia/Shanghai` 关系到中文和时间，`allowPublicKeyRetrieval=true` 是 MySQL 8 默认认证插件 `caching_sha2_password` 在不开 SSL 时的必要条件，去掉会报 `Public Key Retrieval is not allowed`。
 
-**微信支付**：开发环境已配置微信支付 V3，默认按 `NATIVE`（网页二维码）启用，参数包括 AppID、商户号、商户证书序列号、API v3 密钥、商户私钥路径、平台公钥 ID 与公钥路径。两个回调地址必须是微信服务器能访问到的公网 HTTPS 地址，并且与商户平台配置一致：支付通知 `/api/wx/pay/notify/v3`，退款通知 `/api/wx/pay/refund/notify/v3`。暂时不调微信接口就把 `SHOP_WECHAT_PAY_ENABLED` 改成 `false`。
+`prod` 下 `SHOP_MYSQL_URL` 没有默认值，必须给完整连接串（含上面那串参数），只填 host 是起不来的。
 
-**物流查询**：已接入快递 100 查询接口（`SHOP_KUAIDI100_*`），不联动时可以关掉。
+连不上数据库时后端不一定会立刻退出：dev 的 HikariCP 配了 `initialization-fail-timeout: -1`，启动阶段不校验连接，之后每条涉及数据库的接口才报错。所以「后端起来了但接口全错」先查这一项。
+
+#### Redis（必配）
+
+`SHOP_REDIS_HOST`、`SHOP_REDIS_PORT`、`SHOP_REDIS_USERNAME`、`SHOP_REDIS_PASSWORD`、`SHOP_REDIS_DATABASE`，dev 默认 `127.0.0.1:6379`、库 `0`、密码 `123456`。
+
+本机 Redis 没设密码时要把 `SHOP_REDIS_PASSWORD` 显式置空，留着默认的 `123456` 会连不上。刷新令牌、访问令牌黑名单、找回密码令牌、登录失败计数都放在 Redis，连不上表现为「登录成功但刷新令牌立刻失效、重新登录也留不住会话」。
+
+如果 Redis 上还跑着别的应用，`SHOP_REDIS_DATABASE` 换一个库号比自己改 key 前缀省事。
+
+#### JWT（必配）
+
+`SHOP_JWT_SECRET`：dev 内置了一个占位串，生产必须换成随机长值。生成一条：
+
+```powershell
+$bytes = New-Object byte[] 48
+[System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
+[Convert]::ToBase64String($bytes)
+```
+
+有效期由 `SHOP_JWT_EXPIRATION_SECONDS` 决定（dev 8 小时、prod 2 小时），签发方 `SHOP_JWT_ISSUER` 默认 `henfon-shop`。轮换密钥会让所有已签发的访问令牌立即失效，用户需要重新登录，这是预期行为。
+
+#### 邮件：找回密码与业务通知（按需）
+
+用到两处：门户「忘记密码」发一次性重置令牌，和订单、售后等事件触发的会员通知邮件。走标准 SMTP，163、QQ 邮箱、企业邮箱都行，但密码栏填的不是邮箱登录密码，是邮件平台单独签发的授权码。
+
+以 163 邮箱为例：
+
+1. 用浏览器登录邮箱网页版，进「设置 → POP3/SMTP/IMAP」，开启「SMTP 服务」。
+2. 按提示用手机发短信做验证，通过后页面会显示一串 16 位授权码。只显示一次，先记下来。
+3. 在配置或环境变量里填这几项：
+   - `SHOP_MAIL_HOST`（163 是 `smtp.163.com`）、`SHOP_MAIL_PORT`（默认 `25`）
+   - `SHOP_MAIL_USERNAME`：完整邮箱地址
+   - `SHOP_MAIL_PASSWORD`：上一步的授权码
+   - `SHOP_EMAIL_FROM`：发件人地址，必须和 `SHOP_MAIL_USERNAME` 相同，用别的地址发会被 163 拒收
+   - `SHOP_EMAIL_SUBJECT_PREFIX`：邮件主题前缀，默认 `Henfon商城`
+4. 打开通知开关 `SHOP_EMAIL_NOTIFICATION_ENABLED=true`（dev 默认 `true`，prod 默认 `false`）。
+5. 重启后端，在门户点「忘记密码」提交自己的邮箱，能收到邮件就算通了。
+
+换 QQ 邮箱、企业邮箱同理：host 换成各自的 SMTP 地址，授权码换成该平台生成的，其他不变。
+
+端口与加密：dev 默认走 `25` + `SHOP_MAIL_SMTP_STARTTLS=true`（STARTTLS 方式）。163 的 SMTP 只提供 `25`（明文）和 `465`/`994`（隐式 SSL）这几个端口，如果所在网络封了 25，就得改用 465；而 465 需要 `mail.smtp.ssl.enable=true` 属性，当前配置只把 auth 和 starttls 暴露成了环境变量，这种情况要直接改 `application-dev.yml`。用 QQ 邮箱、企业邮箱的话支持 `587`，把 `SHOP_MAIL_PORT` 设成 587 即可。
+
+`SHOP_MEMBER_PASSWORD_RESET_URL` 是重置链接的前缀，后端会在后面拼 `?resetToken=...`。dev 默认 `http://localhost:3000/`（门户开发端口），部署时改成门户的实际地址，否则邮件里的链接会落到管理端或者打不开。
+
+排查提示：SMTP 没配好不会让后端启动失败，也不会在接口上报错。邮件发送器是通过 `ObjectProvider` 取的，拿不到就静默跳过，只在日志里留一行 debug（`邮件通知已启用但 SMTP 未配置，跳过...`）。「邮件收不到」时先搜这行日志，能直接区分是配置没生效还是被 SMTP 服务端拒了（后者会有 `553` 之类的报错栈）。另外业务通知只发给有合法邮箱的会员，会员没填邮箱也会静默跳过。
+
+#### MinIO：商品图、评价图、售后凭证（按需）
+
+`MINIO_ENDPOINT`、`MINIO_ACCESS_KEY`、`MINIO_SECRET_KEY`、`MINIO_BUCKET`（默认 `shop`）。只跑商品、订单这类不动文件的流程，可以不启动。
+
+桶不用手工建，第一次上传时后端会自己创建。文件地址是端到端签名地址、24 小时过期，库里存的是对象键而不是签名地址，所以换 endpoint 或换密钥后旧图会整体 403——修法是让后端和导入脚本的 `MINIO_*` 保持一致。
+
+用 `docker compose` 起 MinIO 时，它的账号密码取自 `.env` 的 `MINIO_ACCESS_KEY` / `MINIO_SECRET_KEY`（示例值是 `henfon-minio`），而代码默认是 `minioadmin`，两边不一致会 403。
+
+#### RocketMQ：Outbox 与异步事件（按需）
+
+`ROCKETMQ_NAME_SERVER`（默认 `127.0.0.1:9876`）、`ROCKETMQ_PRODUCER_GROUP`、`ROCKETMQ_SEND_TIMEOUT`、`ROCKETMQ_RETRY_TIMES`。
+
+dev 默认把全部消费监听器摘掉（`SHOP_ROCKETMQ_CONSUMER_ENABLED=false`），所以本机没装 MQ 也能正常启动，代价是通知、报表投影这类副作用只能靠数据库轮询兜底（导出等 1 分钟出结果是这个原因，不是故障）。要联调完整事件链，先起 RocketMQ，再把 `SHOP_ROCKETMQ_CONSUMER_ENABLED` 改成 `true`。
+
+`prod` profile 下监听器无条件注册，这个开关不起作用，所以生产环境必须真的能连上 NameServer。
+
+#### 微信支付 V3（按需）
+
+参数分两处取：微信商户平台和公众号/小程序后台。
+
+1. 商户平台拿到商户号，10 位数字，填 `SHOP_WECHAT_PAY_MERCHANT_ID`（不是 AppID）。
+2. 公众号或小程序后台拿到 AppID 填 `SHOP_WECHAT_PAY_APP_ID`，并在商户平台把 AppID 与商户号关联，否则下单会报 AppID 与 mchid 不匹配。
+3. 「账户中心 → API 安全」申请商户 API 证书，下载 `apiclient_key.pem`，绝对路径填 `SHOP_WECHAT_PAY_MERCHANT_PRIVATE_KEY_PATH`；同一页面能看到证书序列号，填 `SHOP_WECHAT_PAY_MERCHANT_SERIAL_NUMBER`。
+4. 同一页面设置 APIv3 密钥，32 位，填 `SHOP_WECHAT_PAY_API_V3_KEY`。商户号、APIv3 密钥、证书私钥三者不匹配时下单会报签名错误。
+5. 验签材料二选一：下载平台证书（`SHOP_WECHAT_PAY_PLATFORM_CERTIFICATE_PATH`），或者用平台公钥（`SHOP_WECHAT_PAY_PUBLIC_KEY_ID` + `SHOP_WECHAT_PAY_PUBLIC_KEY_PATH`）。dev 默认走平台公钥。
+6. 回调地址必须是微信服务器能访问到的公网 HTTPS，本地开发用内网穿透：`SHOP_WECHAT_PAY_NOTIFY_URL` 填 `/api/wx/pay/notify/v3`，`SHOP_WECHAT_PAY_REFUND_NOTIFY_URL` 填 `/api/wx/pay/refund/notify/v3`。这两个路径是代码里写死的原始通知入口（带验签和 AES-GCM 解密），填成旧的 `/api/wx/pay/notify` 或者 localhost 都收不到通知。
+
+支付场景由 `SHOP_WECHAT_PAY_MODE` 决定，门户当前按 `NATIVE` 扫码设计，不要填小写或中文。
+
+`SHOP_WECHAT_PAY_ENABLED=false` 时不会伪造支付成功：下单和退款会直接抛「微信支付未启用」的异常。也就是说商品浏览、购物车、下单这些不用改支付配置就能跑，但「支付成功」那一段必须有真实商户参数才能走通。
+
+#### 快递 100 物流查询（按需）
+
+`SHOP_KUAIDI100_CUSTOMER` 和 `SHOP_KUAIDI100_KEY` 需要注册快递 100 开放平台账号，在个人中心申请「实时查询」服务后拿到，然后打开 `SHOP_KUAIDI100_ENABLED`。dev 默认启用并内置了测试账号；prod 默认关闭且没有默认值。
+
+`SHOP_LOGISTICS_ALERT_ENABLED` 与 `SHOP_LOGISTICS_ALERT_WEBHOOK_URL` 是物流异常告警的预留开关，默认关闭。
+
+#### 开票平台回调（预留）
+
+`SHOP_INVOICE_CALLBACK_TOKEN` 已经在 `application-prod.yml` 里声明，但当前没有任何代码读取它——第三方开票平台还没对接，回调固定返回 403。发票的申请、审核、置开票中、上传 PDF、门户下载这条链路本身是通的。
 
 ### 管理端（shop-web）
 
@@ -408,8 +497,10 @@ node db/seed/import-demo.mjs
 
 关键文件同上。开发端口默认 `3000`，与后端联调时建议用 `--port 3001`。除 `VITE_API_BASE_URL` 外还有三项：
 
-- `VITE_AMAP_KEY` / `VITE_AMAP_SECURITY_CODE`：地址搜索与地图选点必需
+- `VITE_AMAP_KEY` / `VITE_AMAP_SECURITY_CODE`：地址搜索与地图选点必需。在高德开放平台控制台创建应用后添加 Key，「服务平台」选 Web端(JS API)，同时会生成配套的安全密钥，两个值都要填。不填只是「新增收货地址」里的搜索和选点不可用，其余流程不受影响。
 - `VITE_DEMO_MODE`：仅用于本地演示，生产环境必须保持 `false` 或不配置
+
+两个 `shop-web/.env.example` 和 `shop-portal/.env.example` 顶部还留着脚手架自带的 `GEMINI_API_KEY`、`APP_URL` 两行，本项目没有用到，复制成 `.env.local` 时可以删掉。
 
 改完 `.env.local` 要重启 Vite 才会生效。
 

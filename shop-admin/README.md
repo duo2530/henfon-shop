@@ -53,6 +53,8 @@ java -jar shop-boot/target/shop-boot-0.0.1-SNAPSHOT.jar --spring.profiles.active
 
 生产环境至少需要配置：`SHOP_MYSQL_URL`、`SHOP_MYSQL_USERNAME`、`SHOP_MYSQL_PASSWORD`、`SHOP_REDIS_HOST`、`SHOP_REDIS_PASSWORD`、`ROCKETMQ_NAME_SERVER`、`SHOP_JWT_SECRET`、`MINIO_ENDPOINT`、`MINIO_ACCESS_KEY` 和 `MINIO_SECRET_KEY`。
 
+每项配置的作用、值从哪里取（邮箱授权码、微信支付证书与密钥、快递 100 账号、高德 Key 等），以及不配会出什么现象，见仓库根目录 [README 的配置说明](../README.md#配置说明)。
+
 ## 构建和启动
 
 ```powershell
