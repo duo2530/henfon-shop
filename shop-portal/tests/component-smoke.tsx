@@ -8,8 +8,11 @@ import { CategoryRail } from '../src/components/CategoryRail';
 import { CouponCenter } from '../src/components/CouponCenter';
 import { CouponCenterBanner } from '../src/components/CouponCenterBanner';
 import { couponTagLabel } from '../src/utils/couponTag';
+import { selectPurchasedCartItemIds } from '../src/utils/cartCleanup';
 import { isEmail, AuthModal } from '../src/components/AuthModal';
-import type { Product, Coupon } from '../src/types/ecommerce';
+import { createPendingLogistics } from '../src/components/CheckoutModal';
+import { OrderSuccessModal } from '../src/components/OrderSuccessModal';
+import type { Product, Coupon, Order } from '../src/types/ecommerce';
 import type { PortalCategoryNode } from '../src/api/portalApi';
 
 const baseProduct: Product = {
@@ -311,4 +314,61 @@ assert.match(placeholderErrorMarkup, /商品详情不存在或已下架/);
 assert.match(placeholderErrorMarkup, /重新加载/);
 assert.match(placeholderErrorMarkup, /aria-label="关闭商品详情"/);
 
-console.log('shop-portal 组件冒烟测试通过：商品卡片、库存禁购、Banner 跳转数据、物流进度取数、左侧类目树（浮层与展开两态）、领券横幅与券墙（含券型中文标签）、商品详情视频位与占位加载态语义正常');
+// 结算页不得自行编造物流：后台选「中通快递」发货时，本地编的顺丰承运商、顺丰单号与
+// 「1-2 日顺丰送达」会一直盖住服务端真实值，订单卡片就与后台对不上。
+const pendingLogistics = createPendingLogistics();
+assert.equal(pendingLogistics.trackingNumber, '');
+assert.doesNotMatch(JSON.stringify(pendingLogistics), /顺丰|中通|圆通|韵达/);
+
+const draftOrder: Order = {
+  id: 'ord-draft-1',
+  orderNumber: 'AO20260919001',
+  ...pendingLogistics,
+  createdAt: '2026-09-19 15:32:00',
+  status: 'placed',
+  statusLabel: '待付款',
+  items: [],
+  subtotal: 0,
+  discount: 0,
+  shippingFee: 0,
+  totalPaid: 0.02,
+  shippingAddress: {
+    id: 'addr-draft-1',
+    receiverName: '清水师兄',
+    phone: '186****3662',
+    province: '广东省',
+    city: '广州市',
+    district: '白云区',
+    detail: '金沙街道测试地址',
+    isDefault: true,
+  },
+  paymentMethod: '微信支付',
+};
+const draftSuccessMarkup = renderToStaticMarkup(
+  <OrderSuccessModal
+    order={draftOrder}
+    onClose={() => undefined}
+    onViewAllOrders={() => undefined}
+    onContinueShopping={() => undefined}
+  />,
+);
+assert.doesNotMatch(draftSuccessMarkup, /顺丰/);
+assert.match(draftSuccessMarkup, /运单号/);
+assert.match(draftSuccessMarkup, /发货后由承运商分配/);
+
+// 服务端购物车返回数字商品 ID、结算条目是 prod-* 字符串，匹配前必须归一化。
+// 回归缺陷：两端口径不同导致已购商品从来删不掉，支付后购物车里仍然有它。
+assert.deepEqual(
+  selectPurchasedCartItemIds(
+    [{ id: 29, productId: 65 }, { id: 30, productId: 125 }],
+    [{ productId: 'prod-65' }],
+  ),
+  [29],
+);
+// 结算条目为空（正常流程不会出现，防误删）或服务端购物车为空时，都不得删除任何条目。
+assert.deepEqual(selectPurchasedCartItemIds([{ id: 31, productId: 7 }], []), []);
+assert.deepEqual(selectPurchasedCartItemIds([], [{ productId: 'prod-7' }]), []);
+// 非法商品 ID（演示数据、秒杀占位）不参与匹配，避免把服务端购物车清空。
+assert.deepEqual(selectPurchasedCartItemIds([{ id: 32, productId: 7 }], [{ productId: 'prod-NaN' }]), []);
+
+console.log('shop-portal 组件冒烟测试通过：商品卡片、库存禁购、Banner 跳转数据、物流进度取数、左侧类目树（浮层与展开两态）、领券横幅与券墙（含券型中文标签）、商品详情视频位与占位加载态、已购购物车条目清理匹配语义正常');

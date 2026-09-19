@@ -202,10 +202,10 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
               {freightQuoteError ? (
                 <span className="text-amber-700 font-semibold">运费将在结算页按收货地址重新试算</span>
               ) : isFreeShipping ? (
-                <strong className="text-emerald-700 font-semibold">🎉 已满足顺丰包邮条件！</strong>
+                <strong className="text-emerald-700 font-semibold">🎉 已满足包邮条件！</strong>
               ) : (
                 <span>
-                  还差 <strong className="text-zinc-900 font-bold">¥{needForFreeShipping}</strong> 即可享顺丰包邮
+                  还差 <strong className="text-zinc-900 font-bold">¥{needForFreeShipping}</strong> 即可享包邮
                 </span>
               )}
             </span>
@@ -512,7 +512,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                 </div>
               )}
               <div className="flex justify-between">
-                <span>顺丰运费</span>
+                <span>运费</span>
                 <span className="font-semibold text-zinc-900">
                   {freightQuoteLoading ? '计算中…' : freightQuoteError ? '结算页试算' : shippingFee === 0 ? <strong className="text-emerald-600">包邮</strong> : `¥${shippingFee.toFixed(2)}`}
                 </span>

@@ -19,6 +19,7 @@ import { CouponCenterModal } from './components/CouponCenterModal';
 import { CategoryRail } from './components/CategoryRail';
 import { useBodyScrollLock } from './hooks/useBodyScrollLock';
 import { logisticsStatusLabel } from './utils/logisticsStatus';
+import { selectPurchasedCartItemIds } from './utils/cartCleanup';
 import { ToastContainer, ToastMessage } from './components/Toast';
 import { PRODUCTS, AVAILABLE_COUPONS, CATEGORIES } from './data/products';
 import {
@@ -109,6 +110,14 @@ import {
 } from 'lucide-react';
 
 const DEMO_MODE = import.meta.env.VITE_DEMO_MODE === 'true';
+
+/**
+ * 订单本地缓存键。
+ *
+ * v1 里存过结算页自行编造的顺丰承运商与运单号，这类快照在后台发货后仍会让门户显示顺丰，
+ * 因此换键名废弃旧缓存，让订单重新以服务端数据为准。
+ */
+const ORDERS_STORAGE_KEY = 'aurora_orders_v2';
 
 function resolveMemberId(user: UserProfile | null): number | null {
   if (!user) return null;
@@ -358,7 +367,8 @@ export default function App() {
 
   const [orders, setOrders] = useState<Order[]>(() => {
     try {
-      const saved = localStorage.getItem('aurora_orders');
+      localStorage.removeItem('aurora_orders');
+      const saved = localStorage.getItem(ORDERS_STORAGE_KEY);
       const parsed = saved ? JSON.parse(saved) : [];
       if (Array.isArray(parsed) && parsed.length > 0) return parsed;
     } catch {
@@ -604,6 +614,9 @@ export default function App() {
       setIsAuthModalOpen(true);
     }
   }, []);
+
+  // 递增该值可强制再同步一次服务端会员数据（订单及其物流），供「我的订单」等入口索取最新状态。
+  const [memberDataSyncToken, setMemberDataSyncToken] = useState(0);
 
   // 登录会员存在可映射的数字 ID 时，加载服务端购物车、收藏和订单。
   useEffect(() => {
@@ -878,7 +891,7 @@ export default function App() {
     return () => {
       active = false;
     };
-  }, [currentUser, products]);
+  }, [currentUser, products, memberDataSyncToken]);
 
   // 支付单创建后轮询渠道状态，达到成功、失败或超时终态后立即清理定时器。
   useEffect(() => {
@@ -1004,6 +1017,11 @@ export default function App() {
   const [completedOrder, setCompletedOrder] = useState<Order | null>(null);
   const [isOrdersOpen, setIsOrdersOpen] = useState(false);
   const [isWishlistOpen, setIsWishlistOpen] = useState(false);
+  // 订单列表打开时重新同步一次：结算页生成的本地订单快照只带占位物流，
+  // 后台发货填入的承运商、运单号要等下一次同步才会覆盖到订单卡片上。
+  useEffect(() => {
+    if (isOrdersOpen) setMemberDataSyncToken((token) => token + 1);
+  }, [isOrdersOpen]);
   // 类目树常驻页面左侧；窄屏放不下，收进抽屉由顶部「分类」按钮拉起。
   const [isCategoryDrawerOpen, setIsCategoryDrawerOpen] = useState(false);
   useBodyScrollLock(isCategoryDrawerOpen);
@@ -1322,7 +1340,7 @@ export default function App() {
 
   useEffect(() => {
     try {
-      localStorage.setItem('aurora_orders', JSON.stringify(orders));
+      localStorage.setItem(ORDERS_STORAGE_KEY, JSON.stringify(orders));
     } catch (e) {
       console.error(e);
     }
@@ -1932,15 +1950,11 @@ export default function App() {
    */
   const clearPurchasedRemoteCartItems = async (memberId: number, purchasedItems: CartItem[]) => {
     if (purchasedItems.length === 0) return;
-    const purchasedKeys = new Set(
-      purchasedItems.map((item) => `${item.productId}:${item.skuId ?? ''}`)
-    );
     try {
       // 加购请求是异步写入服务端的，结算时重新读取权威数据，兼容本地条目尚未换成 server-* ID 的情况。
       const remoteItems = await fetchPortalCart(memberId);
-      const remoteIds = remoteItems
-        .filter((item) => purchasedKeys.has(`${item.productId}:${item.skuId ?? ''}`))
-        .map((item) => item.id);
+      const remoteIds = selectPurchasedCartItemIds(remoteItems, purchasedItems);
+      if (remoteIds.length === 0) return;
       await Promise.all(remoteIds.map((id) => deletePortalCartItem(id)));
     } catch (error) {
       // 清理失败不阻断订单支付流程，下一次刷新时加载逻辑仍会保留服务端真实商品。
@@ -2973,7 +2987,7 @@ export default function App() {
             <div className="space-y-2.5 text-xs text-zinc-500">
               <h4 className="font-bold text-zinc-900 text-sm">购物指南</h4>
               <p className="hover:text-zinc-900 cursor-pointer">购物流程与支付说明</p>
-              <p className="hover:text-zinc-900 cursor-pointer">顺丰包邮及配送时效</p>
+              <p className="hover:text-zinc-900 cursor-pointer">包邮及配送时效</p>
               <p className="hover:text-zinc-900 cursor-pointer">优惠券使用规则</p>
               <p className="hover:text-zinc-900 cursor-pointer">发票开具与验真指南</p>
             </div>

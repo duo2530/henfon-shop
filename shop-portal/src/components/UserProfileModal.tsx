@@ -192,7 +192,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
         return {
           bg: 'bg-zinc-950 text-amber-300 border-amber-400/40',
           badge: '黑金SVIP · 专属9.2折',
-          perks: ['全场自营享 9.2 折专享价', '每月赠送 3 张顺丰免邮券', '购物享 2 倍积分返还', '1对1专属私享管家'],
+          perks: ['全场自营享 9.2 折专享价', '每月赠送 3 张免邮券', '购物享 2 倍积分返还', '1对1专属私享管家'],
         };
       case '黄金VIP':
         return {
@@ -204,7 +204,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
         return {
           bg: 'bg-zinc-100 text-zinc-800 border-zinc-200',
           badge: '普通会员',
-          perks: ['注册即享新人礼包', '实付满 ¥99 顺丰包邮', '购物按 1:1 累计积分', '7天无理由退换'],
+          perks: ['注册即享新人礼包', '实付满 ¥99 包邮', '购物按 1:1 累计积分', '7天无理由退换'],
         };
     }
   };

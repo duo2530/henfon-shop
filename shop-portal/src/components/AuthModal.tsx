@@ -934,7 +934,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
               <p className="font-semibold text-zinc-800">四、售后及无理由退换保障</p>
               <p>
-                商城所有商品均享 100% 正品保障、顺丰极速配送与 7 天无理由退换货服务，保障您的尊贵购物体验。
+                商城所有商品均享 100% 正品保障、极速配送与 7 天无理由退换货服务，保障您的尊贵购物体验。
               </p>
             </div>
 

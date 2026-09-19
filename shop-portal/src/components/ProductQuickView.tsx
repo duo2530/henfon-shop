@@ -873,7 +873,7 @@ const ProductQuickViewContent: React.FC<Omit<ProductQuickViewProps, 'product'> &
               <div className="grid grid-cols-3 gap-2 pt-1 text-[11px] text-zinc-500 font-medium">
                 <div className="p-2.5 rounded-xl bg-zinc-50 border border-zinc-100 text-center flex flex-col items-center gap-1">
                   <Truck className="w-4 h-4 text-emerald-600" />
-                  <span>顺丰极速直达</span>
+                  <span>极速发货</span>
                 </div>
                 <div className="p-2.5 rounded-xl bg-zinc-50 border border-zinc-100 text-center flex flex-col items-center gap-1">
                   <ShieldCheck className="w-4 h-4 text-sky-600" />

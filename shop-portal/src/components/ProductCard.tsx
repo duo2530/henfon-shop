@@ -126,7 +126,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
             )}
             <span>已售 {product.salesCount}+</span>
             <span className={stockState === 'out' ? 'text-rose-600 font-medium' : stockState === 'low' ? 'text-amber-600 font-medium' : 'text-emerald-600 font-medium'}>{stockLabel}</span>
-            <span className="text-emerald-600 font-medium">顺丰包邮</span>
+            <span className="text-emerald-600 font-medium">包邮</span>
           </div>
 
           <div className="flex items-center justify-between gap-4 pt-2 border-t border-zinc-100">
@@ -318,7 +318,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
               {product.brand}
             </span>
             <span className="text-[11px] font-medium text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded">
-              顺丰包邮
+              包邮
             </span>
           </div>
 

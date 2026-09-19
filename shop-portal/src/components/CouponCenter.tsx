@@ -268,7 +268,7 @@ export const CouponCenter: React.FC<CouponCenterProps> = ({
           </div>
           <div className="flex items-center gap-3 shrink-0 text-amber-900 font-semibold">
             <span>✓ 全场正品保障</span>
-            <span>✓ 极速顺丰包邮</span>
+            <span>✓ 极速包邮</span>
             <span>✓ 7天无理由退换</span>
           </div>
         </div>

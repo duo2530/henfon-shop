@@ -40,7 +40,7 @@ export const OrderSuccessModal: React.FC<OrderSuccessModalProps> = ({
           </div>
           <h2 className="text-2xl font-bold text-zinc-900 tracking-tight">支付成功！</h2>
           <p className="text-xs sm:text-sm text-zinc-500 max-w-md mx-auto">
-            我们已收到您的订单并将尽快安排顺丰速运发货，感谢您选择Henfon商城。
+            我们已收到您的订单并将尽快安排发货，感谢您选择Henfon商城。
           </p>
         </div>
 
@@ -52,8 +52,12 @@ export const OrderSuccessModal: React.FC<OrderSuccessModalProps> = ({
               <span className="font-mono font-bold text-zinc-800">{order.orderNumber}</span>
             </div>
             <div>
-              <span className="text-zinc-400">顺丰单号：</span>
-              <span className="font-mono font-bold text-emerald-700">{order.trackingNumber}</span>
+              <span className="text-zinc-400">运单号：</span>
+              {order.trackingNumber ? (
+                <span className="font-mono font-bold text-emerald-700">{order.trackingNumber}</span>
+              ) : (
+                <span className="font-semibold text-zinc-500">发货后由承运商分配</span>
+              )}
             </div>
           </div>
 

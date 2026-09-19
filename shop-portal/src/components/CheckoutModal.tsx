@@ -56,6 +56,46 @@ export interface CheckoutPersistenceResult {
   message?: string;
 }
 
+/**
+ * 结算阶段本地订单的物流占位字段。
+ *
+ * 承运商、运单号和时效只在后台发货时才产生，结算页自己编一个（顺丰单号、1-2 日顺丰送达）
+ * 会直接和后台的 `logistics_company` / `tracking_no` 打架：后台选中通发货，门户仍显示顺丰。
+ * 这里只给不指向任何承运商的中性说明，真实值等订单从服务端同步时覆盖。
+ */
+export function createPendingLogistics(): Pick<Order, 'trackingNumber' | 'estimatedDelivery' | 'trackingSteps'> {
+  return {
+    trackingNumber: '',
+    estimatedDelivery: '发货后同步物流时效',
+    trackingSteps: [
+      {
+        title: '订单提交成功',
+        time: '刚刚',
+        completed: true,
+        description: '订单已创建，等待完成支付。',
+      },
+      {
+        title: '支付成功，等待仓库拣货',
+        time: '待支付回调',
+        completed: false,
+        description: '支付完成后系统将自动下发配货指令。',
+      },
+      {
+        title: '承运商揽收',
+        time: '待发货',
+        completed: false,
+        description: '商家发货后由承运商揽件。',
+      },
+      {
+        title: '干线运输与派送',
+        time: '待发货',
+        completed: false,
+        description: '发货后进入物流运输流程。',
+      },
+    ],
+  };
+}
+
 export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   isOpen,
   items = [],
@@ -303,7 +343,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     setIsSubmitting(true);
 
     const orderNumber = `AO${Date.now()}`;
-    const trackingNumber = `SF${Math.floor(1000000000 + Math.random() * 9000000000)}`;
     const orderItems = items.map((it) => ({
       productId: it.productId,
       skuId: it.skuId,
@@ -324,7 +363,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     const newOrder: Order = {
       id: `ord-${Date.now()}`,
       orderNumber,
-      trackingNumber,
       createdAt: new Date().toLocaleString('zh-CN', { hour12: false }),
       status: 'placed',
       statusLabel: '待付款',
@@ -336,33 +374,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       shippingAddress: selectedAddress,
       paymentMethod: paymentMethodNames[paymentMethod] || '在线支付',
       flashSaleId: items.length === 1 ? items[0].flashSaleId : undefined,
-      estimatedDelivery: '预计 1-2 日内顺丰送达',
-      trackingSteps: [
-        {
-          title: '订单提交成功',
-          time: '刚刚',
-          completed: true,
-          description: '订单已创建，等待完成支付。',
-        },
-        {
-          title: '支付成功，等待仓库拣货',
-          time: '待支付回调',
-          completed: false,
-          description: '支付完成后系统将自动下发配货指令。',
-        },
-        {
-          title: '顺丰速运揽收',
-          time: '待支付',
-          completed: false,
-          description: '支付成功后安排顺丰速运揽件。',
-        },
-        {
-          title: '干线运输与派送',
-          time: '待支付',
-          completed: false,
-          description: '支付成功后进入物流运输流程。',
-        },
-      ],
+      ...createPendingLogistics(),
     };
 
     try {
@@ -795,7 +807,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               </span>
             )}
             <span>
-              顺丰运费：<strong>{freightQuoteLoading ? '计算中…' : freightQuoteError ? '暂不可用' : shippingFee === 0 ? '免费' : `¥${shippingFee.toFixed(2)}`}</strong>
+              运费：<strong>{freightQuoteLoading ? '计算中…' : freightQuoteError ? '暂不可用' : shippingFee === 0 ? '免费' : `¥${shippingFee.toFixed(2)}`}</strong>
             </span>
           </div>
 

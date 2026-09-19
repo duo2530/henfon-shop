@@ -172,7 +172,7 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({
             </span>
             <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-zinc-500">
               <Truck className="h-3.5 w-3.5 text-emerald-500" />
-              全场顺丰速运直达
+              全场包邮直达
             </span>
             <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-zinc-500">
               <ShieldCheck className="h-3.5 w-3.5 text-sky-500" />
@@ -237,7 +237,7 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({
             <Truck className="w-4 h-4" />
           </div>
           <div>
-            <div className="text-xs font-bold text-zinc-900">顺丰空运速达</div>
+            <div className="text-xs font-bold text-zinc-900">空运速达</div>
             <div className="text-[11px] text-zinc-500">满 ¥99 即享免费包邮</div>
           </div>
         </div>
