@@ -15,4 +15,10 @@ assert.match(sidebar, /aria-current=\{active \? 'page' : undefined\}/);
 assert.match(navbar, /aria-label="打开管理员菜单"/);
 assert.match(navbar, /aria-haspopup="menu"/);
 
-console.log('shop-web 无障碍静态检查通过：跳过链接、主导航语义、菜单状态和管理员菜单标签已覆盖');
+// 顶栏铃铛未读数：数量要同时进视觉角标与无障碍标签，且角标不能闪烁。
+assert.match(navbar, /aria-label=\{notificationUnreadCount > 0 \? `通知中心，\$\{notificationUnreadCount\} 条未读` : '通知中心'\}/);
+assert.match(navbar, /min-w-\[16px\] h-4 px-1 rounded-full bg-red-500 text-white/);
+assert.match(navbar, /notificationUnreadCount > 99 \? '99\+' : notificationUnreadCount/);
+assert.doesNotMatch(navbar, /animate-pulse/);
+
+console.log('shop-web 无障碍静态检查通过：跳过链接、主导航语义、菜单状态、管理员菜单标签与铃铛未读角标已覆盖');

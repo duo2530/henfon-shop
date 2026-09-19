@@ -120,7 +120,7 @@ interface AdminContextType {
   catalogCategories: Array<{ id: number; code: ProductCategory; name: string; parentId?: number }>;
   logisticsCarriers: BackendLogisticsCarrier[];
   todos: TodoItem[];
-  /** 服务端统计的运营未读通知数，顶栏红点据此显示。 */
+  /** 服务端统计的运营未读通知数，顶栏铃铛角标据此显示（0 时不渲染角标）。 */
   notificationUnreadCount: number;
   searchQuery: string;
   setSearchQuery: (query: string) => void;
@@ -547,14 +547,14 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
    * 重新统计运营未读通知数。
    *
    * 通知中心的数据源是会员站内通知投递记录，未读数由服务端统计，
-   * 前端只缓存这个数字供顶栏红点使用，列表本身由抽屉按需分页拉取。
+   * 前端只缓存这个数字供顶栏铃铛角标使用，列表本身由抽屉按需分页拉取。
    */
   const refreshNotificationUnreadCount = async () => {
     try {
       const summary = await getContentNotificationSummary();
       setNotificationUnreadCount(Number(summary?.adminUnread ?? 0));
     } catch (error) {
-      // 统计接口不可用时按无未读处理，避免红点常亮却点不出内容。
+      // 统计接口不可用时按无未读处理，避免角标常亮却点不出内容。
       setNotificationUnreadCount(0);
       console.warn('通知统计接口暂不可用，已按无未读处理', error);
     }

@@ -99,11 +99,16 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
             id="btn-notifications-trigger"
             onClick={onOpenNotifications}
             className="relative text-gray-600 hover:text-gray-900 hover:bg-gray-200/70 p-2 rounded-full transition-colors cursor-pointer"
-            aria-label="Notifications"
+            aria-label={notificationUnreadCount > 0 ? `通知中心，${notificationUnreadCount} 条未读` : '通知中心'}
           >
             <Bell className="w-5 h-5" />
             {notificationUnreadCount > 0 && (
-              <span className="absolute top-1.5 right-1.5 w-2.5 h-2.5 bg-red-500 rounded-full ring-2 ring-white animate-pulse" />
+              <span
+                className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 rounded-full bg-red-500 text-white text-[10px] font-semibold leading-none flex items-center justify-center ring-2 ring-[#F8FAFC]"
+                aria-hidden="true"
+              >
+                {notificationUnreadCount > 99 ? '99+' : notificationUnreadCount}
+              </span>
             )}
           </button>
 
