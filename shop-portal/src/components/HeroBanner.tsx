@@ -111,101 +111,120 @@ export const HeroBanner: React.FC<HeroBannerProps> = ({
 
   return (
     <div className="mb-10 space-y-4">
-      {/* Carousel Container */}
-      <div className="relative rounded-3xl overflow-hidden shadow-xl bg-zinc-900 text-white min-h-[360px] md:min-h-[400px] flex items-center">
-        {/* Background Image with Overlay */}
-        <div className="absolute inset-0 z-0">
+      {/* 轮播：白底展台，文案在左、商品图在右。
+          运营图是浅底商品实拍（灰白底手表、白底 iMac），原先压到 30% 不透明度垫在 zinc-900 上
+          只剩一团灰，图与字互相拖累。现在图整幅展示不压暗，文案改到左侧白底区用深色字。
+          高度 300→360→400→460 按断点放，xl 起 460px 是主视觉；圆角从 rounded-3xl 降到
+          rounded-xl，是为了贴近淘宝京东那种小圆角展台（相邻的权益卡仍是 rounded-2xl，
+          这次没动——只改 hero 会和紧挨着的卡片看出两套风格，等整体视觉定方向再统一）。 */}
+      <div className="relative flex h-[300px] overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-xs sm:h-[360px] lg:h-[400px] xl:h-[460px]">
+        {/* 文案区与图片分列，不能靠遮罩兜：横向渐隐盖不住正文——副标题是块级元素，
+            实测会铺到 hero 宽度的 94%，那里渐隐只剩四成白，深色字压在深色素材上读不出来。
+            分栏从 sm 起生效（640 时文案区 46% 约 272px，放得下 24px 标题）；
+            sm 以下文案占满整行，只能用纵向遮罩把垂直居中那一段压成近白。
+            宽度取 46% 而非均分：最长那条标题「新人专享 满 199 减 50」在 36px 下约需 352px，
+            再窄一点就会把「50」挤成孤字换行（实测 xl 下可用 356px，单行刚好）。 */}
+        <div className="relative z-10 flex w-full flex-col justify-center px-6 py-8 sm:w-[46%] sm:px-8 xl:px-10">
+          <div className="mb-4 inline-flex w-fit items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700">
+            <Sparkles className="w-3.5 h-3.5" />
+            {slide.tag}
+          </div>
+
+          <h2 className="text-2xl sm:text-3xl xl:text-4xl font-bold tracking-tight text-zinc-900 leading-tight mb-3">
+            {slide.title}
+          </h2>
+
+          <p className="text-sm md:text-base text-zinc-500 leading-relaxed mb-6 font-normal">
+            {slide.subtitle}
+          </p>
+
+          <div className="flex items-center gap-4 flex-wrap">
+            {slide.ctaText && (
+              <button
+                onClick={() => {
+                  if (slide.id.startsWith('remote-') && onNavigateBanner) {
+                    onNavigateBanner(slide.linkType || 'NONE', slide.productId);
+                    return;
+                  }
+                  onSelectProduct(slide.productId);
+                }}
+                className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-orange-500 text-white font-semibold text-sm hover:bg-orange-600 transition shadow-xs group"
+              >
+                <span>{slide.ctaText}</span>
+                <ArrowRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
+              </button>
+            )}
+
+            {(slide.price || slide.originalPrice) && (
+              <div className="flex items-baseline gap-2">
+                <span className="text-2xl font-black text-orange-600">{slide.price}</span>
+                <span className="text-xs text-zinc-400 line-through">{slide.originalPrice}</span>
+              </div>
+            )}
+          </div>
+
+          {/* 服务承诺原先贴在深色卡右侧的玻璃面板里，改白底后并入文案区，
+              免得和右侧商品图抢位置；四条权益卡就在下方，这里只留一句短提示。 */}
+          <div className="mt-6 hidden flex-wrap items-center gap-x-5 gap-y-1.5 xl:flex">
+            <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-zinc-500">
+              <Zap className="h-3.5 w-3.5 text-amber-500" />
+              当日 18:00 前拍下当日发
+            </span>
+            <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-zinc-500">
+              <Truck className="h-3.5 w-3.5 text-emerald-500" />
+              全场顺丰速运直达
+            </span>
+            <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-zinc-500">
+              <ShieldCheck className="h-3.5 w-3.5 text-sky-500" />
+              官方正品 · 两年全国联保
+            </span>
+          </div>
+        </div>
+
+        {/* 图片区：sm 起独立成列（占 54%）；sm 以下退化为整块底图，压一层纵向白罩兜住正文。 */}
+        <div className="absolute inset-0 sm:static sm:inset-auto sm:min-w-0 sm:flex-1">
           <img
             src={slide.image}
             alt={slide.title}
-            className="w-full h-full object-cover object-center opacity-30 transform scale-105 transition-all duration-1000 ease-out"
+            className="w-full h-full object-cover object-center"
           />
-          <div className="absolute inset-0 bg-gradient-to-r from-zinc-950 via-zinc-900/80 to-transparent"></div>
+          {/* 素材深浅混用（白底商品图与深色 SALE 海报并存），手机端文案垂直居中，
+              所以改用「下白上透明」的纵向罩，让居中那一段稳在近白底上。 */}
+          <div
+            className="absolute inset-0 bg-gradient-to-t from-white via-white/92 to-white/35 sm:hidden"
+            aria-hidden="true"
+          />
         </div>
 
-        {/* Content Box */}
-        <div className="relative z-10 max-w-7xl mx-auto px-6 sm:px-10 py-10 md:py-14 w-full flex flex-col md:flex-row items-start md:items-center justify-between gap-8">
-          <div className="max-w-xl">
-            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/10 backdrop-blur-md text-amber-300 text-xs font-semibold mb-4 border border-white/10">
-              <Sparkles className="w-3.5 h-3.5" />
-              {slide.tag}
-            </div>
-
-            <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold tracking-tight text-white leading-tight mb-3">
-              {slide.title}
-            </h2>
-
-            <p className="text-sm md:text-base text-zinc-300 leading-relaxed mb-6 font-normal">
-              {slide.subtitle}
-            </p>
-
-            <div className="flex items-center gap-4 flex-wrap">
-              {slide.ctaText && (
-                <button
-                  onClick={() => {
-                    if (slide.id.startsWith('remote-') && onNavigateBanner) {
-                      onNavigateBanner(slide.linkType || 'NONE', slide.productId);
-                      return;
-                    }
-                    onSelectProduct(slide.productId);
-                  }}
-                  className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-white text-zinc-950 font-semibold text-sm hover:bg-zinc-100 transition shadow-lg group"
-                >
-                  <span>{slide.ctaText}</span>
-                  <ArrowRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
-                </button>
-              )}
-
-              {(slide.price || slide.originalPrice) && (
-                <div className="flex items-baseline gap-2">
-                  <span className="text-2xl font-black text-amber-400">{slide.price}</span>
-                  <span className="text-xs text-zinc-400 line-through">{slide.originalPrice}</span>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Quick Badges / Side preview */}
-          <div className="hidden lg:flex flex-col gap-3 bg-white/5 backdrop-blur-md p-4 rounded-2xl border border-white/10 text-xs w-64">
-            <div className="flex items-center gap-2 text-zinc-300 font-medium">
-              <Zap className="w-4 h-4 text-amber-400" />
-              <span>极速发货：当日 18:00 前拍下当日发</span>
-            </div>
-            <div className="flex items-center gap-2 text-zinc-300 font-medium">
-              <Truck className="w-4 h-4 text-emerald-400" />
-              <span>全场顺丰速运直达</span>
-            </div>
-            <div className="flex items-center gap-2 text-zinc-300 font-medium">
-              <ShieldCheck className="w-4 h-4 text-sky-400" />
-              <span>官方正品 · 两年全国联保</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Carousel controls */}
-        <div className="absolute bottom-4 right-6 z-20 flex items-center gap-2">
+        {/* 圆点与箭头都压在素材上，而素材是深浅混用的（白底手表图与深色 SALE 海报并存），
+            所以不能用固定色：圆点垫一层半透明深色胶囊底，浅底深底都读得出来；
+            箭头改实心白底 + zinc-300 描边，落在左侧白色文案区时才有边界。 */}
+        <div className="absolute bottom-4 right-5 z-20 flex items-center gap-2 rounded-full bg-zinc-900/25 px-2.5 py-1.5 backdrop-blur-sm">
           {slides.map((_, idx) => (
             <button
               key={idx}
               onClick={() => setCurrentSlide(idx)}
               className={`h-2 rounded-full transition-all ${
-                currentSlide === idx ? 'w-8 bg-white' : 'w-2 bg-white/40 hover:bg-white/70'
+                currentSlide === idx ? 'w-7 bg-white' : 'w-2 bg-white/60 hover:bg-white/90'
               }`}
               aria-label={`跳转至幻灯片 ${idx + 1}`}
             />
           ))}
         </div>
 
-        {/* Arrows */}
+        {/* 左箭头贴着图片区左边缘（文案区 46% 之后），否则它会压在标题和正文上。
+            md 以下不显示：那时图片列太窄，两个圆钮会把图夹掉大半。 */}
         <button
           onClick={() => setCurrentSlide((prev) => (prev === 0 ? slides.length - 1 : prev - 1))}
-          className="absolute left-4 top-1/2 -translate-y-1/2 p-2 rounded-full bg-black/30 hover:bg-black/60 text-white backdrop-blur-sm transition hidden md:block"
+          aria-label="上一张"
+          className="absolute left-[calc(46%+0.75rem)] top-1/2 -translate-y-1/2 z-20 hidden rounded-full border border-zinc-300 bg-white p-2 text-zinc-700 shadow-xs transition hover:bg-zinc-50 md:block"
         >
           <ChevronLeft className="w-5 h-5" />
         </button>
         <button
           onClick={() => setCurrentSlide((prev) => (prev + 1) % slides.length)}
-          className="absolute right-4 top-1/2 -translate-y-1/2 p-2 rounded-full bg-black/30 hover:bg-black/60 text-white backdrop-blur-sm transition hidden md:block"
+          aria-label="下一张"
+          className="absolute right-4 top-1/2 -translate-y-1/2 z-20 hidden rounded-full border border-zinc-300 bg-white p-2 text-zinc-700 shadow-xs transition hover:bg-zinc-50 md:block"
         >
           <ChevronRight className="w-5 h-5" />
         </button>

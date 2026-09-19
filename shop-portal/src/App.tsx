@@ -2482,13 +2482,15 @@ export default function App() {
       />
 
       <main id="portal-main-content" tabIndex={-1} aria-label="商城主要内容" className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-6 md:py-8">
-        <div className="lg:grid lg:grid-cols-[220px_minmax(0,1fr)] lg:items-start lg:gap-6">
+        <div className="lg:grid lg:grid-cols-[260px_minmax(0,1fr)] lg:items-start lg:gap-6">
           {/* 类目树常驻左侧：顶部导航放不下全部一级类目，改由左栏承载。
               左栏不能加 overflow，否则会把一级类目 hover 出来的下级浮层裁掉。
+              卡片 padding 从 p-3 调到 p-4，必须同步改 CategoryRail 浮层的 left 偏移（0.75rem → 1rem），
+              否则浮层会往左压进左栏一截。
               z 取在 Navbar(z-30) 与主内容(z-20 以内) 之间：左栏自己是 sticky（会创建堆叠上下文），
               浮层的 z 只在左栏内部生效，不给左栏提层级就会被商品卡、HeroBanner 盖住；
               但也不能到 z-30，否则左栏会反过来盖住 Navbar 的搜索下拉。 */}
-          <aside className="hidden rounded-2xl border border-zinc-200/90 bg-white p-3 shadow-xs lg:sticky lg:top-28 lg:z-[25] lg:block">
+          <aside className="hidden rounded-2xl border border-zinc-200/90 bg-white p-4 shadow-xs lg:sticky lg:top-28 lg:z-[25] lg:block">
             <CategoryRail
               categoryTree={categoryTree}
               selectedCategory={selectedCategory}

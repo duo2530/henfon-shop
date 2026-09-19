@@ -81,6 +81,13 @@ assert.match(remoteBannerMarkup, /限时活动/);
 // linkType 为 CATEGORY，按钮文案应落在「逛逛该分类」而非商品跳转用的「立即查看」。
 assert.match(remoteBannerMarkup, /逛逛该分类/);
 assert.doesNotMatch(remoteBannerMarkup, /立即查看/);
+// 轮播改成白底展台：图片整幅展示不压暗（原先 opacity-30 垫在深色底上），文案在左侧白底区用深色字。
+assert.match(remoteBannerMarkup, /object-cover/);
+assert.doesNotMatch(remoteBannerMarkup, /opacity-30/);
+assert.match(remoteBannerMarkup, /alt="夏日清凉专题"/);
+// 左右切换箭头原先是无名称的图标按钮，补上可访问名称。
+assert.match(remoteBannerMarkup, /aria-label="上一张"/);
+assert.match(remoteBannerMarkup, /aria-label="下一张"/);
 
 // 注册邮箱是登录凭证与密码找回通道，格式校验需拒绝缺域名、缺 @ 等输入。
 assert.equal(isEmail('buyer@example.com'), true);

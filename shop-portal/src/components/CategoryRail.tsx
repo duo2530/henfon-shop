@@ -29,8 +29,8 @@ const useSelectedPath = (categoryTree: PortalCategoryNode[], selectedCategory: s
 );
 
 const RailHeading: React.FC = () => (
-  <div className="flex items-center gap-1.5 px-2 pb-2 text-[11px] font-bold uppercase tracking-wider text-zinc-400">
-    <LayoutGrid className="h-3.5 w-3.5" />
+  <div className="flex items-center gap-1.5 px-3 pb-2.5 text-xs font-bold uppercase tracking-wider text-zinc-400">
+    <LayoutGrid className="h-4 w-4" />
     <span>全部分类</span>
   </div>
 );
@@ -43,13 +43,13 @@ const AllCategoryButton: React.FC<{
     type="button"
     onClick={onSelect}
     aria-current={selectedCategory === ALL_CATEGORY_ID ? 'true' : undefined}
-    className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs font-medium transition ${
+    className={`flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-medium transition ${
       selectedCategory === ALL_CATEGORY_ID
-        ? 'bg-zinc-900 text-white shadow-xs'
+        ? 'bg-orange-500 text-white shadow-xs'
         : 'text-zinc-700 hover:bg-zinc-100'
     }`}
   >
-    <LayoutGrid className="h-3.5 w-3.5 shrink-0" />
+    <LayoutGrid className="h-4 w-4 shrink-0" />
     <span className="truncate">全部商品</span>
   </button>
 );
@@ -111,13 +111,13 @@ const InlineCategoryRail: React.FC<CategoryRailProps> = ({
                 type="button"
                 onClick={() => select(level1.id)}
                 aria-current={selectedCategory === level1.id ? 'true' : undefined}
-                className={`flex min-w-0 flex-1 items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs font-medium transition ${
+                className={`flex min-w-0 flex-1 items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-medium transition ${
                   level1Active
-                    ? 'bg-zinc-900 text-white shadow-xs'
+                    ? 'bg-orange-500 text-white shadow-xs'
                     : 'text-zinc-700 hover:bg-zinc-100'
                 }`}
               >
-                <CategoryGlyph code={level1.code} className="h-3.5 w-3.5 shrink-0" />
+                <CategoryGlyph code={level1.code} className="h-4 w-4 shrink-0" />
                 <span className="truncate">{level1.name}</span>
               </button>
               {hasChildren && (
@@ -130,7 +130,7 @@ const InlineCategoryRail: React.FC<CategoryRailProps> = ({
                     level1Active ? 'text-zinc-400 hover:text-zinc-700' : 'text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700'
                   }`}
                 >
-                  <ChevronDown className={`h-3.5 w-3.5 transition-transform ${level1Expanded ? 'rotate-180' : ''}`} />
+                  <ChevronDown className={`h-4 w-4 transition-transform ${level1Expanded ? 'rotate-180' : ''}`} />
                 </button>
               )}
             </div>
@@ -148,14 +148,14 @@ const InlineCategoryRail: React.FC<CategoryRailProps> = ({
                           type="button"
                           onClick={() => select(level2.id)}
                           aria-current={selectedCategory === level2.id ? 'true' : undefined}
-                          className={`flex min-w-0 flex-1 items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-left text-[11px] transition ${
+                          className={`flex min-w-0 flex-1 items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition ${
                             level2Active
                               ? 'bg-zinc-100 font-semibold text-zinc-900'
                               : 'text-zinc-600 hover:bg-zinc-50 hover:text-zinc-900'
                           }`}
                         >
                           <span className="truncate">{level2.name}</span>
-                          {hasLevel3 && <span className="shrink-0 text-[10px] text-zinc-400">{level2.children.length}</span>}
+                          {hasLevel3 && <span className="shrink-0 text-[11px] text-zinc-400">{level2.children.length}</span>}
                         </button>
                         {hasLevel3 && (
                           <button
@@ -178,9 +178,9 @@ const InlineCategoryRail: React.FC<CategoryRailProps> = ({
                               type="button"
                               onClick={() => select(level3.id)}
                               aria-current={selectedCategory === level3.id ? 'true' : undefined}
-                              className={`rounded px-1.5 py-0.5 text-[10px] transition ${
+                              className={`rounded px-2 py-1 text-[11px] transition ${
                                 selectedCategory === level3.id
-                                  ? 'bg-zinc-900 text-white'
+                                  ? 'bg-orange-500 text-white'
                                   : 'bg-zinc-50 text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900'
                               }`}
                             >
@@ -295,19 +295,19 @@ const FlyoutCategoryRail: React.FC<CategoryRailProps> = ({
               aria-current={selectedCategory === level1.id ? 'true' : undefined}
               aria-expanded={hasChildren ? isOpen : undefined}
               aria-controls={hasChildren ? FLYOUT_ID : undefined}
-              className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-xs font-medium transition ${
+              className={`flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-medium transition ${
                 isActive
-                  ? 'bg-zinc-900 text-white shadow-xs'
+                  ? 'bg-orange-500 text-white shadow-xs'
                   : isOpen
                     ? 'bg-amber-50 text-amber-900'
                     : 'text-zinc-700 hover:bg-zinc-100 hover:text-amber-700'
               }`}
             >
-              <CategoryGlyph code={level1.code} className="h-3.5 w-3.5 shrink-0" />
+              <CategoryGlyph code={level1.code} className="h-4 w-4 shrink-0" />
               <span className="truncate flex-1">{level1.name}</span>
               {hasChildren && (
                 <ChevronRight
-                  className={`h-3.5 w-3.5 shrink-0 ${
+                  className={`h-4 w-4 shrink-0 ${
                     isActive ? 'text-white/60' : isOpen ? 'text-amber-500' : 'text-zinc-300'
                   }`}
                 />
@@ -317,14 +317,14 @@ const FlyoutCategoryRail: React.FC<CategoryRailProps> = ({
         })}
       </nav>
 
-      {/* 浮层贴着左栏卡片右边缘弹出，left 里的 0.75rem 补的正是卡片横向 padding。 */}
+      {/* 浮层贴着左栏卡片右边缘弹出，left 里的 1rem 补的正是卡片横向 padding（App.tsx 侧栏为 p-4）。 */}
       {openNode && openNode.children.length > 0 && (
         <div
           id={FLYOUT_ID}
           role="group"
           aria-label={`${openNode.name}的下级分类`}
           onMouseEnter={cancelClose}
-          className="absolute left-[calc(100%+0.75rem)] top-0 z-40 max-h-[calc(100vh-9rem)] w-[560px] max-w-[calc(100vw-16rem)] overflow-y-auto rounded-2xl border border-zinc-200 bg-white p-5 shadow-2xl"
+          className="absolute left-[calc(100%+1rem)] top-0 z-40 max-h-[calc(100vh-9rem)] w-[560px] max-w-[calc(100vw-16rem)] overflow-y-auto rounded-2xl border border-zinc-200 bg-white p-5 shadow-2xl"
         >
           <div className="mb-4 flex items-center justify-between gap-3 border-b border-zinc-100 pb-3">
             <span className="text-sm font-bold text-zinc-900">{openNode.name}</span>
@@ -344,7 +344,7 @@ const FlyoutCategoryRail: React.FC<CategoryRailProps> = ({
                   type="button"
                   onClick={() => select(level2.id)}
                   aria-current={selectedCategory === level2.id ? 'true' : undefined}
-                  className={`flex items-center gap-0.5 text-xs font-bold transition ${
+                  className={`flex items-center gap-0.5 text-sm font-bold transition ${
                     activePathIds.has(level2.id) ? 'text-amber-700' : 'text-zinc-900 hover:text-amber-700'
                   }`}
                 >
@@ -359,7 +359,7 @@ const FlyoutCategoryRail: React.FC<CategoryRailProps> = ({
                         type="button"
                         onClick={() => select(level3.id)}
                         aria-current={selectedCategory === level3.id ? 'true' : undefined}
-                        className={`text-[11px] transition ${
+                        className={`text-xs transition ${
                           selectedCategory === level3.id
                             ? 'font-bold text-amber-700'
                             : 'text-zinc-500 hover:text-amber-700'
