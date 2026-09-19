@@ -8,7 +8,7 @@ import { CheckoutModal, CheckoutPersistenceResult } from './components/CheckoutM
 import { OrderSuccessModal } from './components/OrderSuccessModal';
 import { PaymentModal } from './components/PaymentModal';
 import { InvoiceModal } from './components/InvoiceModal';
-import { OrdersModal } from './components/OrdersModal';
+import { OrdersPage } from './components/OrdersPage';
 import { WishlistModal } from './components/WishlistModal';
 import { CompareModal } from './components/CompareModal';
 import { CompareFloatingBar } from './components/CompareFloatingBar';
@@ -20,6 +20,7 @@ import { CategoryRail } from './components/CategoryRail';
 import { useBodyScrollLock } from './hooks/useBodyScrollLock';
 import { logisticsStatusLabel } from './utils/logisticsStatus';
 import { selectPurchasedCartItemIds } from './utils/cartCleanup';
+import { formatPaymentMethod } from './utils/orderDisplay';
 import { ToastContainer, ToastMessage } from './components/Toast';
 import { PRODUCTS, AVAILABLE_COUPONS, CATEGORIES } from './data/products';
 import {
@@ -118,6 +119,16 @@ const DEMO_MODE = import.meta.env.VITE_DEMO_MODE === 'true';
  * 因此换键名废弃旧缓存，让订单重新以服务端数据为准。
  */
 const ORDERS_STORAGE_KEY = 'aurora_orders_v2';
+
+/**
+ * 门户的整页视图。没有引入路由库，用 hash 标记，让刷新和浏览器后退都能回到正确的一屏。
+ */
+type PortalView = 'home' | 'orders';
+const ORDERS_VIEW_HASH = '#/orders';
+
+function readPortalViewFromHash(): PortalView {
+  return window.location.hash === ORDERS_VIEW_HASH ? 'orders' : 'home';
+}
 
 function resolveMemberId(user: UserProfile | null): number | null {
   if (!user) return null;
@@ -863,7 +874,8 @@ export default function App() {
               detail: order.receiverAddress,
               isDefault: false,
             },
-            paymentMethod: order.paymentMethod || '在线支付',
+            // 支付单回写的是渠道码（WECHAT_NATIVE），结算页提交的是中文，统一成中文再交给界面。
+            paymentMethod: formatPaymentMethod(order.paymentMethod),
             estimatedDelivery: detailLogistics.length > 0
               ? '物流持续更新中'
               : detailResult.logisticsUnavailable
@@ -1015,13 +1027,32 @@ export default function App() {
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
   const [checkoutItems, setCheckoutItems] = useState<CartItem[]>([]);
   const [completedOrder, setCompletedOrder] = useState<Order | null>(null);
-  const [isOrdersOpen, setIsOrdersOpen] = useState(false);
+  // 订单中心是整页视图，与首页互斥。门户没有路由，进/出都往 history 里压一条，
+  // 这样浏览器后退能退回上一屏、刷新也不会掉回首页。
+  const [portalView, setPortalView] = useState<PortalView>(() => readPortalViewFromHash());
+  const navigatePortalView = useCallback((view: PortalView) => {
+    const base = `${window.location.pathname}${window.location.search}`;
+    window.history.pushState({ portalView: view }, '', view === 'orders' ? `${base}${ORDERS_VIEW_HASH}` : base);
+    setPortalView(view);
+    window.scrollTo({ top: 0 });
+  }, []);
+  // pushState 不触发事件，后退/前进只靠 popstate，所以视图得从这里跟着回退，
+  // 否则地址栏回到 #/orders 而画面还停在首页。
+  useEffect(() => {
+    const syncViewFromLocation = () => setPortalView(readPortalViewFromHash());
+    window.addEventListener('popstate', syncViewFromLocation);
+    window.addEventListener('hashchange', syncViewFromLocation);
+    return () => {
+      window.removeEventListener('popstate', syncViewFromLocation);
+      window.removeEventListener('hashchange', syncViewFromLocation);
+    };
+  }, []);
   const [isWishlistOpen, setIsWishlistOpen] = useState(false);
   // 订单列表打开时重新同步一次：结算页生成的本地订单快照只带占位物流，
   // 后台发货填入的承运商、运单号要等下一次同步才会覆盖到订单卡片上。
   useEffect(() => {
-    if (isOrdersOpen) setMemberDataSyncToken((token) => token + 1);
-  }, [isOrdersOpen]);
+    if (portalView === 'orders') setMemberDataSyncToken((token) => token + 1);
+  }, [portalView]);
   // 类目树常驻页面左侧；窄屏放不下，收进抽屉由顶部「分类」按钮拉起。
   const [isCategoryDrawerOpen, setIsCategoryDrawerOpen] = useState(false);
   useBodyScrollLock(isCategoryDrawerOpen);
@@ -1271,7 +1302,7 @@ export default function App() {
       showToast('该订单商品缺少商品编号，暂时无法评价', 'error');
       return;
     }
-    setIsOrdersOpen(false);
+    // 订单中心现在是整页，评价页以浮层叠在其上：不退出订单视图，关掉评价就回到原订单。
     const known = products.find((candidate) => candidate.id === item.productId);
     const fallback: Product = known ?? {
       id: item.productId,
@@ -1303,7 +1334,7 @@ export default function App() {
    */
   const handleViewReviewFromOrder = (item: OrderItem) => {
     const productNumber = Number(String(item.productId || '').replace(/^prod-/, ''));
-    setIsOrdersOpen(false);
+    // 同 handleReviewOrderItem：个人中心以浮层叠在订单中心之上，关掉后仍回到订单页。
     setHighlightReviewProductId(Number.isFinite(productNumber) && productNumber > 0 ? productNumber : null);
     setReviewsViewToken((current) => current + 1);
     setIsUserProfileModalOpen(true);
@@ -2487,7 +2518,8 @@ export default function App() {
         onSelectProduct={openProduct}
         onOpenCart={() => setIsCartOpen(true)}
         onOpenWishlist={() => setIsWishlistOpen(true)}
-        onOpenOrders={() => setIsOrdersOpen(true)}
+        onOpenOrders={() => navigatePortalView('orders')}
+        onNavigateHome={() => navigatePortalView('home')}
         onOpenAuth={handleOpenAuth}
         onOpenUserProfile={() => setIsUserProfileModalOpen(true)}
         onOpenCouponCenter={handleOpenCouponCenter}
@@ -2496,7 +2528,30 @@ export default function App() {
       />
 
       <main id="portal-main-content" tabIndex={-1} aria-label="商城主要内容" className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-6 md:py-8">
-        <div className="lg:grid lg:grid-cols-[260px_minmax(0,1fr)] lg:items-start lg:gap-6">
+        {/* 订单中心与首页互斥，用 display 切换而不是卸载首页：首页里挂着轮播、类目树与
+            商品列表的多个请求，卸载再加回来会闪一次白，跟旧弹窗形态的数据行为也保持一致。 */}
+        {portalView === 'orders' && (
+          <OrdersPage
+            orders={orders}
+            onBackToHome={() => navigatePortalView('home')}
+            onCancelOrder={handleCancelOrder}
+            onConfirmOrder={handleConfirmOrder}
+            onRetryPayment={handleRetryPayment}
+            afterSales={afterSales}
+            afterSalesLoading={afterSalesLoading}
+            afterSalesError={afterSalesError}
+            onRetryAfterSales={loadAfterSales}
+            onApplyAfterSale={handleApplyAfterSale}
+            onCancelAfterSale={handleCancelAfterSale}
+            onApplyInvoice={handleApplyInvoice}
+            onRetryLogistics={handleRetryLogistics}
+            onReviewOrderItem={handleReviewOrderItem}
+            onViewReview={handleViewReviewFromOrder}
+            reviewedProductIds={reviewedProductIds}
+          />
+        )}
+
+        <div className={portalView === 'orders' ? 'hidden' : 'lg:grid lg:grid-cols-[260px_minmax(0,1fr)] lg:items-start lg:gap-6'}>
           {/* 类目树常驻左侧：顶部导航放不下全部一级类目，改由左栏承载。
               左栏不能加 overflow，否则会把一级类目 hover 出来的下级浮层裁掉。
               卡片 padding 从 p-3 调到 p-4，必须同步改 CategoryRail 浮层的 left 偏移（0.75rem → 1rem），
@@ -3096,7 +3151,7 @@ export default function App() {
         onClose={() => setCompletedOrder(null)}
         onViewAllOrders={() => {
           setCompletedOrder(null);
-          setIsOrdersOpen(true);
+          navigatePortalView('orders');
         }}
         onContinueShopping={() => setCompletedOrder(null)}
       />
@@ -3115,26 +3170,6 @@ export default function App() {
           onSubmit={submitInvoice}
         />
       )}
-
-      <OrdersModal
-        isOpen={isOrdersOpen}
-        orders={orders}
-        onClose={() => setIsOrdersOpen(false)}
-        onCancelOrder={handleCancelOrder}
-        onConfirmOrder={handleConfirmOrder}
-        onRetryPayment={handleRetryPayment}
-        afterSales={afterSales}
-        afterSalesLoading={afterSalesLoading}
-        afterSalesError={afterSalesError}
-        onRetryAfterSales={loadAfterSales}
-        onApplyAfterSale={handleApplyAfterSale}
-        onCancelAfterSale={handleCancelAfterSale}
-        onApplyInvoice={handleApplyInvoice}
-        onRetryLogistics={handleRetryLogistics}
-        onReviewOrderItem={handleReviewOrderItem}
-        onViewReview={handleViewReviewFromOrder}
-        reviewedProductIds={reviewedProductIds}
-      />
 
       <WishlistModal
         isOpen={isWishlistOpen}
@@ -3217,7 +3252,7 @@ export default function App() {
         onLogout={handleLogout}
         onOpenOrders={() => {
           setIsUserProfileModalOpen(false);
-          setIsOrdersOpen(true);
+          navigatePortalView('orders');
         }}
         onOpenWishlist={() => {
           setIsUserProfileModalOpen(false);

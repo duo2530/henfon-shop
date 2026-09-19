@@ -45,6 +45,8 @@ interface NavbarProps {
   onOpenCart: () => void;
   onOpenWishlist: () => void;
   onOpenOrders: () => void;
+  /** 点击品牌 Logo 回到商城首页。订单中心是整页视图，需要它把视图切回去。 */
+  onNavigateHome?: () => void;
   onOpenAuth: (mode?: AuthMode) => void;
   onOpenUserProfile: () => void;
   onOpenCouponCenter?: () => void;
@@ -69,6 +71,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenCart,
   onOpenWishlist,
   onOpenOrders,
+  onNavigateHome,
   onOpenAuth,
   onOpenUserProfile,
   onOpenCouponCenter,
@@ -329,12 +332,14 @@ export const Navbar: React.FC<NavbarProps> = ({
           {/* Brand Logo */}
           <div
             onClick={() => {
+              onNavigateHome?.();
               onCategorySelect('all');
               onSearchChange('');
             }}
             onKeyDown={(event) => {
               if (event.key === 'Enter' || event.key === ' ') {
                 event.preventDefault();
+                onNavigateHome?.();
                 onCategorySelect('all');
                 onSearchChange('');
               }

@@ -9,6 +9,8 @@ import { CouponCenter } from '../src/components/CouponCenter';
 import { CouponCenterBanner } from '../src/components/CouponCenterBanner';
 import { couponTagLabel } from '../src/utils/couponTag';
 import { selectPurchasedCartItemIds } from '../src/utils/cartCleanup';
+import { ORDER_STATUS_FILTERS, formatOrderTime, formatPaymentMethod, matchesOrderStatusFilter } from '../src/utils/orderDisplay';
+import { OrdersPage } from '../src/components/OrdersPage';
 import { isEmail, AuthModal } from '../src/components/AuthModal';
 import { createPendingLogistics } from '../src/components/CheckoutModal';
 import { OrderSuccessModal } from '../src/components/OrderSuccessModal';
@@ -371,4 +373,99 @@ assert.deepEqual(selectPurchasedCartItemIds([], [{ productId: 'prod-7' }]), []);
 // 非法商品 ID（演示数据、秒杀占位）不参与匹配，避免把服务端购物车清空。
 assert.deepEqual(selectPurchasedCartItemIds([{ id: 32, productId: 7 }], [{ productId: 'prod-NaN' }]), []);
 
-console.log('shop-portal 组件冒烟测试通过：商品卡片、库存禁购、Banner 跳转数据、物流进度取数、左侧类目树（浮层与展开两态）、领券横幅与券墙（含券型中文标签）、商品详情视频位与占位加载态、已购购物车条目清理匹配语义正常');
+// ===== 订单中心（整页）=====
+
+// 页签口径按用户动作分组：服务端六态里 paid/processing 同为「待发货」、shipped/out_for_delivery 同为「待收货」。
+const orderWithStatus = (status: string): Order => ({ ...draftOrder, id: `ord-${status}`, status });
+assert.equal(matchesOrderStatusFilter(orderWithStatus('placed'), 'unpaid'), true);
+assert.equal(matchesOrderStatusFilter(orderWithStatus('paid'), 'unshipped'), true);
+assert.equal(matchesOrderStatusFilter(orderWithStatus('processing'), 'unshipped'), true);
+assert.equal(matchesOrderStatusFilter(orderWithStatus('shipped'), 'shipped'), true);
+assert.equal(matchesOrderStatusFilter(orderWithStatus('out_for_delivery'), 'shipped'), true);
+assert.equal(matchesOrderStatusFilter(orderWithStatus('delivered'), 'finished'), true);
+assert.equal(matchesOrderStatusFilter(orderWithStatus('refunding'), 'afterSale'), true);
+assert.equal(matchesOrderStatusFilter(orderWithStatus('refunded'), 'afterSale'), true);
+assert.equal(matchesOrderStatusFilter(orderWithStatus('cancelled'), 'cancelled'), true);
+// 一单只能落进一个状态页签，否则计数会重复、页签之间会串单。
+assert.equal(matchesOrderStatusFilter(orderWithStatus('delivered'), 'shipped'), false);
+assert.equal(matchesOrderStatusFilter(orderWithStatus('shipped'), 'finished'), false);
+// 后端将来新增的状态不得被塞进任何具名页签，只在「全部订单」里出现。
+const unknownStatus = 'some_new_status';
+assert.equal(matchesOrderStatusFilter(orderWithStatus(unknownStatus), 'all'), true);
+ORDER_STATUS_FILTERS.filter(({ key }) => key !== 'all').forEach(({ key }) => {
+  assert.equal(matchesOrderStatusFilter(orderWithStatus(unknownStatus), key), false, `${unknownStatus} 不应落进 ${key}`);
+});
+
+// 订单时间两个来源格式不同（服务端带毫秒、本地快照走 toLocaleString），列表里统一裁到分钟。
+assert.equal(formatOrderTime('2026-09-19 17:51:13.061'), '2026-09-19 17:51');
+assert.equal(formatOrderTime('2026/9/19 17:51:13'), '2026-09-19 17:51');
+assert.equal(formatOrderTime(''), '-');
+assert.equal(formatOrderTime('刚刚'), '刚刚');
+
+// 支付方式在库里混存两种口径：支付单回写渠道码、结算页提交中文。渠道码不能直接上屏。
+assert.equal(formatPaymentMethod('WECHAT_NATIVE'), '微信支付');
+assert.equal(formatPaymentMethod('wechat_native'), '微信支付');
+assert.equal(formatPaymentMethod('WECHAT'), '微信支付');
+assert.equal(formatPaymentMethod('微信支付'), '微信支付');
+assert.equal(formatPaymentMethod('支付宝'), '支付宝');
+assert.equal(formatPaymentMethod(''), '在线支付');
+assert.equal(formatPaymentMethod(undefined), '在线支付');
+// 认不出的渠道码收起为通用文案，但已经是中文的原样保留，别把新渠道显示成英文串。
+assert.equal(formatPaymentMethod('SOME_NEW_CHANNEL'), '在线支付');
+assert.equal(formatPaymentMethod('云闪付'), '云闪付');
+
+const shippedOrder: Order = {
+  ...draftOrder,
+  id: 'ord-shipped-1',
+  orderNumber: 'AO20260919002',
+  status: 'shipped',
+  statusLabel: '运输中',
+  carrier: '中通快递',
+  trackingNumber: 'ZT99932232344',
+  items: [
+    { productId: 'prod-65', title: '无线蓝牙耳机 基础款', image: '', variantsSummary: '标准版', price: 0.01, quantity: 2 },
+  ],
+  // 同一屏里收货信息与物流卡片必须同口径：都给完整手机号等于把脱敏白做了。
+  shippingAddress: { ...draftOrder.shippingAddress, phone: '18877777666', detail: '广州天安番禺节能科技园' },
+  subtotal: 0.02,
+  totalPaid: 0.02,
+  paymentMethod: 'WECHAT_NATIVE',
+};
+const cancelledOrder: Order = {
+  ...draftOrder,
+  id: 'ord-cancelled-1',
+  orderNumber: 'AO20260919003',
+  status: 'cancelled',
+  statusLabel: '已取消',
+};
+
+const ordersPageMarkup = renderToStaticMarkup(
+  <OrdersPage
+    orders={[shippedOrder, cancelledOrder]}
+    onBackToHome={() => undefined}
+    onApplyAfterSale={() => undefined}
+  />,
+);
+// 整页形态：不再是覆盖全屏的弹层。
+assert.doesNotMatch(ordersPageMarkup, /backdrop-blur|fixed inset-0/);
+// 页签把订单按状态分流，计数与筛选结果一致（两家订单各占一个页签）。
+assert.match(ordersPageMarkup, /全部订单<span[^>]*>2<\/span>/);
+assert.match(ordersPageMarkup, /待收货<span[^>]*>1<\/span>/);
+assert.match(ordersPageMarkup, /已取消<span[^>]*>1<\/span>/);
+assert.match(ordersPageMarkup, /待付款<span[^>]*>0<\/span>/);
+// 左列表两个订单都在，右详情默认落在列表首单上。
+assert.match(ordersPageMarkup, /AO20260919002/);
+assert.match(ordersPageMarkup, /AO20260919003/);
+assert.match(ordersPageMarkup, /无线蓝牙耳机 基础款/);
+assert.match(ordersPageMarkup, /金额明细/);
+assert.match(ordersPageMarkup, /收货信息/);
+assert.match(ordersPageMarkup, /实付款/);
+// 支付方式必须上屏中文：详情区不能出现 WECHAT_NATIVE 这类渠道码。
+assert.match(ordersPageMarkup, /微信支付/);
+assert.doesNotMatch(ordersPageMarkup, /WECHAT_NATIVE/);
+// 收货信息与物流卡片同口径脱敏，整页不得出现完整手机号与完整详细地址。
+assert.match(ordersPageMarkup, /188\*\*\*\*7666/);
+assert.doesNotMatch(ordersPageMarkup, /18877777666/);
+assert.doesNotMatch(ordersPageMarkup, /广州天安番禺节能科技园/);
+
+console.log('shop-portal 组件冒烟测试通过：商品卡片、库存禁购、Banner 跳转数据、物流进度取数、左侧类目树（浮层与展开两态）、领券横幅与券墙（含券型中文标签）、商品详情视频位与占位加载态、已购购物车条目清理匹配、订单中心整页（页签分流计数与列表↔详情双栏）语义正常');

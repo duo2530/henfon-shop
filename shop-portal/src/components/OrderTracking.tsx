@@ -53,14 +53,14 @@ export interface OrderTrackingProps {
 }
 
 /** 对订单展示中的手机号做脱敏，避免物流页面暴露完整联系方式。 */
-function maskPhone(phone?: string): string {
+export function maskPhone(phone?: string): string {
   if (!phone) return '-';
   const normalized = phone.replace(/\s+/g, '');
   return normalized.length >= 7 ? `${normalized.slice(0, 3)}****${normalized.slice(-4)}` : normalized;
 }
 
 /** 对订单展示中的详细地址做脱敏，仅保留定位所需的省市区信息。 */
-function maskDetailAddress(detail?: string): string {
+export function maskDetailAddress(detail?: string): string {
   if (!detail) return '';
   const normalized = detail.trim();
   if (normalized.length <= 6) return '******';

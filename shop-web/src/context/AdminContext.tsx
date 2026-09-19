@@ -375,7 +375,6 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       'product:export': ['catalog:product:export', 'catalog:product:query'],
       'product:cost:view': ['catalog:product:cost:view', 'catalog:product:query'],
       'inventory:stock:adjust': ['inventory:stock:adjust'],
-      'order:add': ['trade:order:create', 'trade:order:query'],
       'order:export': ['trade:order:export', 'trade:order:query'],
       'order:pii:view': ['trade:order:pii:view', 'trade:order:query'],
       'order:ship': ['trade:order:ship'],

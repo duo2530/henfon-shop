@@ -103,7 +103,7 @@ henfon-shop
 - 销售趋势、商品排行、会员分析与 CSV 报表导出
 - 订单 Outbox 事件、RocketMQ 异步投递与失败重试审计
 
-门户组件：`HeroBanner`、`Navbar`（首页导航与轮播）、`ProductCard`、`ProductQuickView`（列表与快速查看）、`CartDrawer`（购物车抽屉）、`CheckoutModal`、`AmapAddressPicker`（结算与地址）、`PaymentModal`、`OrderSuccessModal`、`InvoiceModal`（支付与开票）、`OrdersModal`、`OrderTracking`（订单与物流）、`AuthModal`、`UserProfileModal`（账号资料）、`WishlistModal`、`CompareModal`、`CompareChartsView`、`CompareFloatingBar`（收藏与对比）、`CouponCenter`（领券中心）。
+门户组件：`HeroBanner`、`Navbar`（首页导航与轮播）、`ProductCard`、`ProductQuickView`（列表与快速查看）、`CartDrawer`（购物车抽屉）、`CheckoutModal`、`AmapAddressPicker`（结算与地址）、`PaymentModal`、`OrderSuccessModal`、`InvoiceModal`（支付与开票）、`OrdersPage`、`OrderTracking`（订单与物流）、`AuthModal`、`UserProfileModal`（账号资料）、`WishlistModal`、`CompareModal`、`CompareChartsView`、`CompareFloatingBar`（收藏与对比）、`CouponCenter`（领券中心）。
 
 ## 页面截图
 
@@ -252,9 +252,9 @@ henfon-shop
 | 浏览与引流 | `HeroBanner`、`ProductCard`、`CouponCenter` | 商品管理、轮播图、优惠券 | `shop-catalog`、`shop-marketing`、`shop-content` | [门户首页](docs/screenshots/portal-home.png) · [商品列表](docs/screenshots/portal-products.png) · [商品管理](docs/screenshots/admin-products.png) |
 | 购物车与下单 | `CartDrawer`、`CheckoutModal`、`AmapAddressPicker` | 订单管理 | `shop-trade`、`shop-catalog`、`shop-inventory` | [购物车](docs/screenshots/portal-cart.png) · [结算](docs/screenshots/portal-checkout.png) · [地址选点](docs/screenshots/portal-address-map.png) |
 | 支付与开票 | `PaymentModal`、`InvoiceModal` | 发票管理、资金对账 | `shop-payment` | [发票与税务](docs/screenshots/admin-finance-invoices.png) · [资金对账](docs/screenshots/admin-finance-transactions.png) |
-| 履约与物流 | `OrdersModal`、`OrderTracking` | 订单管理（发货、批量发货）、系统设置（物流字典） | `shop-trade`、`shop-integration` | [订单履约](docs/screenshots/admin-orders.png) · [系统设置](docs/screenshots/admin-settings.png) |
+| 履约与物流 | `OrdersPage`、`OrderTracking` | 订单管理（发货、批量发货）、系统设置（物流字典） | `shop-trade`、`shop-integration` | [订单履约](docs/screenshots/admin-orders.png) · [系统设置](docs/screenshots/admin-settings.png) |
 | 会员与营销 | `AuthModal`、`UserProfileModal`、`WishlistModal`、`CompareModal` | 会员管理、优惠券、秒杀 | `shop-identity`、`shop-marketing` | [会员登录](docs/screenshots/portal-login.png) · [领券中心](docs/screenshots/portal-coupon-center.png) · [优惠券](docs/screenshots/admin-coupons.png) · [秒杀](docs/screenshots/admin-flash-sales.png) |
-| 售后与评价 | `OrdersModal`（售后申请） | 订单管理、评价管理 | `shop-trade`、`shop-content` | [客户评价](docs/screenshots/admin-content-reviews.png) |
+| 售后与评价 | `OrdersPage`（售后申请） | 订单管理、评价管理 | `shop-trade`、`shop-content` | [客户评价](docs/screenshots/admin-content-reviews.png) |
 | 经营复盘 | — | 工作台、经营分析、资金对账 | `shop-reporting`、`shop-payment` | [工作台](docs/screenshots/admin-dashboard.png) · [经营大屏](docs/screenshots/admin-analytics-overview.png) · [商品动销榜](docs/screenshots/admin-analytics-products.png) |
 
 ## 环境要求

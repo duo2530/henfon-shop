@@ -6,7 +6,6 @@ import { listTradeOrderLogistics } from '../../api/adminApi';
 import { formatDateTime } from '../../utils/datetime';
 import { logisticsStatusLabel } from '../../utils/logisticsStatus';
 import { 
-  Plus, 
   Search, 
   Download, 
   ShoppingBag, 
@@ -47,7 +46,6 @@ export const OrderManagementView: React.FC = () => {
     showToast, 
     confirm,
     prompt,
-    products,
     requirePermission,
     searchQuery,
     logisticsCarriers
@@ -84,7 +82,6 @@ export const OrderManagementView: React.FC = () => {
   const [shippingOrder, setShippingOrder] = useState<Order | null>(null);
   const [carrier, setCarrier] = useState('');
   const [trackingNumber, setTrackingNumber] = useState('');
-  const [isNewOrderModalOpen, setIsNewOrderModalOpen] = useState(false);
 
   // Batch Ship Modal
   const [isBatchShipModalOpen, setIsBatchShipModalOpen] = useState(false);
@@ -173,13 +170,6 @@ export const OrderManagementView: React.FC = () => {
 
   /** 详情弹框优先展示服务端轨迹，回落到本地乐观更新的节点。 */
   const inspectSteps = inspectLogistics.length > 0 ? inspectLogistics : inspectOrder?.logisticsSteps || [];
-
-  // New Order Form state
-  const [newOrderCustomer, setNewOrderCustomer] = useState('');
-  const [newOrderPhone, setNewOrderPhone] = useState('');
-  const [newOrderAddress, setNewOrderAddress] = useState('');
-  const [selectedProductId, setSelectedProductId] = useState(products[0]?.id || '');
-  const [itemQuantity, setItemQuantity] = useState(1);
 
   // Filtered Orders
   const filteredOrders = useMemo(() => {
@@ -278,12 +268,6 @@ export const OrderManagementView: React.FC = () => {
     setBatchTrackingNumbers('');
   };
 
-  const handleCreateOrder = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!requirePermission('order:add', '代客录单')) return;
-    showToast('代客录单尚未接入服务端创建接口，暂不生成本地订单', 'warning');
-  };
-
   const handleOpenRemark = (order: Order) => {
     setRemarkOrder(order);
     setRemarkText(order.sellerNote || '');
@@ -359,7 +343,7 @@ export const OrderManagementView: React.FC = () => {
   };
 
   // 弹层打开期间锁住底层文档滚动，避免出现滚动穿透。
-  useBodyScrollLock(Boolean(inspectOrder) || Boolean(shippingOrder) || isBatchShipModalOpen || Boolean(remarkOrder) || Boolean(refundOrder) || isNewOrderModalOpen);
+  useBodyScrollLock(Boolean(inspectOrder) || Boolean(shippingOrder) || isBatchShipModalOpen || Boolean(remarkOrder) || Boolean(refundOrder));
   return (
     <div className="space-y-6 animate-in fade-in-50 duration-200">
       {/* Header Section */}
@@ -386,17 +370,6 @@ export const OrderManagementView: React.FC = () => {
             >
               <Download className="w-4 h-4 text-gray-500" />
               <span>导出 Excel</span>
-            </button>
-          </PermissionGate>
-
-          <PermissionGate permission="order:add">
-            <button
-              id="btn-create-order"
-              onClick={() => showToast('代客录单尚未接入服务端创建接口，暂不可创建订单', 'warning')}
-              className="h-[36px] px-4 rounded-lg bg-[#2563EB] text-white hover:bg-blue-700 flex items-center justify-center gap-2 text-xs font-semibold shadow-xs transition-colors cursor-pointer"
-            >
-              <Plus className="w-4 h-4" />
-              <span>代客录单（接口待接入）</span>
             </button>
           </PermissionGate>
         </div>
@@ -1487,117 +1460,6 @@ export const OrderManagementView: React.FC = () => {
                 {isRefundSubmitting ? '提交中...' : '同意并原路退款'}
               </button>
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* New Order Modal */}
-      {isNewOrderModalOpen && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-xs">
-          <div className="bg-white rounded-xl max-w-lg w-full p-6 border border-gray-200 shadow-2xl animate-in zoom-in-95">
-            <div className="flex items-center justify-between pb-3 border-b border-gray-200">
-              <h3 className="text-base font-bold text-gray-900">
-                代客录入新订单 (Manual Order Entry)
-              </h3>
-              <button
-                onClick={() => setIsNewOrderModalOpen(false)}
-                className="text-gray-400 hover:text-gray-600 p-1.5 rounded-lg"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleCreateOrder} className="py-4 space-y-3.5 text-sm">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-gray-700 mb-1">
-                    客户姓名 *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={newOrderCustomer}
-                    onChange={(e) => setNewOrderCustomer(e.target.value)}
-                    placeholder="如: 张先生"
-                    className="w-full h-[36px] px-3 rounded-lg border border-gray-300 focus:border-blue-500 outline-none text-sm"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-gray-700 mb-1">
-                    手机号码 *
-                  </label>
-                  <input
-                    type="tel"
-                    required
-                    value={newOrderPhone}
-                    onChange={(e) => setNewOrderPhone(e.target.value)}
-                    placeholder="请输入真实手机号"
-                    className="w-full h-[36px] px-3 rounded-lg border border-gray-300 focus:border-blue-500 outline-none text-sm"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-gray-700 mb-1">
-                  订购商品
-                </label>
-                <select
-                  value={selectedProductId}
-                  onChange={(e) => setSelectedProductId(e.target.value)}
-                  className="w-full h-[36px] px-3 rounded-lg border border-gray-300 focus:border-blue-500 outline-none text-sm bg-white"
-                >
-                  {products.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name} (¥{p.price.toFixed(2)})
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-gray-700 mb-1">
-                  购买数量
-                </label>
-                <input
-                  type="number"
-                  min="1"
-                  value={itemQuantity}
-                  onChange={(e) => setItemQuantity(parseInt(e.target.value, 10) || 1)}
-                  className="w-full h-[36px] px-3 rounded-lg border border-gray-300 focus:border-blue-500 outline-none text-sm"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-gray-700 mb-1">
-                  详细收货地址 *
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={newOrderAddress}
-                  onChange={(e) => setNewOrderAddress(e.target.value)}
-                  placeholder="省/市/区/详细街道与门牌号"
-                  className="w-full h-[36px] px-3 rounded-lg border border-gray-300 focus:border-blue-500 outline-none text-sm"
-                />
-              </div>
-
-              <div className="pt-3 border-t border-gray-200 flex justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setIsNewOrderModalOpen(false)}
-                  className="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 text-xs font-medium cursor-pointer"
-                >
-                  取消
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2 rounded-lg bg-[#2563EB] text-white hover:bg-blue-700 text-xs font-semibold shadow-xs cursor-pointer"
-                >
-                  创建订单
-                </button>
-              </div>
-            </form>
           </div>
         </div>
       )}
