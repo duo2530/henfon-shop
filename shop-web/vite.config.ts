@@ -11,6 +11,15 @@ export default defineConfig(() => {
         '@': path.resolve(__dirname, '.'),
       },
     },
+    build: {
+      rollupOptions: {
+        // 操作指南是独立入口（顶栏问号新标签页打开），与主应用共用同一份 Tailwind 产物。
+        input: {
+          main: path.resolve(__dirname, 'index.html'),
+          guide: path.resolve(__dirname, 'guide.html'),
+        },
+      },
+    },
     server: {
       // HMR is disabled in AI Studio via DISABLE_HMR env var.
       // Do not modifyâfile watching is disabled to prevent flickering during agent edits.

@@ -9,8 +9,7 @@ import {
   HelpCircle, 
   User, 
   ShieldCheck, 
-  Sparkles,
-  ExternalLink
+  Sparkles
 } from 'lucide-react';
 import { useBodyScrollLock } from '../../hooks/useBodyScrollLock';
 
@@ -25,7 +24,6 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
 }) => {
   const { searchQuery, setSearchQuery, notificationUnreadCount, setCurrentTab, showToast, authorizedMenuItems, currentUser, products, orders, users } = useAdmin();
   const [profileOpen, setProfileOpen] = useState(false);
-  const [helpModalOpen, setHelpModalOpen] = useState(false);
   const [avatarLoadFailed, setAvatarLoadFailed] = useState(false);
 
   const hasSettingsMenu = containsMenuTab(authorizedMenuItems, 'settings');
@@ -52,7 +50,7 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
   }, [avatarUrl]);
 
   // 弹层打开期间锁住底层文档滚动，避免出现滚动穿透。
-  useBodyScrollLock(profileOpen || helpModalOpen);
+  useBodyScrollLock(profileOpen);
   return (
     <>
       <header
@@ -112,15 +110,17 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
             )}
           </button>
 
-          {/* Help / Docs Button */}
-          <button
+          {/* Help / Docs：操作指南是独立页面，用原生链接新标签页打开，方便对照着操作，也不受弹窗拦截影响 */}
+          <a
             id="btn-help-trigger"
-            onClick={() => setHelpModalOpen(true)}
+            href={`${import.meta.env.BASE_URL}guide.html`}
+            target="_blank"
+            rel="noopener noreferrer"
             className="text-gray-600 hover:text-gray-900 hover:bg-gray-200/70 p-2 rounded-full transition-colors cursor-pointer"
-            aria-label="Help and Operations Guide"
+            aria-label="在新标签页打开电商运营系统操作指南"
           >
             <HelpCircle className="w-5 h-5" />
-          </button>
+          </a>
 
           {/* Administrator Profile */}
           <div className="relative">
@@ -194,65 +194,6 @@ export const TopNavbar: React.FC<TopNavbarProps> = ({
           </div>
         </div>
       </header>
-
-      {/* Operations Help Guide Modal */}
-      {helpModalOpen && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-xs">
-          <div className="bg-white rounded-xl max-w-md w-full p-6 border border-gray-200 shadow-xl">
-            <div className="flex items-center justify-between pb-3 border-b border-gray-100">
-              <div className="flex items-center gap-2">
-                <div className="p-1.5 bg-blue-100 text-blue-700 rounded-lg">
-                  <HelpCircle className="w-5 h-5" />
-                </div>
-                <h3 className="text-base font-semibold text-gray-900">电商运营系统操作指南</h3>
-              </div>
-              <button
-                onClick={() => setHelpModalOpen(false)}
-                className="text-gray-400 hover:text-gray-600 p-1 rounded"
-                aria-label="关闭操作指南"
-              >
-                ✕
-              </button>
-            </div>
-
-            <div className="py-4 space-y-3 text-sm text-gray-600">
-              <div className="p-3 bg-gray-50 rounded-lg border border-gray-100">
-                <p className="font-medium text-gray-800 mb-1">📊 工作台看板 (Dashboard)</p>
-                <p className="text-xs text-gray-500">
-                  实时监控今日营业额、待处理订单与待办事项，点击待办事项可直达相关业务处理。
-                </p>
-              </div>
-              <div className="p-3 bg-gray-50 rounded-lg border border-gray-100">
-                <p className="font-medium text-gray-800 mb-1">📦 商品管理 (Products)</p>
-                <p className="text-xs text-gray-500">
-                  支持多条件筛选、即时状态上下架切换、添加商品、编辑库存与价格等。
-                </p>
-              </div>
-              <div className="p-3 bg-gray-50 rounded-lg border border-gray-100">
-                <p className="font-medium text-gray-800 mb-1">🛒 订单履约 (Orders)</p>
-                <p className="text-xs text-gray-500">
-                  按不同生命周期阶段（待付款/待发货/已完成）统一管理并快速打印填报运单号发货。
-                </p>
-              </div>
-              <div className="p-3 bg-gray-50 rounded-lg border border-gray-100">
-                <p className="font-medium text-gray-800 mb-1">👥 用户与客户 (Users)</p>
-                <p className="text-xs text-gray-500">
-                  查看客户消费画像、等级积分，提供账户冻结/解冻与安全管理控制。
-                </p>
-              </div>
-            </div>
-
-            <div className="pt-3 border-t border-gray-100 flex justify-end">
-              <button
-                onClick={() => setHelpModalOpen(false)}
-                className="px-4 py-2 bg-blue-600 text-white text-xs font-semibold rounded-lg hover:bg-blue-700 transition-colors"
-              >
-                我知道了
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </>
   );
 };
