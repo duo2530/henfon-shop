@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { ProductCard } from '../src/components/ProductCard';
-import { ProductQuickView, sanitizeProductRichText } from '../src/components/ProductQuickView';
+import { ProductDetailPage, sanitizeProductRichText } from '../src/components/ProductDetailPage';
 import { HeroBanner } from '../src/components/HeroBanner';
 import { OrderTracking } from '../src/components/OrderTracking';
 import { CategoryRail } from '../src/components/CategoryRail';
@@ -11,10 +11,14 @@ import { couponTagLabel } from '../src/utils/couponTag';
 import { selectPurchasedCartItemIds } from '../src/utils/cartCleanup';
 import { ORDER_STATUS_FILTERS, formatOrderTime, formatPaymentMethod, matchesOrderStatusFilter } from '../src/utils/orderDisplay';
 import { OrdersPage } from '../src/components/OrdersPage';
+import { WishlistPage } from '../src/components/WishlistPage';
+import { ComparePage } from '../src/components/ComparePage';
+import { UserProfilePage } from '../src/components/UserProfilePage';
+import { buildPortalHash, parsePortalRoute } from '../src/utils/portalRoute';
 import { isEmail, AuthModal } from '../src/components/AuthModal';
 import { createPendingLogistics } from '../src/components/CheckoutModal';
 import { OrderSuccessModal } from '../src/components/OrderSuccessModal';
-import type { Product, Coupon, Order } from '../src/types/ecommerce';
+import type { Product, Coupon, Order, UserProfile } from '../src/types/ecommerce';
 import type { PortalCategoryNode } from '../src/api/portalApi';
 
 const baseProduct: Product = {
@@ -241,13 +245,13 @@ assert.equal(couponTagLabel('SHIPPING'), '包邮');
 assert.equal(couponTagLabel('新人立减'), '新人立减');
 assert.equal(couponTagLabel(undefined), '');
 
-// 商品带视频时，详情弹层的第一张媒体应渲染成可播放的 <video>，海报图回退到商品主图。
+// 商品带视频时，详情页的第一张媒体应渲染成可播放的 <video>，海报图回退到商品主图。
 const videoProduct: Product = { ...baseProduct, videoUrl: 'https://example.com/demo-product.mp4' };
 const videoMarkup = renderToStaticMarkup(
-  <ProductQuickView
+  <ProductDetailPage
     product={videoProduct}
     isWishlisted={false}
-    onClose={() => undefined}
+    onBackToHome={() => undefined}
     onAddToCart={() => undefined}
     onDirectBuy={() => undefined}
     onToggleWishlist={() => undefined}
@@ -260,10 +264,10 @@ assert.match(videoMarkup, /视频演示/);
 
 // 没有视频的商品不该出现空的视频位。
 const noVideoMarkup = renderToStaticMarkup(
-  <ProductQuickView
+  <ProductDetailPage
     product={baseProduct}
     isWishlisted={false}
-    onClose={() => undefined}
+    onBackToHome={() => undefined}
     onAddToCart={() => undefined}
     onDirectBuy={() => undefined}
     onToggleWishlist={() => undefined}
@@ -271,8 +275,8 @@ const noVideoMarkup = renderToStaticMarkup(
 );
 assert.doesNotMatch(noVideoMarkup, /<video/);
 
-// 从轮播直链进入时，商品不一定落在当前分页的商品列表里，App 会先挂一个只有 ID 的占位对象：
-// 详情回来之前只能看到加载提示，不能把空标题、¥0、空媒体位这些骨架铺满弹窗。
+// 从轮播、Banner 直链进入时，商品不一定落在当前分页的商品列表里，App 会先挂一个只有 ID 的占位对象：
+// 详情回来之前只能看到加载提示，不能把空标题、¥0、空媒体位这些骨架铺满整页。
 const placeholderProduct: Product = {
   ...baseProduct,
   id: 'prod-7',
@@ -284,11 +288,11 @@ const placeholderProduct: Product = {
   images: [],
 };
 const placeholderMarkup = renderToStaticMarkup(
-  <ProductQuickView
+  <ProductDetailPage
     product={placeholderProduct}
     detailLoading
     isWishlisted={false}
-    onClose={() => undefined}
+    onBackToHome={() => undefined}
     onAddToCart={() => undefined}
     onDirectBuy={() => undefined}
     onToggleWishlist={() => undefined}
@@ -299,14 +303,14 @@ assert.doesNotMatch(placeholderMarkup, /¥/);
 assert.doesNotMatch(placeholderMarkup, /<video/);
 assert.doesNotMatch(placeholderMarkup, /测试降噪耳机/);
 
-// 占位对象的详情接口失败时要给出错误和重试入口，而不是留一张空白弹窗。
+// 占位对象的详情接口失败时要给出错误和重试入口，而不是留一张空白页。
 const placeholderErrorMarkup = renderToStaticMarkup(
-  <ProductQuickView
+  <ProductDetailPage
     product={placeholderProduct}
     detailError="商品详情不存在或已下架"
     onRetryDetail={() => undefined}
     isWishlisted={false}
-    onClose={() => undefined}
+    onBackToHome={() => undefined}
     onAddToCart={() => undefined}
     onDirectBuy={() => undefined}
     onToggleWishlist={() => undefined}
@@ -314,7 +318,14 @@ const placeholderErrorMarkup = renderToStaticMarkup(
 );
 assert.match(placeholderErrorMarkup, /商品详情不存在或已下架/);
 assert.match(placeholderErrorMarkup, /重新加载/);
-assert.match(placeholderErrorMarkup, /aria-label="关闭商品详情"/);
+// 整页视图没有「关闭」这个语义了，占位态给的是回首页的出口。
+assert.match(placeholderErrorMarkup, /返回商城首页/);
+
+// 详情页是整页而不是浮层：不能再有遮罩与滚动锁留下的固定定位，得有面包屑与页面级 h1。
+assert.match(videoMarkup, /aria-label="面包屑"/);
+assert.match(videoMarkup, /<h1[^>]*>测试降噪耳机<\/h1>/);
+assert.match(videoMarkup, /返回首页继续逛/);
+assert.doesNotMatch(videoMarkup, /fixed inset-0/);
 
 // 结算页不得自行编造物流：后台选「中通快递」发货时，本地编的顺丰承运商、顺丰单号与
 // 「1-2 日顺丰送达」会一直盖住服务端真实值，订单卡片就与后台对不上。
@@ -372,6 +383,123 @@ assert.deepEqual(selectPurchasedCartItemIds([{ id: 31, productId: 7 }], []), [])
 assert.deepEqual(selectPurchasedCartItemIds([], [{ productId: 'prod-7' }]), []);
 // 非法商品 ID（演示数据、秒杀占位）不参与匹配，避免把服务端购物车清空。
 assert.deepEqual(selectPurchasedCartItemIds([{ id: 32, productId: 7 }], [{ productId: 'prod-NaN' }]), []);
+
+// ===== 整页视图路由 =====
+
+assert.deepEqual(parsePortalRoute(''), { view: 'home' });
+assert.deepEqual(parsePortalRoute('#/'), { view: 'home' });
+assert.deepEqual(parsePortalRoute('#/orders'), { view: 'orders' });
+// 页签与选中订单进查询串：跳去商品详情或评价页再返回，筛选与选中项还能对上。
+assert.deepEqual(
+  parsePortalRoute('#/orders?status=shipped&order=26'),
+  { view: 'orders', status: 'shipped', order: '26' },
+);
+// `all` 是缺省页签，不进地址，同一个画面只留一种地址。
+assert.deepEqual(parsePortalRoute('#/orders?status=all'), { view: 'orders' });
+// 认不出的页签、超长或带尖括号的订单 ID 一律丢掉，不做「原样回读地址栏」。
+assert.deepEqual(parsePortalRoute('#/orders?status=nope&order=%3Cscript%3E'), { view: 'orders' });
+assert.deepEqual(
+  parsePortalRoute(`#/orders?order=${'a'.repeat(41)}`),
+  { view: 'orders' },
+  '超长订单 ID 不应进路由',
+);
+assert.deepEqual(parsePortalRoute('#/wishlist'), { view: 'wishlist' });
+assert.deepEqual(parsePortalRoute('#/compare'), { view: 'compare' });
+// 个人中心三个子视图各有一条地址；资料页是缺省子视图，不带路径段。
+assert.deepEqual(parsePortalRoute('#/account'), { view: 'account' });
+assert.deepEqual(parsePortalRoute('#/account/profile'), { view: 'account' });
+assert.deepEqual(parsePortalRoute('#/account/coupons'), { view: 'account', section: 'coupons' });
+assert.deepEqual(parsePortalRoute('#/account/reviews'), { view: 'account', section: 'reviews' });
+assert.deepEqual(
+  parsePortalRoute('#/account/reviews?product=65'),
+  { view: 'account', section: 'reviews', productId: 65 },
+);
+// 认不出的子视图落回资料页而不是首页：路径主体（个人中心）是认得的。
+assert.deepEqual(parsePortalRoute('#/account/nope'), { view: 'account' });
+// 高亮商品只在评价子视图下有意义，别把参数带到券包地址上。
+assert.deepEqual(parsePortalRoute('#/account/coupons?product=65'), { view: 'account', section: 'coupons' });
+assert.deepEqual(parsePortalRoute('#/account/reviews?product=abc'), { view: 'account', section: 'reviews' });
+// 认不出的路由路径回首页：地址栏能表达的状态与实际画面必须一致。
+assert.deepEqual(parsePortalRoute('#/not-a-view'), { view: 'home' });
+// 正文锚点不是路由。这条是回归点：跳过导航链接写的是 #portal-main-content，
+// 一旦被当成路由解析（旧实现只认 #/orders、其余全当首页），用户点一次跳过链接就会被打回首页。
+assert.equal(parsePortalRoute('#portal-main-content'), null);
+assert.equal(parsePortalRoute('#coupon-center-section'), null);
+
+// 商品详情：商品 ID 与页内页签都进地址，刷新、分享链接才能落到同一个商品、同一个页签。
+assert.deepEqual(parsePortalRoute('#/product/prod-7'), { view: 'product', productId: 'prod-7' });
+// 订单明细、Banner 的 linkTarget 里可能是纯数字写法，归一化后同一商品只有一种地址。
+assert.deepEqual(parsePortalRoute('#/product/7'), { view: 'product', productId: 'prod-7' });
+assert.deepEqual(
+  parsePortalRoute('#/product/prod-7?tab=reviews'),
+  { view: 'product', productId: 'prod-7', tab: 'reviews' },
+);
+assert.deepEqual(
+  parsePortalRoute('#/product/prod-7?tab=reviews&variant=%E9%BB%91%E8%89%B2'),
+  { view: 'product', productId: 'prod-7', tab: 'reviews', variant: '黑色' },
+);
+// 页签取值非法时当作没带页签，不能把非法值透给页面。
+assert.deepEqual(parsePortalRoute('#/product/prod-7?tab=nope'), { view: 'product', productId: 'prod-7' });
+// 光有 #/product 而没有 ID 属于残缺地址，回首页，不停在一个没有商品的商品页上。
+assert.deepEqual(parsePortalRoute('#/product'), { view: 'home' });
+assert.deepEqual(parsePortalRoute('#/product/'), { view: 'home' });
+
+assert.equal(buildPortalHash({ view: 'home' }), '');
+assert.equal(buildPortalHash({ view: 'orders' }), '#/orders');
+assert.equal(buildPortalHash({ view: 'orders', status: 'shipped' }), '#/orders?status=shipped');
+assert.equal(
+  buildPortalHash({ view: 'orders', status: 'shipped', order: '26' }),
+  '#/orders?status=shipped&order=26',
+);
+// `all` 与不写等价，生成端也不该把它写进地址。
+assert.equal(buildPortalHash({ view: 'orders', status: 'all' }), '#/orders');
+assert.equal(buildPortalHash({ view: 'wishlist' }), '#/wishlist');
+assert.equal(buildPortalHash({ view: 'compare' }), '#/compare');
+assert.equal(buildPortalHash({ view: 'account' }), '#/account');
+// 资料页是缺省子视图：显式写 profile 与不写生成同一个地址。
+assert.equal(buildPortalHash({ view: 'account', section: 'profile' }), '#/account');
+assert.equal(buildPortalHash({ view: 'account', section: 'coupons' }), '#/account/coupons');
+assert.equal(
+  buildPortalHash({ view: 'account', section: 'reviews', productId: 65 }),
+  '#/account/reviews?product=65',
+);
+// 高亮参数只在评价子视图下生成，否则同一屏会出现两个地址。
+assert.equal(
+  buildPortalHash({ view: 'account', section: 'coupons', productId: 65 }),
+  '#/account/coupons',
+);
+assert.equal(buildPortalHash({ view: 'product', productId: 'prod-7' }), '#/product/prod-7');
+assert.equal(
+  buildPortalHash({ view: 'product', productId: 'prod-7', tab: 'reviews' }),
+  '#/product/prod-7?tab=reviews',
+);
+// 生成与解析必须闭环，否则 pushState 写下的地址与后退时读到的视图会对不上。
+(['home', 'orders', 'wishlist', 'compare', 'account'] as const).forEach((view) => {
+  assert.deepEqual(parsePortalRoute(buildPortalHash({ view })), { view }, `${view} 的路由生成与解析应闭环`);
+});
+([
+  { view: 'orders', status: 'shipped', order: '26' },
+  { view: 'orders', order: 'ord-preset-001' },
+  { view: 'account', section: 'coupons' },
+  { view: 'account', section: 'reviews', productId: 65 },
+] as const).forEach((route) => {
+  assert.deepEqual(
+    parsePortalRoute(buildPortalHash(route)),
+    route,
+    `带参数的整页路由 ${JSON.stringify(route)} 应闭环`,
+  );
+});
+([
+  { view: 'product', productId: 'prod-7' },
+  { view: 'product', productId: 'prod-7', tab: 'reviews' },
+  { view: 'product', productId: 'prod-7', tab: 'specs', variant: '黑色 / 大号' },
+] as const).forEach((route) => {
+  assert.deepEqual(
+    parsePortalRoute(buildPortalHash(route)),
+    route,
+    `带参数的商品路由 ${JSON.stringify(route)} 应闭环`,
+  );
+});
 
 // ===== 订单中心（整页）=====
 
@@ -467,5 +595,198 @@ assert.doesNotMatch(ordersPageMarkup, /WECHAT_NATIVE/);
 assert.match(ordersPageMarkup, /188\*\*\*\*7666/);
 assert.doesNotMatch(ordersPageMarkup, /18877777666/);
 assert.doesNotMatch(ordersPageMarkup, /广州天安番禺节能科技园/);
+// 未选中订单时窄屏停在列表（左栏可见），URL 带了 order= 才停在详情。
+assert.doesNotMatch(ordersPageMarkup, /lg:overflow-y-auto hidden lg:block/);
 
-console.log('shop-portal 组件冒烟测试通过：商品卡片、库存禁购、Banner 跳转数据、物流进度取数、左侧类目树（浮层与展开两态）、领券横幅与券墙（含券型中文标签）、商品详情视频位与占位加载态、已购购物车条目清理匹配、订单中心整页（页签分流计数与列表↔详情双栏）语义正常');
+// 页签由地址承载：带 status=cancelled 进来时列表只剩已取消那一单。
+const filteredOrdersMarkup = renderToStaticMarkup(
+  <OrdersPage
+    orders={[shippedOrder, cancelledOrder]}
+    onBackToHome={() => undefined}
+    statusFilter="cancelled"
+  />,
+);
+assert.match(filteredOrdersMarkup, /AO20260919003/);
+assert.doesNotMatch(filteredOrdersMarkup, /AO20260919002/);
+assert.match(filteredOrdersMarkup, /已取消<span[^>]*>1<\/span>/);
+
+// 带 order= 进来时窄屏直接停在详情：左栏收起（刷新后仍停在原单，不用再点一次）。
+const selectedOrderMarkup = renderToStaticMarkup(
+  <OrdersPage
+    orders={[shippedOrder, cancelledOrder]}
+    onBackToHome={() => undefined}
+    statusFilter="cancelled"
+    selectedOrderId="ord-cancelled-1"
+  />,
+);
+assert.match(selectedOrderMarkup, /lg:overflow-y-auto hidden lg:block/);
+assert.match(selectedOrderMarkup, /返回订单列表/);
+
+// ===== 收藏页（整页）=====
+
+const wishlistPageMarkup = renderToStaticMarkup(
+  <WishlistPage
+    products={[baseProduct, { ...baseProduct, id: 'prod-1002', title: '机械键盘', brand: 'HENFON', images: [] }]}
+    onBackToHome={() => undefined}
+    onAddToCart={() => undefined}
+    onRemoveWishlist={() => undefined}
+    onQuickView={() => undefined}
+  />,
+);
+// 整页形态：弹窗外壳与滚动锁都应当去掉。
+assert.doesNotMatch(wishlistPageMarkup, /backdrop-blur|fixed inset-0/);
+assert.match(wishlistPageMarkup, /<h1[^>]*>我的心愿收藏<\/h1>/);
+assert.match(wishlistPageMarkup, /共收藏 2 件心仪好物/);
+// 商品逐件成卡，价格与两个操作都在。
+assert.match(wishlistPageMarkup, /测试降噪耳机/);
+assert.match(wishlistPageMarkup, /机械键盘/);
+assert.match(wishlistPageMarkup, /¥399/);
+assert.match(wishlistPageMarkup, /移入购物车/);
+assert.match(wishlistPageMarkup, /aria-label="移除收藏 测试降噪耳机"/);
+// 没有主图时给占位块，不能渲染成空 src 的破图。
+assert.doesNotMatch(wishlistPageMarkup, /src=""/);
+
+const emptyWishlistMarkup = renderToStaticMarkup(
+  <WishlistPage
+    products={[]}
+    onBackToHome={() => undefined}
+    onAddToCart={() => undefined}
+    onRemoveWishlist={() => undefined}
+    onQuickView={() => undefined}
+  />,
+);
+assert.match(emptyWishlistMarkup, /暂无收藏的商品/);
+assert.doesNotMatch(emptyWishlistMarkup, /移入购物车/);
+
+// ===== 参数对比页（整页）=====
+
+const compareProductA: Product = {
+  ...baseProduct,
+  id: 'prod-2001',
+  title: '测试降噪耳机 Pro',
+  specs: { 续航: '40 小时', 降噪深度: '48dB', 重量: '58g' },
+};
+const compareProductB: Product = {
+  ...baseProduct,
+  id: 'prod-2002',
+  title: '测试降噪耳机 Lite',
+  specs: { 续航: '24 小时', 降噪深度: '48dB', 重量: '46g' },
+};
+
+const comparePageMarkup = renderToStaticMarkup(
+  <ComparePage
+    products={[compareProductA, compareProductB]}
+    onBackToHome={() => undefined}
+    onRemoveProduct={() => undefined}
+    onAddToCart={() => undefined}
+    onBatchAddToCart={() => undefined}
+    onQuickView={() => undefined}
+    onClearAll={() => undefined}
+  />,
+);
+// 整页形态：弹窗外壳与滚动锁都应当去掉。
+assert.doesNotMatch(comparePageMarkup, /fixed inset-0/);
+assert.match(comparePageMarkup, /<h1[^>]*>商品参数多维深度对比<\/h1>/);
+assert.match(comparePageMarkup, /对比控制台/);
+assert.match(comparePageMarkup, /已选 2 \/ 3 款商品/);
+// 两栏视图切换与「仅看参数差异」都要留着 —— 它们是这个页面的主要操作。
+assert.match(comparePageMarkup, /详细参数表格/);
+assert.match(comparePageMarkup, /可视化图表/);
+assert.match(comparePageMarkup, /仅看参数差异/);
+// 对比商品逐列成卡，差异行按参数原样上屏。
+assert.match(comparePageMarkup, /测试降噪耳机 Pro/);
+assert.match(comparePageMarkup, /测试降噪耳机 Lite/);
+assert.match(comparePageMarkup, /48dB/);
+assert.match(comparePageMarkup, /40 小时/);
+// 批量加购与单款加购都在。静态渲染下勾选态由 effect 初始化、跑不到，
+// 所以只断言控件与文案，不断言「已勾选 N 款」这类派生数字。
+assert.match(comparePageMarkup, /全选对比商品/);
+assert.match(comparePageMarkup, /批量加入购物车 \(/);
+assert.match(comparePageMarkup, /加购物车 \(默认规格\)/);
+assert.match(comparePageMarkup, /从对比中移除/);
+
+// 对比位空着时给空态，不再自动弹回首页 —— 地址栏停在 #/compare 就得有对应画面。
+const emptyCompareMarkup = renderToStaticMarkup(
+  <ComparePage
+    products={[]}
+    onBackToHome={() => undefined}
+    onRemoveProduct={() => undefined}
+    onAddToCart={() => undefined}
+    onQuickView={() => undefined}
+    onClearAll={() => undefined}
+  />,
+);
+assert.match(emptyCompareMarkup, /暂未选择任何对比商品/);
+assert.match(emptyCompareMarkup, /返回商品列表选择/);
+// 没有对比商品时不出现批量加购按钮（页头副标题里的「批量加入购物车」是另一处文案，用括号区分）。
+assert.doesNotMatch(emptyCompareMarkup, /批量加入购物车 \(/);
+
+// ===== 个人中心页（整页）=====
+
+const profileUser: UserProfile = {
+  id: 'member-6',
+  username: 'henfon_buyer',
+  nickname: '清水师兄',
+  email: 'buyer@example.com',
+  phone: '186****3662',
+  avatar: 'https://example.com/avatar.webp',
+  memberLevel: '黄金VIP',
+  points: 1280,
+  balance: 88.5,
+  couponsCount: 1,
+  joinedDate: '2026-03-18',
+};
+
+const profilePageProps = {
+  user: profileUser,
+  claimedCoupons: couponFixtures,
+  orders: [shippedOrder],
+  products: [baseProduct],
+  onSelectSection: () => undefined,
+  onOpenOrders: () => undefined,
+  onOpenWishlist: () => undefined,
+  onBackToHome: () => undefined,
+  onUpdateUser: () => undefined,
+  onLogout: () => undefined,
+  onOpenCouponCenter: () => undefined,
+};
+
+const profilePageMarkup = renderToStaticMarkup(<UserProfilePage {...profilePageProps} />);
+// 整页形态：弹窗外壳、遮罩与滚动锁都应当去掉，改成面包屑 + 页面级 h1。
+assert.doesNotMatch(profilePageMarkup, /backdrop-blur|fixed inset-0|aria-modal/);
+assert.match(profilePageMarkup, /<h1[^>]*>个人中心<\/h1>/);
+assert.match(profilePageMarkup, /aria-label="面包屑"/);
+assert.match(profilePageMarkup, /清水师兄/);
+assert.match(profilePageMarkup, /黄金VIP/);
+// 三个子视图各有入口，且默认落在资料页。
+assert.match(profilePageMarkup, /aria-label="个人中心分栏"/);
+assert.match(profilePageMarkup, /资料与特权/);
+assert.match(profilePageMarkup, /我的券包/);
+assert.match(profilePageMarkup, /我的评价/);
+assert.match(profilePageMarkup, /aria-current="page"/);
+assert.match(profilePageMarkup, /当前享有 黄金VIP 特权/);
+assert.match(profilePageMarkup, /累计消费/);
+// 到订单中心、收藏页的快捷入口还在，退出登录与回首页都在页脚。
+assert.match(profilePageMarkup, /我的订单/);
+assert.match(profilePageMarkup, /心愿收藏/);
+assert.match(profilePageMarkup, /退出登录/);
+assert.match(profilePageMarkup, /返回商城首页/);
+// 资料页不该顺带渲染券包内容，否则三个子视图会串在一起。
+assert.doesNotMatch(profilePageMarkup, /我的优惠券包/);
+
+const couponsPageMarkup = renderToStaticMarkup(<UserProfilePage {...profilePageProps} section="coupons" />);
+assert.match(couponsPageMarkup, /我的优惠券包 \(2 张\)/);
+assert.match(couponsPageMarkup, /满 ¥199 可用/);
+// 券型在库里是 cash / shipping 这类标识，券卡上必须显示中文。
+assert.match(couponsPageMarkup, /满减/);
+assert.doesNotMatch(couponsPageMarkup, />cash</);
+assert.match(couponsPageMarkup, /返回个人资料/);
+assert.doesNotMatch(couponsPageMarkup, /最近订单明细/);
+
+const reviewsPageMarkup = renderToStaticMarkup(<UserProfilePage {...profilePageProps} section="reviews" />);
+assert.match(reviewsPageMarkup, /我的评价/);
+// 静态渲染不跑 effect，评价列表停在未加载的空态文案上（真实取数在浏览器里验）。
+assert.match(reviewsPageMarkup, /还没有提交过评价/);
+assert.doesNotMatch(reviewsPageMarkup, /当前享有 黄金VIP 特权/);
+
+console.log('shop-portal 组件冒烟测试通过：商品卡片、库存禁购、Banner 跳转数据、物流进度取数、左侧类目树（浮层与展开两态）、领券横幅与券墙（含券型中文标签）、商品详情整页（视频位、占位加载态、面包屑与页面 h1）、已购购物车条目清理匹配、整页视图路由（含正文锚点不当作路由、订单页签与选中订单、个人中心子视图、商品路由带参闭环）、订单中心整页（页签分流计数、列表↔详情双栏与 URL 承载的筛选/选中）、收藏页整页（卡片网格与空态）、参数对比页整页（多栏表格与空态）、个人中心整页（三个子视图与页脚出口）语义正常');

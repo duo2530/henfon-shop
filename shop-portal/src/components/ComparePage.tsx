@@ -1,7 +1,8 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 import { Product } from '../types/ecommerce';
 import {
+  ChevronLeft,
+  ChevronRight,
   X,
   Scale,
   ShoppingBag,
@@ -25,10 +26,10 @@ import {
 } from 'lucide-react';
 import { CompareChartsView } from './CompareChartsView';
 
-interface CompareModalProps {
-  isOpen: boolean;
+interface ComparePageProps {
   products: Product[];
-  onClose: () => void;
+  /** 返回商城首页：整页视图不占侧边导航，靠这条回主页。 */
+  onBackToHome: () => void;
   onRemoveProduct: (productId: string) => void;
   onAddToCart: (
     product: Product,
@@ -48,10 +49,9 @@ interface CompareModalProps {
   onRestoreLastCompare?: () => void;
 }
 
-export const CompareModal: React.FC<CompareModalProps> = ({
-  isOpen,
+export const ComparePage: React.FC<ComparePageProps> = ({
   products = [],
-  onClose,
+  onBackToHome,
   onRemoveProduct,
   onAddToCart,
   onBatchAddToCart,
@@ -60,7 +60,6 @@ export const CompareModal: React.FC<CompareModalProps> = ({
   lastComparedProducts = [],
   onRestoreLastCompare,
 }) => {
-  useBodyScrollLock(isOpen);
   const [activeTab, setActiveTab] = useState<'table' | 'charts'>('table');
   const [onlyDifferences, setOnlyDifferences] = useState<boolean>(false);
 
@@ -309,33 +308,42 @@ export const CompareModal: React.FC<CompareModalProps> = ({
     };
   }, [products, allVariantNames, allSpecKeys]);
 
-  if (!isOpen) return null;
-
   const isAllSelected = products.length > 0 && selectedProducts.length === products.length;
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/60 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 md:p-6 animate-in fade-in duration-200">
-      <div
-        className="bg-white rounded-3xl border border-zinc-200 shadow-2xl max-w-5xl w-full overflow-hidden relative flex flex-col max-h-[92vh]"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Modal Header */}
-        <div className="p-4 sm:p-6 border-b border-zinc-200 flex flex-wrap items-center justify-between gap-3 bg-zinc-50/70">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-zinc-900 text-white flex items-center justify-center shadow-xs">
-              <Scale className="w-5 h-5" />
+    <div className="space-y-5">
+      <nav aria-label="面包屑" className="flex items-center gap-1.5 text-xs text-zinc-500">
+        <button type="button" onClick={onBackToHome} className="transition hover:text-zinc-900">
+          商城首页
+        </button>
+        <ChevronRight className="h-3.5 w-3.5 text-zinc-300" />
+        <span className="font-semibold text-zinc-900">参数对比</span>
+      </nav>
+
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-bold text-zinc-900">商品参数多维深度对比</h1>
+          <p className="mt-1 text-xs text-zinc-500">
+            已选 {products.length} / 3 款商品，高亮差异、默认规格自动匹配，支持勾选批量加入购物车
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={onBackToHome}
+          className="flex items-center gap-1 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-600 transition hover:border-zinc-300 hover:text-zinc-900"
+        >
+          <ChevronLeft className="h-4 w-4" />
+          返回首页继续逛
+        </button>
+      </div>
+
+      <div className="rounded-2xl border border-zinc-200 bg-white shadow-xs">
+        <div className="p-4 sm:p-5 border-b border-zinc-200 flex flex-wrap items-center justify-between gap-3 bg-zinc-50/70">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-lg bg-zinc-900 text-white flex items-center justify-center shadow-xs">
+              <Scale className="w-4 h-4" />
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h2 className="text-lg font-bold text-zinc-900">商品参数多维深度对比</h2>
-                <span className="text-xs px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-900 font-bold">
-                  {products.length} / 3 款商品
-                </span>
-              </div>
-              <p className="text-xs text-zinc-500 mt-0.5">
-                高亮差异、默认规格自动匹配，支持勾选批量加入购物车
-              </p>
-            </div>
+            <span className="text-xs font-bold text-zinc-900">对比控制台</span>
           </div>
 
           {/* Header Controls & View Switcher */}
@@ -401,18 +409,11 @@ export const CompareModal: React.FC<CompareModalProps> = ({
               清空
             </button>
 
-            {/* Close Button */}
-            <button
-              onClick={onClose}
-              className="p-1.5 rounded-xl hover:bg-zinc-200/70 text-zinc-500 hover:text-zinc-900 transition"
-            >
-              <X className="w-5 h-5" />
-            </button>
           </div>
         </div>
 
         {/* Modal Main Comparison Table / Chart Area */}
-        <div className="overflow-y-auto overflow-x-auto flex-1 p-4 sm:p-6 space-y-6">
+        <div className="overflow-x-auto p-4 sm:p-6 space-y-6">
           {products.length === 0 ? (
             <div className="py-20 text-center space-y-3">
               <Scale className="w-12 h-12 mx-auto text-zinc-300 stroke-1" />
@@ -431,7 +432,7 @@ export const CompareModal: React.FC<CompareModalProps> = ({
                   </button>
                 )}
                 <button
-                  onClick={onClose}
+                  onClick={onBackToHome}
                   className="px-4 py-2 rounded-xl bg-zinc-900 text-white text-xs font-semibold hover:bg-zinc-800 transition"
                 >
                   返回商品列表选择
@@ -1257,7 +1258,7 @@ export const CompareModal: React.FC<CompareModalProps> = ({
         </div>
 
         {/* Modal Fixed Footer with Batch Add to Cart Bar */}
-        <div className="p-4 sm:p-5 border-t border-zinc-200 bg-zinc-50/95 backdrop-blur-xs flex flex-wrap items-center justify-between gap-4">
+        <div className="sticky bottom-0 z-20 p-4 sm:p-5 border-t border-zinc-200 bg-zinc-50/95 backdrop-blur-xs flex flex-wrap items-center justify-between gap-4">
           {/* Left summary */}
           <div className="flex items-center gap-3 sm:gap-4 flex-wrap">
             {products.length > 0 && (
@@ -1304,10 +1305,10 @@ export const CompareModal: React.FC<CompareModalProps> = ({
           {/* Right action CTAs */}
           <div className="flex items-center gap-2.5">
             <button
-              onClick={onClose}
+              onClick={onBackToHome}
               className="px-4 py-2 rounded-xl bg-white border border-zinc-200 text-zinc-700 text-xs font-semibold hover:bg-zinc-100 transition"
             >
-              关闭
+              返回商城首页
             </button>
 
             {products.length > 0 && (

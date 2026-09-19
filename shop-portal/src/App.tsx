@@ -1,23 +1,26 @@
-import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback, useLayoutEffect } from 'react';
 import { Navbar } from './components/Navbar';
 import { HeroBanner } from './components/HeroBanner';
 import { ProductCard } from './components/ProductCard';
-import { ProductQuickView } from './components/ProductQuickView';
+import { ProductDetailPage } from './components/ProductDetailPage';
 import { CartDrawer } from './components/CartDrawer';
 import { CheckoutModal, CheckoutPersistenceResult } from './components/CheckoutModal';
 import { OrderSuccessModal } from './components/OrderSuccessModal';
 import { PaymentModal } from './components/PaymentModal';
 import { InvoiceModal } from './components/InvoiceModal';
 import { OrdersPage } from './components/OrdersPage';
-import { WishlistModal } from './components/WishlistModal';
-import { CompareModal } from './components/CompareModal';
+import { WishlistPage } from './components/WishlistPage';
+import { ComparePage } from './components/ComparePage';
 import { CompareFloatingBar } from './components/CompareFloatingBar';
 import { AuthModal, AuthMode, PRESET_TEST_USERS } from './components/AuthModal';
-import { UserProfileModal } from './components/UserProfileModal';
+import { UserProfilePage } from './components/UserProfilePage';
 import { CouponCenterBanner } from './components/CouponCenterBanner';
 import { CouponCenterModal } from './components/CouponCenterModal';
 import { CategoryRail } from './components/CategoryRail';
 import { useBodyScrollLock } from './hooks/useBodyScrollLock';
+import { usePortalRoute } from './hooks/usePortalRoute';
+import { HOME_ROUTE, normalizeProductId } from './utils/portalRoute';
+import type { ProductTab } from './utils/portalRoute';
 import { logisticsStatusLabel } from './utils/logisticsStatus';
 import { selectPurchasedCartItemIds } from './utils/cartCleanup';
 import { formatPaymentMethod } from './utils/orderDisplay';
@@ -119,16 +122,6 @@ const DEMO_MODE = import.meta.env.VITE_DEMO_MODE === 'true';
  * 因此换键名废弃旧缓存，让订单重新以服务端数据为准。
  */
 const ORDERS_STORAGE_KEY = 'aurora_orders_v2';
-
-/**
- * 门户的整页视图。没有引入路由库，用 hash 标记，让刷新和浏览器后退都能回到正确的一屏。
- */
-type PortalView = 'home' | 'orders';
-const ORDERS_VIEW_HASH = '#/orders';
-
-function readPortalViewFromHash(): PortalView {
-  return window.location.hash === ORDERS_VIEW_HASH ? 'orders' : 'home';
-}
 
 function resolveMemberId(user: UserProfile | null): number | null {
   if (!user) return null;
@@ -319,7 +312,6 @@ export default function App() {
   // Comparison State
   const [isCompareMode, setIsCompareMode] = useState<boolean>(false);
   const [compareProductIds, setCompareProductIds] = useState<string[]>([]);
-  const [isCompareModalOpen, setIsCompareModalOpen] = useState<boolean>(false);
   const [isCompareBarVisible, setIsCompareBarVisible] = useState<boolean>(true);
 
   // Compare History & Persistence
@@ -588,12 +580,8 @@ export default function App() {
 
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [authModalMode, setAuthModalMode] = useState<AuthMode>('login-pwd');
-  const [isUserProfileModalOpen, setIsUserProfileModalOpen] = useState(false);
   // 当前会员已评价过的商品ID集合，用于隐藏重复评价入口。
   const [reviewedProductIds, setReviewedProductIds] = useState<string[]>([]);
-  // 订单「查看」评价时递增，触达个人中心展开「我的评价」并高亮对应商品。
-  const [reviewsViewToken, setReviewsViewToken] = useState(0);
-  const [highlightReviewProductId, setHighlightReviewProductId] = useState<number | null>(null);
 
   // 登录后拉一次本人评价，标记哪些商品已评价过；退出登录则清空标记。
   useEffect(() => {
@@ -1013,13 +1001,9 @@ export default function App() {
   }, [loadAfterSales]);
 
   // Modals & Drawers
-  const [quickViewProduct, setQuickViewProduct] = useState<Product | null>(null);
-  /** 打开商品快览时定位的页签，订单评价入口会直接落到「买家评价」。 */
-  const [quickViewTab, setQuickViewTab] = useState<'details' | 'specs' | 'reviews'>('details');
-  /** 页签定位标记，同一商品被重复从订单入口打开时也能切回评价页签。 */
-  const [quickViewTabToken, setQuickViewTabToken] = useState(0);
-  /** 待带入评价表单的已购规格。 */
-  const [quickViewVariantSeed, setQuickViewVariantSeed] = useState('');
+  // 商品详情的「打开」语义已经交给路由（`#/product/<id>`），这里只存当前商品的数据，
+  // 所以它不再兼做开关，路由离开商品页时才清空。
+  const [currentProduct, setCurrentProduct] = useState<Product | null>(null);
   const [productDetailLoading, setProductDetailLoading] = useState(false);
   const [productDetailError, setProductDetailError] = useState<string | null>(null);
   const productDetailRequestRef = useRef(0);
@@ -1027,32 +1011,28 @@ export default function App() {
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
   const [checkoutItems, setCheckoutItems] = useState<CartItem[]>([]);
   const [completedOrder, setCompletedOrder] = useState<Order | null>(null);
-  // 订单中心是整页视图，与首页互斥。门户没有路由，进/出都往 history 里压一条，
+  // 整页视图（首页 / 订单中心 / 收藏页）由 hash 路由驱动，进/出都往 history 里压一条，
   // 这样浏览器后退能退回上一屏、刷新也不会掉回首页。
-  const [portalView, setPortalView] = useState<PortalView>(() => readPortalViewFromHash());
-  const navigatePortalView = useCallback((view: PortalView) => {
-    const base = `${window.location.pathname}${window.location.search}`;
-    window.history.pushState({ portalView: view }, '', view === 'orders' ? `${base}${ORDERS_VIEW_HASH}` : base);
-    setPortalView(view);
-    window.scrollTo({ top: 0 });
-  }, []);
-  // pushState 不触发事件，后退/前进只靠 popstate，所以视图得从这里跟着回退，
-  // 否则地址栏回到 #/orders 而画面还停在首页。
+  const { route, navigate } = usePortalRoute();
+  // 进入整页视图时重新同步一次会员数据。订单那边是因为结算页生成的本地快照只带占位物流，
+  // 后台发货填入的承运商、运单号要等下一次同步才覆盖；收藏与个人中心本身就是服务端数据
+  // （个人中心还要用订单算累计消费），进页时也重新拉一次。
   useEffect(() => {
-    const syncViewFromLocation = () => setPortalView(readPortalViewFromHash());
-    window.addEventListener('popstate', syncViewFromLocation);
-    window.addEventListener('hashchange', syncViewFromLocation);
-    return () => {
-      window.removeEventListener('popstate', syncViewFromLocation);
-      window.removeEventListener('hashchange', syncViewFromLocation);
-    };
-  }, []);
-  const [isWishlistOpen, setIsWishlistOpen] = useState(false);
-  // 订单列表打开时重新同步一次：结算页生成的本地订单快照只带占位物流，
-  // 后台发货填入的承运商、运单号要等下一次同步才会覆盖到订单卡片上。
+    if (route.view === 'orders' || route.view === 'wishlist' || route.view === 'account') {
+      setMemberDataSyncToken((token) => token + 1);
+    }
+  }, [route.view]);
+
+  // 未登录直接敲 `#/account` 时把人送回首页并拉起登录：账号页空着没有意义。
+  // 收藏不在此列 —— 先收藏再登录是正常路径，那边照常显示空态。
   useEffect(() => {
-    if (portalView === 'orders') setMemberDataSyncToken((token) => token + 1);
-  }, [portalView]);
+    if (route.view !== 'account' || currentUser) return;
+    navigate(HOME_ROUTE, { replace: true });
+    setAuthModalMode('login-pwd');
+    setIsAuthModalOpen(true);
+    showToast('请先登录后进入个人中心', 'info');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [route.view, currentUser]);
   // 类目树常驻页面左侧；窄屏放不下，收进抽屉由顶部「分类」按钮拉起。
   const [isCategoryDrawerOpen, setIsCategoryDrawerOpen] = useState(false);
   useBodyScrollLock(isCategoryDrawerOpen);
@@ -1221,10 +1201,10 @@ export default function App() {
   };
 
   // 打开商品详情时补充后端的卖点、参数、媒体数据和评价统计。
-  const loadProductQuickView = async (product: Product) => {
+  const loadProductDetail = async (product: Product) => {
     const requestId = productDetailRequestRef.current + 1;
     productDetailRequestRef.current = requestId;
-    setQuickViewProduct(product);
+    setCurrentProduct(product);
     setProductDetailLoading(true);
     setProductDetailError(null);
     try {
@@ -1237,7 +1217,7 @@ export default function App() {
       // 详情接口不返回评价数据，合并后统一补齐真实统计，避免把结果覆盖成占位分数。
       const [enriched] = await mergeReviewStats([{ ...product, ...detail }]);
       if (requestId !== productDetailRequestRef.current) return;
-      setQuickViewProduct((current) => (current?.id === product.id ? { ...current, ...enriched } : current));
+      setCurrentProduct((current) => (current?.id === product.id ? { ...current, ...enriched } : current));
     } catch (error) {
       if (requestId !== productDetailRequestRef.current) return;
       console.warn('商品详情接口暂不可用', error);
@@ -1247,53 +1227,36 @@ export default function App() {
     }
   };
 
-  // 常规入口打开商品快览，默认展示商品详情页签。
-  const openProduct = async (product: Product) => {
-    setQuickViewTab('details');
-    setQuickViewTabToken((current) => current + 1);
-    setQuickViewVariantSeed('');
-    await loadProductQuickView(product);
+  // 常规入口进商品详情页，默认落在「商品详情」页签。
+  const openProduct = (product: Product) => {
+    navigate({ view: 'product', productId: product.id });
   };
 
   /**
-   * 按商品 ID 打开商品快览，供轮播等只有 ID 的入口使用。
+   * 按商品 ID 进商品详情页，供轮播、Banner 等只有 ID 的入口使用。
    *
-   * 列表里已有该商品就直接复用；没有（不在当前分页）时挂占位对象交给详情接口补全。
-   * 这里刻意不落回本地演示商品：演示商品与线上商品只是 ID 撞号，落回去会弹出完全不相干的商品，
+   * 这里只负责校验与跳转，商品数据由路由监听统一去取：列表里已有该商品就直接用，
+   * 没有（不在当前分页）时先挂只带 ID 的占位对象交给详情接口补全。
+   * 刻意不落回本地演示商品：演示商品与线上商品只是 ID 撞号，落回去会展示完全不相干的商品，
    * 还会把演示数据里的外链视频一起渲染出来。
    *
    * @param rawProductId 商品 ID，数字或 prod-数字 两种写法都接受
    */
-  const openProductById = async (rawProductId: string) => {
-    const normalizedId = /^\d+$/.test(rawProductId) ? `prod-${rawProductId}` : rawProductId;
-    const loaded = products.find((item) => item.id === normalizedId);
-    if (loaded) {
-      await openProduct(loaded);
-      return;
-    }
+  const openProductById = (rawProductId: string) => {
+    const normalizedId = normalizeProductId(rawProductId);
     const productNumber = Number(normalizedId.replace(/^prod-/, ''));
     if (!Number.isFinite(productNumber) || productNumber <= 0) {
       showToast('该商品暂不可用', 'info');
       return;
     }
-    await openProduct(createProductStub(normalizedId));
+    navigate({ view: 'product', productId: normalizedId });
   };
 
   /**
-   * 打开商品快览并直接定位到买家评价页签，供订单列表的评价入口使用。
+   * 从订单商品行进入评价：跳到对应商品的买家评价页签。
    *
-   * @param product 商品
-   * @param variantSummary 订单中的已购规格，作为评价表单默认值
-   */
-  const openProductReview = async (product: Product, variantSummary?: string) => {
-    setQuickViewTab('reviews');
-    setQuickViewTabToken((current) => current + 1);
-    setQuickViewVariantSeed(variantSummary || '');
-    await loadProductQuickView(product);
-  };
-
-  /**
-   * 从订单商品行进入评价：关闭订单弹窗并打开对应商品的买家评价页签。
+   * 跳转前不再构造「订单里那份商品」当占位数据 —— 商品 ID 已经写进地址，详情页自己会取，
+   * 关掉评价就靠浏览器后退回到订单页。
    *
    * @param item 订单商品明细
    */
@@ -1302,53 +1265,81 @@ export default function App() {
       showToast('该订单商品缺少商品编号，暂时无法评价', 'error');
       return;
     }
-    // 订单中心现在是整页，评价页以浮层叠在其上：不退出订单视图，关掉评价就回到原订单。
-    const known = products.find((candidate) => candidate.id === item.productId);
-    const fallback: Product = known ?? {
-      id: item.productId,
-      title: item.title,
-      subtitle: '',
-      category: 'lifestyle',
-      categoryLabel: '精选商品',
-      brand: 'HENFON',
-      price: item.price,
-      originalPrice: item.price,
-      rating: 0,
-      reviewCount: 0,
-      salesCount: 0,
-      stock: 0,
-      images: item.image ? [item.image] : [],
-      features: [],
-      specs: {},
-      description: '',
-      isFreeShipping: true,
-      deliveryEstimate: '',
-    };
-    void openProductReview(fallback, item.variantsSummary);
+    navigate({
+      view: 'product',
+      productId: normalizeProductId(item.productId),
+      tab: 'reviews',
+      ...(item.variantsSummary ? { variant: item.variantsSummary } : {}),
+    });
+  };
+
+  // 商品详情由路由驱动：进入 `#/product/<id>` 才去补详情，离开就清空，
+  // 免得下次进另一个商品时先闪一眼上一个商品的内容。
+  const productsRef = useRef(products);
+  useEffect(() => {
+    productsRef.current = products;
+  }, [products]);
+  const routeProductId = route.view === 'product' ? route.productId : null;
+  // 用 layout effect 而不是普通 effect：路由切到另一个商品时，这一轮渲染手里还是上一个商品的数据，
+  // 在浏览器绘制之前换成新商品（或它的占位对象），用户看不到商品内容跳一下。
+  useLayoutEffect(() => {
+    if (!routeProductId) {
+      setCurrentProduct(null);
+      setProductDetailError(null);
+      return;
+    }
+    const known = productsRef.current.find((item) => item.id === routeProductId);
+    void loadProductDetail(known ?? createProductStub(routeProductId));
+    // 依赖只留路由里的商品 ID：翻页、切类目都会让商品列表变，但那不代表要重拉当前商品的详情。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [routeProductId]);
+
+  // 页签切换只改查询串，用 replace 不额外压一条历史：后退仍然直接离开商品页。
+  const handleProductTabChange = (tab: ProductTab) => {
+    if (route.view !== 'product') return;
+    navigate({ ...route, tab }, { replace: true });
   };
 
   /**
-   * 从订单已评价商品行点「查看」：关闭订单弹窗并打开个人中心的「我的评价」。
+   * 从订单已评价商品行点「查看」：跳到个人中心的「我的评价」，并定位到该商品那条评价。
+   *
+   * 目标商品直接写进地址（`?product=`），不再靠「递增标记 + state」传 —— 刷新与分享链接
+   * 都能落回同一条评价上，返回订单页靠浏览器后退。
    *
    * @param item 订单商品明细
    */
   const handleViewReviewFromOrder = (item: OrderItem) => {
     const productNumber = Number(String(item.productId || '').replace(/^prod-/, ''));
-    // 同 handleReviewOrderItem：个人中心以浮层叠在订单中心之上，关掉后仍回到订单页。
-    setHighlightReviewProductId(Number.isFinite(productNumber) && productNumber > 0 ? productNumber : null);
-    setReviewsViewToken((current) => current + 1);
-    setIsUserProfileModalOpen(true);
+    navigate({
+      view: 'account',
+      section: 'reviews',
+      ...(Number.isFinite(productNumber) && productNumber > 0 ? { productId: productNumber } : {}),
+    });
+  };
+
+  /**
+   * 商品详情页点「查看我的评价」：跳到个人中心的「我的评价」，并尽量定位到该商品。
+   *
+   * 商品页留在历史里（后退即回到刚才那个商品），不再以浮层叠在商品页之上。
+   */
+  const handleViewMyReviews = () => {
+    const productNumber = Number(String(currentProduct?.id || '').replace(/^prod-/, ''));
+    navigate({
+      view: 'account',
+      section: 'reviews',
+      ...(Number.isFinite(productNumber) && productNumber > 0 ? { productId: productNumber } : {}),
+    });
   };
 
   // 评价提交后刷新当前商品的评价统计（新评价待审核，公开条数通常不变）。
   const handleReviewSubmitted = (productId: string) => {
     // 同一商品只允许一条评价，提交成功后立即记入已评价集合，收起发表表单。
     setReviewedProductIds((current) => current.includes(productId) ? current : [...current, productId]);
-    const current = quickViewProduct;
+    const current = currentProduct;
     if (!current) return;
     void mergeReviewStats([current]).then(([enriched]) => {
       if (!enriched) return;
-      setQuickViewProduct((latest) => (latest && latest.id === current.id ? { ...latest, ...enriched } : latest));
+      setCurrentProduct((latest) => (latest && latest.id === current.id ? { ...latest, ...enriched } : latest));
     });
   };
 
@@ -1556,7 +1547,6 @@ export default function App() {
     };
 
     setCheckoutItems([tempItem]);
-    setQuickViewProduct(null);
     setIsCheckoutOpen(true);
   };
 
@@ -1862,6 +1852,14 @@ export default function App() {
       console.error(e);
     }
     showToast('已清空所有对比历史记录', 'info');
+  };
+
+  // 离开对比页时把当前组合存进历史（沿用弹窗时代「关闭即留档」的行为），再回首页。
+  const handleLeaveComparePage = () => {
+    if (compareProductIds.length > 0) {
+      saveCompareHistory(compareProductIds);
+    }
+    navigate(HOME_ROUTE);
   };
 
   // Coupon Handlers & Claim Operations
@@ -2490,8 +2488,14 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-zinc-50/70 text-zinc-900 flex flex-col font-sans selection:bg-zinc-900 selection:text-white">
+      {/* 跳过导航链接：href 保留锚点（读屏与「在新标签打开」等场景仍认它），但要拦住默认跳转 ——
+          写 hash 会把整页视图的地址覆盖成锚点，此时刷新就掉回首页。改成手动把焦点移到 main。 */}
       <a
         href="#portal-main-content"
+        onClick={(event) => {
+          event.preventDefault();
+          document.getElementById('portal-main-content')?.focus();
+        }}
         className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-2 focus:z-[100] focus:rounded-md focus:bg-zinc-900 focus:px-4 focus:py-2 focus:text-sm focus:font-semibold focus:text-white"
       >
         跳转到主要内容
@@ -2517,23 +2521,32 @@ export default function App() {
         onCategorySelect={handleSelectCategory}
         onSelectProduct={openProduct}
         onOpenCart={() => setIsCartOpen(true)}
-        onOpenWishlist={() => setIsWishlistOpen(true)}
-        onOpenOrders={() => navigatePortalView('orders')}
-        onNavigateHome={() => navigatePortalView('home')}
+        onOpenWishlist={() => navigate({ view: 'wishlist' })}
+        onOpenOrders={() => navigate({ view: 'orders' })}
+        onNavigateHome={() => navigate(HOME_ROUTE)}
         onOpenAuth={handleOpenAuth}
-        onOpenUserProfile={() => setIsUserProfileModalOpen(true)}
+        onOpenUserProfile={() => navigate({ view: 'account' })}
         onOpenCouponCenter={handleOpenCouponCenter}
         onOpenCategoryDrawer={() => setIsCategoryDrawerOpen(true)}
         onLogout={handleLogout}
       />
 
       <main id="portal-main-content" tabIndex={-1} aria-label="商城主要内容" className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-6 md:py-8">
-        {/* 订单中心与首页互斥，用 display 切换而不是卸载首页：首页里挂着轮播、类目树与
+        {/* 整页视图与首页互斥，用 display 切换而不是卸载首页：首页里挂着轮播、类目树与
             商品列表的多个请求，卸载再加回来会闪一次白，跟旧弹窗形态的数据行为也保持一致。 */}
-        {portalView === 'orders' && (
+        {route.view === 'orders' && (
           <OrdersPage
             orders={orders}
-            onBackToHome={() => navigatePortalView('home')}
+            onBackToHome={() => navigate(HOME_ROUTE)}
+            // 页签与选中订单写进地址（`?status=&order=`）：跳去商品详情或评价页再返回时，
+            // 原来的筛选与选中项还在，跟弹层时代「关掉仍停在原处」的体感持平。
+            statusFilter={route.status ?? 'all'}
+            selectedOrderId={route.order ?? null}
+            onQueryChange={({ status, order }) => navigate(
+              { view: 'orders', status, ...(order ? { order } : {}) },
+              // 页内状态用 replace：每点一单就压一条历史的话，后退要按好几下才出得去。
+              { replace: true },
+            )}
             onCancelOrder={handleCancelOrder}
             onConfirmOrder={handleConfirmOrder}
             onRetryPayment={handleRetryPayment}
@@ -2551,7 +2564,83 @@ export default function App() {
           />
         )}
 
-        <div className={portalView === 'orders' ? 'hidden' : 'lg:grid lg:grid-cols-[260px_minmax(0,1fr)] lg:items-start lg:gap-6'}>
+        {route.view === 'wishlist' && (
+          <WishlistPage
+            products={wishlistedProductsList}
+            onBackToHome={() => navigate(HOME_ROUTE)}
+            onAddToCart={(product) => handleAddToCart(product)}
+            onRemoveWishlist={handleToggleWishlist}
+            onQuickView={(product) => void openProduct(product)}
+          />
+        )}
+
+        {route.view === 'compare' && (
+          <ComparePage
+            products={comparedProductsList}
+            lastComparedProducts={lastComparedProductsList}
+            onRestoreLastCompare={handleRestoreLastCompare}
+            onBackToHome={handleLeaveComparePage}
+            onRemoveProduct={handleRemoveFromCompare}
+            onAddToCart={(p, v, q) => {
+              handleAddToCart(p, v, q);
+            }}
+            onBatchAddToCart={handleBatchAddToCart}
+            onQuickView={(product) => void openProduct(product)}
+            onClearAll={handleClearCompare}
+          />
+        )}
+
+        {route.view === 'product' && currentProduct && (
+          // key 按商品 ID 走：换商品时整页重新挂载，页签、媒体选中、评价表单都跟着复位，
+          // 不用再靠「递增标记」清上一件商品留下的状态。
+          <ProductDetailPage
+            key={currentProduct.id}
+            product={currentProduct}
+            detailLoading={productDetailLoading}
+            detailError={productDetailError}
+            onRetryDetail={() => void loadProductDetail(currentProduct)}
+            initialTab={route.tab}
+            onTabChange={handleProductTabChange}
+            reviewVariantSeed={route.variant}
+            onRequireLogin={() => handleOpenAuth('login-pwd')}
+            onReviewSubmitted={handleReviewSubmitted}
+            hasReviewed={reviewedProductIds.includes(currentProduct.id)}
+            onViewMyReviews={handleViewMyReviews}
+            isWishlisted={wishlist.includes(currentProduct.id)}
+            onBackToHome={() => navigate(HOME_ROUTE)}
+            onAddToCart={(product, variants, quantity) => handleAddToCart(product, variants, quantity)}
+            onDirectBuy={handleDirectBuy}
+            onToggleWishlist={handleToggleWishlist}
+          />
+        )}
+
+        {route.view === 'account' && currentUser && (
+          <UserProfilePage
+            user={currentUser}
+            claimedCoupons={claimedCoupons}
+            orders={orders}
+            products={products}
+            section={route.section ?? 'profile'}
+            highlightProductId={route.productId ?? null}
+            // 子视图切换只改地址：`#/account`、`#/account/coupons`、`#/account/reviews`。
+            onSelectSection={(section) => navigate({
+              view: 'account',
+              ...(section === 'profile' ? {} : { section }),
+            })}
+            onOpenOrders={() => navigate({ view: 'orders' })}
+            onOpenWishlist={() => navigate({ view: 'wishlist' })}
+            onBackToHome={() => navigate(HOME_ROUTE)}
+            onUpdateUser={handleUpdateUser}
+            // 退出登录后个人中心对未登录用户没有内容，顺手把人送回首页。
+            onLogout={() => {
+              handleLogout();
+              navigate(HOME_ROUTE, { replace: true });
+            }}
+            onOpenCouponCenter={handleOpenCouponCenter}
+          />
+        )}
+
+        <div className={route.view === 'home' ? 'lg:grid lg:grid-cols-[260px_minmax(0,1fr)] lg:items-start lg:gap-6' : 'hidden'}>
           {/* 类目树常驻左侧：顶部导航放不下全部一级类目，改由左栏承载。
               左栏不能加 overflow，否则会把一级类目 hover 出来的下级浮层裁掉。
               卡片 padding 从 p-3 调到 p-4，必须同步改 CategoryRail 浮层的 left 偏移（0.75rem → 1rem），
@@ -3082,34 +3171,6 @@ export default function App() {
       </footer>
 
       {/* Modals & Slide-Overs */}
-      <ProductQuickView
-        product={quickViewProduct}
-        detailLoading={productDetailLoading}
-        detailError={productDetailError}
-        onRetryDetail={() => { if (quickViewProduct) void loadProductQuickView(quickViewProduct); }}
-        initialTab={quickViewTab}
-        initialTabToken={quickViewTabToken}
-        reviewVariantSeed={quickViewVariantSeed}
-        onRequireLogin={() => handleOpenAuth('login-pwd')}
-        onReviewSubmitted={handleReviewSubmitted}
-        hasReviewed={quickViewProduct ? reviewedProductIds.includes(quickViewProduct.id) : false}
-        onViewMyReviews={() => {
-          const productNumber = Number(String(quickViewProduct?.id || '').replace(/^prod-/, ''));
-          setHighlightReviewProductId(Number.isFinite(productNumber) && productNumber > 0 ? productNumber : null);
-          setReviewsViewToken((current) => current + 1);
-          setQuickViewProduct(null);
-          setIsUserProfileModalOpen(true);
-        }}
-        isWishlisted={quickViewProduct ? wishlist.includes(quickViewProduct.id) : false}
-        onClose={() => setQuickViewProduct(null)}
-        onAddToCart={(p, variants, qty) => {
-          handleAddToCart(p, variants, qty);
-          setQuickViewProduct(null);
-        }}
-        onDirectBuy={handleDirectBuy}
-        onToggleWishlist={handleToggleWishlist}
-      />
-
       <CartDrawer
         isOpen={isCartOpen}
         cartItems={cartItems}
@@ -3151,7 +3212,7 @@ export default function App() {
         onClose={() => setCompletedOrder(null)}
         onViewAllOrders={() => {
           setCompletedOrder(null);
-          navigatePortalView('orders');
+          navigate({ view: 'orders' });
         }}
         onContinueShopping={() => setCompletedOrder(null)}
       />
@@ -3171,25 +3232,14 @@ export default function App() {
         />
       )}
 
-      <WishlistModal
-        isOpen={isWishlistOpen}
-        wishlistedProducts={wishlistedProductsList}
-        onClose={() => setIsWishlistOpen(false)}
-        onAddToCart={(p) => handleAddToCart(p)}
-        onRemoveWishlist={handleToggleWishlist}
-        onQuickView={(p) => {
-          setIsWishlistOpen(false);
-          openProduct(p);
-        }}
-      />
-
-      {/* Floating Compare Bar */}
+      {/* Floating Compare Bar —— 只在首页显示：它固定在视口底部，在整页视图上会压住正文与底部操作区，
+          而且对比页自己的「开始对比」会跳回本页。 */}
       <CompareFloatingBar
-        isOpen={isCompareBarVisible}
+        isOpen={isCompareBarVisible && route.view === 'home'}
         compareProducts={comparedProductsList}
         lastComparedProducts={lastComparedProductsList}
         compareHistory={compareHistoryWithProducts}
-        onOpenModal={() => setIsCompareModalOpen(true)}
+        onOpenModal={() => navigate({ view: 'compare' })}
         onRemoveProduct={handleRemoveFromCompare}
         onClearAll={handleClearCompare}
         onCloseBar={handleCloseCompareBar}
@@ -3199,33 +3249,6 @@ export default function App() {
         onClearHistory={handleClearCompareHistory}
       />
 
-      {/* Compare Details Modal */}
-      <CompareModal
-        isOpen={isCompareModalOpen}
-        products={comparedProductsList}
-        lastComparedProducts={lastComparedProductsList}
-        onRestoreLastCompare={handleRestoreLastCompare}
-        onClose={() => {
-          if (compareProductIds.length > 0) {
-            saveCompareHistory(compareProductIds);
-          }
-          setIsCompareModalOpen(false);
-        }}
-        onRemoveProduct={handleRemoveFromCompare}
-        onAddToCart={(p, v, q) => {
-          handleAddToCart(p, v, q);
-        }}
-        onBatchAddToCart={handleBatchAddToCart}
-        onQuickView={(p) => {
-          setIsCompareModalOpen(false);
-          openProduct(p);
-        }}
-        onClearAll={() => {
-          handleClearCompare();
-          setIsCompareModalOpen(false);
-        }}
-      />
-
       {/* Login / Register Authentication Modal */}
       <AuthModal
         isOpen={isAuthModalOpen}
@@ -3233,32 +3256,6 @@ export default function App() {
         demoMode={DEMO_MODE}
         onClose={() => setIsAuthModalOpen(false)}
         onLoginSuccess={handleLoginSuccess}
-      />
-
-      {/* User Profile & Membership Modal */}
-      <UserProfileModal
-        isOpen={isUserProfileModalOpen}
-        user={currentUser}
-        claimedCoupons={claimedCoupons}
-        orders={orders}
-        products={products}
-        reviewsViewToken={reviewsViewToken}
-        highlightProductId={highlightReviewProductId}
-        onClose={() => {
-          setIsUserProfileModalOpen(false);
-          setHighlightReviewProductId(null);
-        }}
-        onUpdateUser={handleUpdateUser}
-        onLogout={handleLogout}
-        onOpenOrders={() => {
-          setIsUserProfileModalOpen(false);
-          navigatePortalView('orders');
-        }}
-        onOpenWishlist={() => {
-          setIsUserProfileModalOpen(false);
-          setIsWishlistOpen(true);
-        }}
-        onOpenCouponCenter={handleOpenCouponCenter}
       />
     </div>
   );

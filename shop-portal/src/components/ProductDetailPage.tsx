@@ -1,9 +1,8 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 import { Product, ProductReview } from '../types/ecommerce';
 import { fetchPortalProductReviews, hasPortalMemberSession, submitPortalProductReview, uploadPortalMedia } from '../api/portalApi';
+import type { ProductTab } from '../utils/portalRoute';
 import {
-  X,
   Star,
   ShoppingBag,
   Zap,
@@ -91,18 +90,19 @@ function playVideoSafely(video: HTMLVideoElement, onPlaying?: () => void) {
     });
 }
 
-interface ProductQuickViewProps {
-  product: Product | null;
+interface ProductDetailPageProps {
+  /** 当前商品。路由兜底保证非空；只有 ID、详情还没到手时是标题为空的占位对象。 */
+  product: Product;
   /** 详情接口加载状态。 */
   detailLoading?: boolean;
   /** 详情接口最近一次错误信息。 */
   detailError?: string | null;
   /** 重新加载详情。 */
   onRetryDetail?: () => void;
-  /** 打开弹窗时默认选中的页签，订单入口会直接定位到「买家评价」。 */
-  initialTab?: 'details' | 'specs' | 'reviews';
-  /** 每次请求切换页签时递增的标记，用于在同一商品上重复定位到评价页签。 */
-  initialTabToken?: number;
+  /** 进页时选中的页签。由路由承载，订单入口会直接定位到「买家评价」。 */
+  initialTab?: ProductTab;
+  /** 页签切换时同步回路由，让刷新与分享链接都停在同一个页签。 */
+  onTabChange?: (tab: ProductTab) => void;
   /** 已购规格，订单入口带入后作为评价表单的默认值。 */
   reviewVariantSeed?: string;
   /** 未登录时点击提交评价回调，用于拉起登录弹窗。 */
@@ -114,33 +114,39 @@ interface ProductQuickViewProps {
   /** 已评价时点击「查看我的评价」，跳转到个人中心的我的评价。 */
   onViewMyReviews?: () => void;
   isWishlisted: boolean;
-  onClose: () => void;
+  /** 返回商城首页：整页视图不占侧边导航，面包屑与占位态都用它。 */
+  onBackToHome: () => void;
   onAddToCart: (product: Product, variants: Record<string, string>, quantity: number) => void;
   onDirectBuy: (product: Product, variants: Record<string, string>, quantity: number) => void;
   onToggleWishlist: (productId: string) => void;
 }
 
-const ProductQuickViewContent: React.FC<Omit<ProductQuickViewProps, 'product'> & { product: Product }> = ({
+const ProductDetailContent: React.FC<Omit<ProductDetailPageProps, 'product'> & { product: Product }> = ({
   product,
   detailLoading = false,
   detailError,
   onRetryDetail,
   initialTab,
-  initialTabToken,
+  onTabChange,
   reviewVariantSeed,
   onRequireLogin,
   onReviewSubmitted,
   hasReviewed = false,
   onViewMyReviews,
   isWishlisted,
-  onClose,
+  onBackToHome,
   onAddToCart,
   onDirectBuy,
   onToggleWishlist,
 }) => {
-  useBodyScrollLock();
   const [activeMediaIndex, setActiveMediaIndex] = useState(0);
-  const [activeTab, setActiveTab] = useState<'details' | 'specs' | 'reviews'>('details');
+  // 页签是页内状态，初值来自路由。切换时同时写回 URL，刷新与分享链接都能停在同一个页签；
+  // 进不同商品时整页会按 productId 重新挂载，所以不需要旧的「递增标记」来强制复位。
+  const [activeTab, setActiveTab] = useState<ProductTab>(() => initialTab ?? 'details');
+  const handleTabSelect = (tab: ProductTab) => {
+    setActiveTab(tab);
+    onTabChange?.(tab);
+  };
   const [quantity, setQuantity] = useState(1);
   const [reviews, setReviews] = useState<ProductReview[]>([]);
   /** 服务端返回的评价总条数，未知时回退到商品上的统计值。 */
@@ -179,12 +185,6 @@ const ProductQuickViewContent: React.FC<Omit<ProductQuickViewProps, 'product'> &
     }
   }, [product.id, product.variants, reviewVariantSeed]);
 
-  // 从订单等外部入口打开时需要直接落在指定页签，同一商品重复请求靠递增标记触发。
-  useEffect(() => {
-    if (initialTab) {
-      setActiveTab(initialTab);
-    }
-  }, [initialTab, initialTabToken, product.id]);
 
   // 评价页签打开后从内容中心分页加载真实评价，接口异常时展示明确错误并支持重试。
   useEffect(() => {
@@ -473,7 +473,8 @@ const ProductQuickViewContent: React.FC<Omit<ProductQuickViewProps, 'product'> &
     setActiveMediaIndex((prev) => (prev < mediaList.length - 1 ? prev + 1 : 0));
   };
 
-  // 支持键盘切换媒体和关闭弹窗，输入框聚焦时不拦截用户正常输入。
+  // 支持键盘左右切换媒体，输入框聚焦时不拦截用户正常输入。
+  // 不再处理 Escape：整页视图没有「关掉」这个语义，退出靠页面上的返回或浏览器后退。
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
@@ -485,14 +486,11 @@ const ProductQuickViewContent: React.FC<Omit<ProductQuickViewProps, 'product'> &
       } else if (event.key === 'ArrowRight') {
         event.preventDefault();
         handleNextMedia();
-      } else if (event.key === 'Escape') {
-        event.preventDefault();
-        onClose();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [mediaList.length, onClose]);
+  }, [mediaList.length]);
 
   const handleRetryMedia = () => {
     // 通过递增查询参数强制浏览器重新请求失败的媒体地址。
@@ -579,21 +577,28 @@ const ProductQuickViewContent: React.FC<Omit<ProductQuickViewProps, 'product'> &
   };
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 animate-in fade-in duration-200">
-      <div 
-        className="bg-white rounded-3xl border border-zinc-200 shadow-2xl w-full sm:w-4/5 max-w-none overflow-hidden relative flex flex-col max-h-[92vh]"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Close Button */}
-        <button
-          onClick={onClose}
-          className="absolute top-4 right-4 z-20 p-2 rounded-full bg-zinc-100/90 hover:bg-zinc-200 text-zinc-600 transition shadow-xs"
-        >
-          <X className="w-5 h-5" />
-        </button>
+    <div className="space-y-5">
+      <div className="bg-white rounded-2xl border border-zinc-200 shadow-xs relative flex flex-col overflow-hidden">
+        {/* 面包屑与返回：整页视图没有「关闭」，退出一律走这里或浏览器后退。 */}
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-100 px-6 py-4 sm:px-8">
+          <nav aria-label="面包屑" className="flex items-center gap-1.5 text-xs text-zinc-500">
+            <button type="button" onClick={onBackToHome} className="transition hover:text-zinc-900">
+              商城首页
+            </button>
+            <ChevronRight className="h-3.5 w-3.5 text-zinc-300" />
+            <span className="font-semibold text-zinc-900">{product.title}</span>
+          </nav>
+          <button
+            type="button"
+            onClick={onBackToHome}
+            className="flex items-center gap-1 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-600 transition hover:border-zinc-300 hover:text-zinc-900"
+          >
+            <ChevronLeft className="h-4 w-4" />
+            返回首页继续逛
+          </button>
+        </div>
 
-        {/* Modal Main Scrollable Content */}
-        <div className="overflow-y-auto p-6 sm:p-8 custom-scrollbar">
+        <div className="p-6 sm:p-8">
           {(detailLoading || detailError) && (
             <div className={`mb-5 flex items-center justify-between gap-3 rounded-xl border px-3 py-2 text-xs ${detailError ? 'border-rose-200 bg-rose-50 text-rose-700' : 'border-sky-200 bg-sky-50 text-sky-700'}`} role={detailError ? 'alert' : 'status'} aria-live="polite">
               <span>{detailError || '正在加载商品详情…'}</span>
@@ -898,9 +903,9 @@ const ProductQuickViewContent: React.FC<Omit<ProductQuickViewProps, 'product'> &
                   </span>
                 </div>
 
-                <h2 className="text-xl sm:text-2xl font-bold text-zinc-900 leading-snug mb-2">
+                <h1 className="text-xl sm:text-2xl font-bold text-zinc-900 leading-snug mb-2">
                   {product.title}
-                </h2>
+                </h1>
 
                 <p className="text-xs sm:text-sm text-zinc-500 leading-relaxed mb-4">
                   {product.subtitle}
@@ -1064,7 +1069,7 @@ const ProductQuickViewContent: React.FC<Omit<ProductQuickViewProps, 'product'> &
           <div className="border-t border-zinc-200 pt-6">
             <div className="flex items-center gap-3 border-b border-zinc-200 mb-6">
               <button
-                onClick={() => setActiveTab('details')}
+                onClick={() => handleTabSelect('details')}
                 className={`pb-3 text-sm font-semibold transition relative ${
                   activeTab === 'details'
                     ? 'text-zinc-900 after:absolute after:bottom-0 after:left-0 after:right-0 after:h-0.5 after:bg-zinc-900'
@@ -1074,7 +1079,7 @@ const ProductQuickViewContent: React.FC<Omit<ProductQuickViewProps, 'product'> &
                 商品详情
               </button>
               <button
-                onClick={() => setActiveTab('specs')}
+                onClick={() => handleTabSelect('specs')}
                 className={`pb-3 text-sm font-semibold transition relative ${
                   activeTab === 'specs'
                     ? 'text-zinc-900 after:absolute after:bottom-0 after:left-0 after:right-0 after:h-0.5 after:bg-zinc-900'
@@ -1084,7 +1089,7 @@ const ProductQuickViewContent: React.FC<Omit<ProductQuickViewProps, 'product'> &
                 规格参数
               </button>
               <button
-                onClick={() => setActiveTab('reviews')}
+                onClick={() => handleTabSelect('reviews')}
                 className={`pb-3 text-sm font-semibold transition relative ${
                   activeTab === 'reviews'
                     ? 'text-zinc-900 after:absolute after:bottom-0 after:left-0 after:right-0 after:h-0.5 after:bg-zinc-900'
@@ -1246,72 +1251,79 @@ const ProductQuickViewContent: React.FC<Omit<ProductQuickViewProps, 'product'> &
 /**
  * 只有商品 ID、详情还没到手时的过渡态。
  *
- * 列表里没有该商品（轮播直链进入）时会先挂只带 ID 的占位对象，
- * 这时不能直接把空标题、0 元价格的骨架铺满弹窗，只渲染加载或失败提示。
+ * 列表里没有该商品（轮播、Banner 直链进入）时会先挂只带 ID 的占位对象，
+ * 这时不能直接把空标题、0 元价格的骨架铺满整页，只渲染加载或失败提示。
+ * 商品不存在时这里会收到接口给的提示（实测为「商品不存在或已下架」），比一张空白页明确。
  */
-const ProductQuickViewPlaceholder: React.FC<{
+const ProductDetailPending: React.FC<{
   error?: string | null;
   onRetry?: () => void;
-  onClose: () => void;
-}> = ({ error, onRetry, onClose }) => {
-  useBodyScrollLock();
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-3 backdrop-blur-xs sm:p-6 animate-in fade-in duration-200"
-      onClick={onClose}
-    >
+  onBackToHome: () => void;
+}> = ({ error, onRetry, onBackToHome }) => (
+  <div className="space-y-5">
+    <nav aria-label="面包屑" className="flex items-center gap-1.5 text-xs text-zinc-500">
+      <button type="button" onClick={onBackToHome} className="transition hover:text-zinc-900">
+        商城首页
+      </button>
+      <ChevronRight className="h-3.5 w-3.5 text-zinc-300" />
+      <span className="font-semibold text-zinc-900">商品详情</span>
+    </nav>
+    <div className="rounded-2xl border border-zinc-200 bg-white p-8 shadow-xs">
+      <h1 className="text-lg font-bold text-zinc-900">商品详情</h1>
       <div
-        className="flex items-center gap-3 rounded-2xl bg-white px-6 py-4 text-sm font-medium text-zinc-700 shadow-2xl"
-        onClick={(event) => event.stopPropagation()}
+        className="mt-4 flex flex-wrap items-center gap-3 text-sm font-medium text-zinc-700"
         role={error ? 'alert' : 'status'}
         aria-live="polite"
       >
         {error ? (
-          <>
-            <span className="text-rose-600">{error}</span>
-            {onRetry && (
-              <button
-                type="button"
-                onClick={onRetry}
-                className="rounded-lg border border-zinc-300 px-3 py-1.5 text-xs font-semibold text-zinc-700 hover:bg-zinc-100"
-              >
-                重新加载
-              </button>
-            )}
-          </>
+          <span className="text-rose-600">{error}</span>
         ) : (
-          <>
+          <span className="flex items-center gap-3">
             <span
               className="h-4 w-4 animate-spin rounded-full border-2 border-zinc-300 border-t-zinc-900"
               aria-hidden="true"
             />
             正在加载商品详情…
-          </>
+          </span>
+        )}
+        {error && onRetry && (
+          <button
+            type="button"
+            onClick={onRetry}
+            className="rounded-lg border border-zinc-300 px-3 py-1.5 text-xs font-semibold text-zinc-700 hover:bg-zinc-100"
+          >
+            重新加载
+          </button>
         )}
         <button
           type="button"
-          onClick={onClose}
-          aria-label="关闭商品详情"
-          className="rounded-full p-1.5 text-zinc-500 hover:bg-zinc-100"
+          onClick={onBackToHome}
+          className="rounded-lg border border-zinc-300 px-3 py-1.5 text-xs font-semibold text-zinc-700 hover:bg-zinc-100"
         >
-          <X className="w-4 h-4" />
+          返回商城首页
         </button>
       </div>
     </div>
-  );
-};
+  </div>
+);
 
-export const ProductQuickView: React.FC<ProductQuickViewProps> = (props) => {
+/**
+ * 门户「商品详情」整页。
+ *
+ * 内容与旧弹层一致，外壳换成页面容器（面包屑 + 返回），去掉滚动锁与内滚动。
+ * 商品本身由路由 `#/product/<id>` 指定，所以刷新与分享链接都能落到同一个商品。
+ */
+export const ProductDetailPage: React.FC<ProductDetailPageProps> = (props) => {
   // 标题为空说明手里只有一个占位对象，详情还没回来（或已失败）。
-  if (props.product && !props.product.title) {
+  if (!props.product.title) {
     return (
-      <ProductQuickViewPlaceholder
+      <ProductDetailPending
         error={props.detailError}
         onRetry={props.onRetryDetail}
-        onClose={props.onClose}
+        onBackToHome={props.onBackToHome}
       />
     );
   }
-  // 空产品时不挂载详情内容，避免弹窗关闭/打开过程中 Hooks 数量发生变化。
-  return props.product ? <ProductQuickViewContent {...props} product={props.product} /> : null;
+  // 拿不到商品时不挂载正文，避免加载/失败切换过程中 Hooks 数量发生变化。
+  return <ProductDetailContent {...props} />;
 };

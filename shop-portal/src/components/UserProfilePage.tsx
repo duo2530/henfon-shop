@@ -1,13 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { useBodyScrollLock } from '../hooks/useBodyScrollLock';
 import { couponTagLabel } from '../utils/couponTag';
 import {
-  X,
   User,
   Crown,
   Sparkles,
-  Coins,
-  Wallet,
   Ticket,
   Package,
   Heart,
@@ -22,6 +18,7 @@ import {
   Star,
 } from 'lucide-react';
 import { UserProfile, MemberLevel, Coupon, Order, Product } from '../types/ecommerce';
+import type { AccountSection } from '../utils/portalRoute';
 import {
   PortalReviewRecord,
   fetchPortalMyReviews,
@@ -30,23 +27,28 @@ import {
   fetchPortalProductDetail,
 } from '../api/portalApi';
 
-interface UserProfileModalProps {
-  isOpen: boolean;
-  user: UserProfile | null;
+interface UserProfilePageProps {
+  user: UserProfile;
   claimedCoupons?: Coupon[];
   /** 当前会员订单快照，用于展示消费统计和快捷查看订单明细。 */
   orders?: Order[];
   /** 已加载的商品，用于把评价里的商品ID还原成商品名。 */
   products?: Product[];
-  /** 订单「查看」评价时递增，用于重复触发展开「我的评价」。 */
-  reviewsViewToken?: number;
-  /** 需要高亮定位的评价所属商品ID。 */
+  /**
+   * 子视图，由地址承载（`#/account`、`#/account/coupons`、`#/account/reviews`）。
+   * 刷新、分享链接、前进后退都能落回同一屏，不再靠组件内开关。
+   */
+  section?: AccountSection;
+  /** 需要高亮定位的评价所属商品ID，订单与商品详情的「查看评价」入口带进来。 */
   highlightProductId?: number | null;
-  onClose: () => void;
-  onUpdateUser: (updatedUser: UserProfile) => void;
-  onLogout: () => void;
+  onSelectSection: (section: AccountSection) => void;
+  /** 到订单中心与收藏页的快捷入口，和顶栏走同一套路由。 */
   onOpenOrders: () => void;
   onOpenWishlist: () => void;
+  /** 返回商城首页。整页视图不占侧边导航，靠这条回主页。 */
+  onBackToHome: () => void;
+  onUpdateUser: (updatedUser: UserProfile) => void;
+  onLogout: () => void;
   onOpenCouponCenter?: () => void;
 }
 
@@ -71,29 +73,40 @@ const AVATAR_OPTIONS = [
   'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
 ];
 
-export const UserProfileModal: React.FC<UserProfileModalProps> = ({
-  isOpen,
+/** 个人中心的三个子视图，与地址里的路径段一一对应。 */
+const SECTIONS: { key: AccountSection; label: string }[] = [
+  { key: 'profile', label: '资料与特权' },
+  { key: 'coupons', label: '我的券包' },
+  { key: 'reviews', label: '我的评价' },
+];
+
+/**
+ * 门户「个人中心」整页。
+ *
+ * 与旧弹层的区别：三个子视图（资料 / 券包 / 我的评价）从组件内开关改成路由段，
+ * 券包可以直接刷新与分享，评价定位也不再依赖「递增标记」这类仅存在于内存的传递方式；
+ * 壳上补面包屑与页面级 h1，去掉遮罩、滚动锁与「关闭」语义（退出登录直接回首页）。
+ */
+export const UserProfilePage: React.FC<UserProfilePageProps> = ({
   user,
   claimedCoupons = [],
   orders = [],
   products = [],
-  reviewsViewToken = 0,
+  section = 'profile',
   highlightProductId = null,
-  onClose,
-  onUpdateUser,
-  onLogout,
+  onSelectSection,
   onOpenOrders,
   onOpenWishlist,
+  onBackToHome,
+  onUpdateUser,
+  onLogout,
   onOpenCouponCenter,
-}) => {
-  useBodyScrollLock(isOpen);
+}: UserProfilePageProps) => {
   const [isEditing, setIsEditing] = useState(false);
-  const [showCouponsView, setShowCouponsView] = useState(false);
-  const [nickname, setNickname] = useState(user?.nickname || '');
-  const [email, setEmail] = useState(user?.email || '');
-  const [phone, setPhone] = useState(user?.phone || '');
-  const [selectedAvatar, setSelectedAvatar] = useState(user?.avatar || AVATAR_OPTIONS[0]);
-  const [showReviewsView, setShowReviewsView] = useState(false);
+  const [nickname, setNickname] = useState(user.nickname || '');
+  const [email, setEmail] = useState(user.email || '');
+  const [phone, setPhone] = useState(user.phone || '');
+  const [selectedAvatar, setSelectedAvatar] = useState(user.avatar || AVATAR_OPTIONS[0]);
   const [myReviews, setMyReviews] = useState<PortalReviewRecord[]>([]);
   const [myReviewsLoading, setMyReviewsLoading] = useState(false);
   const [myReviewsError, setMyReviewsError] = useState<string | null>(null);
@@ -103,24 +116,17 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
   /** 高亮评价项的引用，用于从订单「查看」进入时滚动定位。 */
   const highlightReviewRef = useRef<HTMLDivElement | null>(null);
 
-  // 从订单「查看」进入时自动展开「我的评价」，靠递增标记支持在同一商品上重复触发。
+  // 进入「我的评价」后把目标商品的那条评价滚到视野内，避免评价较多时用户还要自己找。
   useEffect(() => {
-    if (!isOpen || reviewsViewToken <= 0) return;
-    setShowReviewsView(true);
-  }, [isOpen, reviewsViewToken]);
-
-  // 展开后把目标商品的那条评价滚到视野内，避免评价较多时用户还要自己找。
-  useEffect(() => {
-    if (!isOpen || !showReviewsView || highlightProductId == null) return;
+    if (section !== 'reviews' || highlightProductId == null) return;
     const timer = window.setTimeout(() => {
       highlightReviewRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }, 150);
     return () => window.clearTimeout(timer);
-  }, [isOpen, showReviewsView, highlightProductId, reviewsViewToken, myReviews]);
+  }, [section, highlightProductId, myReviews]);
 
-  // 打开个人中心即加载自己的评价，展开前就能看到条数；后端评价只存商品ID，这里补齐商品名。
+  // 进页即加载自己的评价（资料页要用它显示条数），后端评价只存商品ID，这里补齐商品名。
   useEffect(() => {
-    if (!isOpen || !user) return;
     let active = true;
     setMyReviewsLoading(true);
     setMyReviewsError(null);
@@ -153,9 +159,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
     return () => {
       active = false;
     };
-  }, [isOpen, user, products]);
-
-  if (!isOpen || !user) return null;
+  }, [user, products]);
 
   /** 提交追评并就地更新当前列表。 */
   const submitFollowup = async (reviewId: number) => {
@@ -214,22 +218,63 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
   const totalSpent = paidOrders.reduce((sum, order) => sum + Number(order.totalPaid || 0), 0);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-zinc-950/70 backdrop-blur-sm animate-in fade-in duration-200">
-      <div
-        className="relative w-full max-w-2xl bg-white rounded-3xl shadow-2xl border border-zinc-100 overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Header with VIP Banner */}
-        <div className="bg-zinc-900 text-white p-6 pb-8 relative overflow-hidden shrink-0">
-          <div className="absolute -right-12 -top-12 w-48 h-48 bg-amber-400/15 rounded-full blur-3xl pointer-events-none" />
+    <div className="space-y-5">
+      <nav aria-label="面包屑" className="flex items-center gap-1.5 text-xs text-zinc-500">
+        <button type="button" onClick={onBackToHome} className="transition hover:text-zinc-900">
+          商城首页
+        </button>
+        <span className="text-zinc-300">/</span>
+        <span className="font-semibold text-zinc-900">个人中心</span>
+      </nav>
 
-          {/* Close button */}
-          <button
-            onClick={onClose}
-            className="absolute top-4 right-4 p-2 rounded-full bg-zinc-800/80 text-zinc-400 hover:text-white hover:bg-zinc-700 transition"
-          >
-            <X className="w-4 h-4" />
-          </button>
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-bold text-zinc-900">个人中心</h1>
+          <p className="mt-1 text-xs text-zinc-500">
+            账号资料、{user.memberLevel} 特权、券包与我的评价
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={onBackToHome}
+          className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-600 transition hover:border-zinc-300 hover:text-zinc-900"
+        >
+          返回首页继续逛
+        </button>
+      </div>
+
+      {/* 子视图切换：三个子视图各有一条地址，刷新与分享链接都能落回同一屏。 */}
+      <nav aria-label="个人中心分栏" className="flex flex-wrap gap-1.5 rounded-2xl border border-zinc-200/90 bg-white p-2 shadow-xs">
+        {SECTIONS.map(({ key, label }) => {
+          const isActive = section === key;
+          return (
+            <button
+              key={key}
+              type="button"
+              aria-current={isActive ? 'page' : undefined}
+              onClick={() => {
+                setIsEditing(false);
+                onSelectSection(key);
+              }}
+              className={`rounded-xl px-3 py-2 text-xs font-semibold transition ${
+                isActive ? 'bg-zinc-900 text-white' : 'text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900'
+              }`}
+            >
+              {label}
+              {key === 'reviews' && myReviews.length > 0 && (
+                <span className={`ml-1.5 font-mono text-[11px] ${isActive ? 'text-zinc-300' : 'text-zinc-400'}`}>
+                  {myReviews.length}
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </nav>
+
+      <div className="overflow-hidden rounded-3xl border border-zinc-200/90 bg-white shadow-xs">
+        {/* Header with VIP Banner */}
+        <div className="bg-zinc-900 text-white p-6 pb-8 relative overflow-hidden">
+          <div className="absolute -right-12 -top-12 w-48 h-48 bg-amber-400/15 rounded-full blur-3xl pointer-events-none" />
 
           {/* User Info Header */}
           <div className="flex items-center gap-4">
@@ -246,7 +291,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
 
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
-                <h3 className="text-lg font-black text-white truncate">{user.nickname}</h3>
+                <h2 className="text-lg font-black text-white truncate">{user.nickname}</h2>
                 <span
                   className={`text-[10px] px-2 py-0.5 rounded-full font-bold border ${levelInfo.bg}`}
                 >
@@ -260,7 +305,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
               </p>
             </div>
 
-            {!isEditing && (
+            {!isEditing && section === 'profile' && (
               <button
                 onClick={() => {
                   setNickname(user.nickname);
@@ -289,7 +334,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
             </div>
             <button
               type="button"
-              onClick={() => setShowCouponsView(!showCouponsView)}
+              onClick={() => onSelectSection('coupons')}
               className="text-center hover:bg-zinc-700/50 rounded-xl p-0.5 transition cursor-pointer"
             >
               <span className="text-[10px] text-zinc-400 block font-medium">可用优惠券</span>
@@ -311,22 +356,19 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
           </div>
         </div>
 
-        {/* Modal Body */}
-        <div className="p-6 overflow-y-auto custom-scrollbar space-y-5 flex-1">
-          {showCouponsView ? (
+        {/* Page Body */}
+        <div className="p-6 space-y-5">
+          {section === 'coupons' ? (
             /* My Claimed Coupons View */
-            <div className="space-y-4 animate-in fade-in duration-200">
+            <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <Ticket className="w-4 h-4 text-amber-600" />
-                  <h4 className="text-sm font-bold text-zinc-900">我的优惠券包 ({claimedCoupons.length} 张)</h4>
+                  <h2 className="text-sm font-bold text-zinc-900">我的优惠券包 ({claimedCoupons.length} 张)</h2>
                 </div>
                 {onOpenCouponCenter && (
                   <button
-                    onClick={() => {
-                      onClose();
-                      onOpenCouponCenter();
-                    }}
+                    onClick={onOpenCouponCenter}
                     className="text-xs text-amber-700 hover:text-amber-900 font-bold underline"
                   >
                     领更多神券 &gt;
@@ -340,10 +382,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                   <p className="text-xs text-zinc-500 font-medium">暂无领取的优惠券</p>
                   {onOpenCouponCenter && (
                     <button
-                      onClick={() => {
-                        onClose();
-                        onOpenCouponCenter();
-                      }}
+                      onClick={onOpenCouponCenter}
                       className="px-4 py-1.5 rounded-xl bg-zinc-900 text-white text-xs font-bold hover:bg-zinc-800 transition shadow-xs"
                     >
                       前往领券中心免费领取
@@ -351,7 +390,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                   )}
                 </div>
               ) : (
-                <div className="space-y-2.5 max-h-64 overflow-y-auto pr-1">
+                <div className="space-y-2.5 max-h-96 overflow-y-auto pr-1">
                   {claimedCoupons.map((c) => (
                     <div
                       key={c.code}
@@ -364,7 +403,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                         </div>
                         <div>
                           <div className="flex items-center gap-1.5">
-                            <h5 className="text-xs font-bold text-zinc-900">{c.title}</h5>
+                            <h3 className="text-xs font-bold text-zinc-900">{c.title}</h3>
                             {c.tag && (
                               <span className="text-[9px] px-1.5 py-0.2 rounded bg-amber-100 text-amber-800 font-bold">
                                 {couponTagLabel(c.tag)}
@@ -377,9 +416,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                       </div>
 
                       <button
-                        onClick={() => {
-                          onClose();
-                        }}
+                        onClick={onBackToHome}
                         className="px-3 py-1.5 rounded-xl bg-zinc-900 text-white text-xs font-semibold hover:bg-zinc-800 transition shrink-0"
                       >
                         去使用
@@ -391,11 +428,109 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
 
               <button
                 type="button"
-                onClick={() => setShowCouponsView(false)}
+                onClick={() => onSelectSection('profile')}
                 className="w-full py-2 rounded-xl border border-zinc-200 text-xs font-semibold text-zinc-600 hover:bg-zinc-50 transition"
               >
-                返回个人中心
+                返回个人资料
               </button>
+            </div>
+          ) : section === 'reviews' ? (
+            /* My Reviews View */
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Star className="w-4 h-4 text-amber-500" />
+                  <h2 className="text-sm font-bold text-zinc-900">
+                    我的评价
+                    {myReviews.length > 0 && <span className="ml-1 text-[11px] font-bold text-zinc-400">({myReviews.length})</span>}
+                  </h2>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onSelectSection('profile')}
+                  className="text-[11px] font-bold text-sky-700 hover:text-sky-900"
+                >
+                  返回个人资料
+                </button>
+              </div>
+
+              <div className="space-y-2.5">
+                {myReviewsLoading && <p className="text-xs text-zinc-400 py-2">评价加载中…</p>}
+                {!myReviewsLoading && myReviewsError && (
+                  <p className="rounded-lg bg-rose-50 px-2.5 py-2 text-[11px] text-rose-600">{myReviewsError}</p>
+                )}
+                {!myReviewsLoading && myReviews.length === 0 && (
+                  <p className="text-xs text-zinc-400 py-2">还没有提交过评价，可在我的订单中点击「评价」</p>
+                )}
+                {myReviews.map((review) => {
+                  const statusMeta = reviewStatusMeta(review.status);
+                  const reviewImages = parsePortalReviewImageUrls(review.imageUrls);
+                  const isHighlighted = highlightProductId != null && review.productId === highlightProductId;
+                  return (
+                    <div
+                      key={review.id}
+                      ref={isHighlighted ? highlightReviewRef : undefined}
+                      className={`rounded-xl border p-3 space-y-1.5 ${isHighlighted
+                        ? 'border-sky-300 bg-sky-50/60 ring-1 ring-sky-200'
+                        : 'border-zinc-100 bg-zinc-50/70'}`}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="truncate text-[11px] font-bold text-zinc-900">
+                          {reviewProductTitles[review.productId] || `商品 #${review.productId}`}
+                        </span>
+                        <span className={`shrink-0 rounded-md border px-1.5 py-0.5 text-[10px] font-semibold ${statusMeta.className}`}>
+                          {statusMeta.label}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-0.5">
+                        {[1, 2, 3, 4, 5].map((score) => (
+                          <Star key={score} className={`h-3 w-3 ${score <= review.rating ? 'fill-amber-400 text-amber-400' : 'text-zinc-300'}`} />
+                        ))}
+                        <span className="ml-1.5 text-[10px] text-zinc-400">{review.variantSummary || '默认规格'}</span>
+                      </div>
+                      <p className="text-[11px] leading-relaxed text-zinc-700">{review.reviewContent}</p>
+                      {reviewImages.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5">
+                          {reviewImages.map((url) => (
+                            <a key={url} href={url} target="_blank" rel="noreferrer">
+                              <img src={url} alt="评价图片" className="h-10 w-10 rounded-md border border-zinc-200 object-cover" />
+                            </a>
+                          ))}
+                        </div>
+                      )}
+                      {review.replyContent && (
+                        <p className="rounded-md border border-zinc-100 bg-white px-2 py-1 text-[10px] text-zinc-600">
+                          <span className="font-bold text-zinc-800">商家回复：</span>{review.replyContent}
+                        </p>
+                      )}
+                      {review.followupContent ? (
+                        <p className="rounded-md bg-sky-50 px-2 py-1 text-[10px] text-sky-800">
+                          <span className="font-bold">我的追评：</span>{review.followupContent}
+                        </p>
+                      ) : review.status === 1 ? (
+                        <div className="space-y-1.5 pt-0.5">
+                          <textarea
+                            rows={2}
+                            maxLength={500}
+                            value={followupDraft[review.id] || ''}
+                            onChange={(event) => setFollowupDraft((current) => ({ ...current, [review.id]: event.target.value }))}
+                            placeholder="补充使用体验（追评）"
+                            className="w-full resize-none rounded-lg border border-zinc-200 px-2 py-1.5 text-[11px] outline-none focus:border-zinc-400"
+                          />
+                          <button
+                            type="button"
+                            disabled={followupSubmittingId === review.id || !(followupDraft[review.id] || '').trim()}
+                            onClick={() => void submitFollowup(review.id)}
+                            className="rounded-lg bg-zinc-900 px-2.5 py-1 text-[10px] font-bold text-white disabled:opacity-50"
+                          >
+                            {followupSubmittingId === review.id ? '提交中…' : '提交追评'}
+                          </button>
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           ) : isEditing ? (
             /* Edit form */
@@ -509,10 +644,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
               {/* Quick Navigation Action Grid */}
               <div className="grid grid-cols-2 gap-2.5">
                 <button
-                  onClick={() => {
-                    onClose();
-                    onOpenOrders();
-                  }}
+                  onClick={onOpenOrders}
                   className="p-3 rounded-2xl bg-zinc-50 hover:bg-zinc-100 border border-zinc-200/70 text-left transition flex items-center justify-between group"
                 >
                   <div className="flex items-center gap-2.5">
@@ -527,10 +659,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                 </button>
 
                 <button
-                  onClick={() => {
-                    onClose();
-                    onOpenWishlist();
-                  }}
+                  onClick={onOpenWishlist}
                   className="p-3 rounded-2xl bg-zinc-50 hover:bg-zinc-100 border border-zinc-200/70 text-left transition flex items-center justify-between group"
                 >
                   <div className="flex items-center gap-2.5">
@@ -543,12 +672,42 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                     </div>
                   </div>
                 </button>
+
+                <button
+                  onClick={() => onSelectSection('coupons')}
+                  className="p-3 rounded-2xl bg-zinc-50 hover:bg-zinc-100 border border-zinc-200/70 text-left transition flex items-center justify-between group"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-xl bg-amber-500 text-white flex items-center justify-center">
+                      <Ticket className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <span className="text-xs font-bold text-zinc-900 block">我的券包</span>
+                      <span className="text-[10px] text-zinc-500">{claimedCoupons.length || user.couponsCount} 张可用优惠券</span>
+                    </div>
+                  </div>
+                </button>
+
+                <button
+                  onClick={() => onSelectSection('reviews')}
+                  className="p-3 rounded-2xl bg-zinc-50 hover:bg-zinc-100 border border-zinc-200/70 text-left transition flex items-center justify-between group"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-xl bg-amber-400 text-zinc-950 flex items-center justify-center">
+                      <Star className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <span className="text-xs font-bold text-zinc-900 block">我的评价</span>
+                      <span className="text-[10px] text-zinc-500">{myReviews.length} 条 · 审核后可追评</span>
+                    </div>
+                  </div>
+                </button>
               </div>
 
               <div className="rounded-2xl border border-zinc-200 bg-white p-4">
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-xs font-black text-zinc-900 flex items-center gap-1.5"><Layers className="w-4 h-4 text-sky-600" />最近订单明细</span>
-                  <button type="button" onClick={() => { onClose(); onOpenOrders(); }} className="text-[11px] font-bold text-sky-700 hover:text-sky-900">查看全部</button>
+                  <button type="button" onClick={onOpenOrders} className="text-[11px] font-bold text-sky-700 hover:text-sky-900">查看全部</button>
                 </div>
                 {orders.length === 0 ? <p className="text-xs text-zinc-400 py-2">暂无订单记录</p> : (
                   <div className="space-y-2">
@@ -558,104 +717,6 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                         <span className="font-bold text-zinc-900">¥{Number(order.totalPaid || 0).toFixed(2)}</span>
                       </div>
                     ))}
-                  </div>
-                )}
-              </div>
-
-              <div className="rounded-2xl border border-zinc-200 bg-white p-4">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs font-black text-zinc-900 flex items-center gap-1.5">
-                    <Star className="w-4 h-4 text-amber-500" />
-                    我的评价
-                    {myReviews.length > 0 && <span className="text-[10px] font-bold text-zinc-400">({myReviews.length})</span>}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setShowReviewsView((current) => !current)}
-                    className="text-[11px] font-bold text-sky-700 hover:text-sky-900"
-                  >
-                    {showReviewsView ? '收起' : '展开'}
-                  </button>
-                </div>
-                {!showReviewsView ? (
-                  <p className="text-xs text-zinc-400 py-1">查看已提交评价的审核进度，通过后可追评</p>
-                ) : (
-                  <div className="space-y-2.5">
-                    {myReviewsLoading && <p className="text-xs text-zinc-400 py-2">评价加载中…</p>}
-                    {!myReviewsLoading && myReviewsError && (
-                      <p className="rounded-lg bg-rose-50 px-2.5 py-2 text-[11px] text-rose-600">{myReviewsError}</p>
-                    )}
-                    {!myReviewsLoading && myReviews.length === 0 && (
-                      <p className="text-xs text-zinc-400 py-2">还没有提交过评价，可在我的订单中点击「评价」</p>
-                    )}
-                    {myReviews.map((review) => {
-                      const statusMeta = reviewStatusMeta(review.status);
-                      const reviewImages = parsePortalReviewImageUrls(review.imageUrls);
-                      const isHighlighted = highlightProductId != null && review.productId === highlightProductId;
-                      return (
-                        <div
-                          key={review.id}
-                          ref={isHighlighted ? highlightReviewRef : undefined}
-                          className={`rounded-xl border p-3 space-y-1.5 ${isHighlighted
-                            ? 'border-sky-300 bg-sky-50/60 ring-1 ring-sky-200'
-                            : 'border-zinc-100 bg-zinc-50/70'}`}
-                        >
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="truncate text-[11px] font-bold text-zinc-900">
-                              {reviewProductTitles[review.productId] || `商品 #${review.productId}`}
-                            </span>
-                            <span className={`shrink-0 rounded-md border px-1.5 py-0.5 text-[10px] font-semibold ${statusMeta.className}`}>
-                              {statusMeta.label}
-                            </span>
-                          </div>
-                          <div className="flex items-center gap-0.5">
-                            {[1, 2, 3, 4, 5].map((score) => (
-                              <Star key={score} className={`h-3 w-3 ${score <= review.rating ? 'fill-amber-400 text-amber-400' : 'text-zinc-300'}`} />
-                            ))}
-                            <span className="ml-1.5 text-[10px] text-zinc-400">{review.variantSummary || '默认规格'}</span>
-                          </div>
-                          <p className="text-[11px] leading-relaxed text-zinc-700">{review.reviewContent}</p>
-                          {reviewImages.length > 0 && (
-                            <div className="flex flex-wrap gap-1.5">
-                              {reviewImages.map((url) => (
-                                <a key={url} href={url} target="_blank" rel="noreferrer">
-                                  <img src={url} alt="评价图片" className="h-10 w-10 rounded-md border border-zinc-200 object-cover" />
-                                </a>
-                              ))}
-                            </div>
-                          )}
-                          {review.replyContent && (
-                            <p className="rounded-md border border-zinc-100 bg-white px-2 py-1 text-[10px] text-zinc-600">
-                              <span className="font-bold text-zinc-800">商家回复：</span>{review.replyContent}
-                            </p>
-                          )}
-                          {review.followupContent ? (
-                            <p className="rounded-md bg-sky-50 px-2 py-1 text-[10px] text-sky-800">
-                              <span className="font-bold">我的追评：</span>{review.followupContent}
-                            </p>
-                          ) : review.status === 1 ? (
-                            <div className="space-y-1.5 pt-0.5">
-                              <textarea
-                                rows={2}
-                                maxLength={500}
-                                value={followupDraft[review.id] || ''}
-                                onChange={(event) => setFollowupDraft((current) => ({ ...current, [review.id]: event.target.value }))}
-                                placeholder="补充使用体验（追评）"
-                                className="w-full resize-none rounded-lg border border-zinc-200 px-2 py-1.5 text-[11px] outline-none focus:border-zinc-400"
-                              />
-                              <button
-                                type="button"
-                                disabled={followupSubmittingId === review.id || !(followupDraft[review.id] || '').trim()}
-                                onClick={() => void submitFollowup(review.id)}
-                                className="rounded-lg bg-zinc-900 px-2.5 py-1 text-[10px] font-bold text-white disabled:opacity-50"
-                              >
-                                {followupSubmittingId === review.id ? '提交中…' : '提交追评'}
-                              </button>
-                            </div>
-                          ) : null}
-                        </div>
-                      );
-                    })}
                   </div>
                 )}
               </div>
@@ -683,12 +744,9 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
         </div>
 
         {/* Bottom Actions */}
-        <div className="bg-zinc-50 border-t border-zinc-100 p-4 px-6 flex items-center justify-between shrink-0">
+        <div className="bg-zinc-50 border-t border-zinc-100 p-4 px-6 flex items-center justify-between">
           <button
-            onClick={() => {
-              onLogout();
-              onClose();
-            }}
+            onClick={onLogout}
             className="px-3.5 py-2 rounded-xl text-xs font-semibold text-rose-600 hover:bg-rose-50 border border-rose-200/80 transition flex items-center gap-1.5"
           >
             <LogOut className="w-3.5 h-3.5" />
@@ -696,10 +754,10 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
           </button>
 
           <button
-            onClick={onClose}
+            onClick={onBackToHome}
             className="px-5 py-2 rounded-xl bg-zinc-900 text-white text-xs font-bold hover:bg-zinc-800 transition"
           >
-            关闭
+            返回商城首页
           </button>
         </div>
       </div>

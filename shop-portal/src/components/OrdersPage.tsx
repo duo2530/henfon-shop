@@ -41,10 +41,24 @@ interface OrdersPageProps {
   onRetryLogistics?: (order: Order) => Promise<Order['trackingSteps']>;
   /** 点击订单商品行的「评价」，跳转到该商品的买家评价页签。 */
   onReviewOrderItem?: (item: OrderItem) => Promise<void> | void;
-  /** 点击已评价商品行的「查看」，打开个人中心的我的评价。 */
+  /** 点击已评价商品行的「查看」，跳到个人中心的我的评价。 */
   onViewReview?: (item: OrderItem) => void;
   /** 已评价过的商品ID集合，这些商品行不再提供评价入口。 */
   reviewedProductIds?: string[];
+  /**
+   * 当前状态页签。由地址承载（`?status=`），从商品详情或评价页返回时页签还停在原处；
+   * 缺省 `all`，便于静态渲染与测试直接省略。
+   */
+  statusFilter?: OrderStatusFilter;
+  /** 右栏选中的订单 ID；窄屏靠它判断停在列表还是详情。 */
+  selectedOrderId?: string | null;
+  /**
+   * 页内状态改由地址承载，页签与选中订单一并回写。
+   *
+   * 合并成一个回调而不是两个：换页签要同时丢掉选中项，两次回写会各带一份旧状态，
+   * 后一次把前一次的结果盖掉。
+   */
+  onQueryChange?: (next: { status: OrderStatusFilter; order: string | null }) => void;
 }
 
 /** 订单状态标签的配色：待付款要显眼、已取消要弱化，其余按流转阶段给色。 */
@@ -105,11 +119,15 @@ export const OrdersPage: React.FC<OrdersPageProps> = ({
   onReviewOrderItem,
   onViewReview,
   reviewedProductIds = [],
-}) => {
-  const [statusFilter, setStatusFilter] = useState<OrderStatusFilter>('all');
-  const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
-  /** 窄屏只有一栏可用：列表 ↔ 详情靠它切换，桌面端两栏同时显示，这个值不起作用。 */
-  const [activePane, setActivePane] = useState<'list' | 'detail'>('list');
+  statusFilter = 'all',
+  selectedOrderId = null,
+  onQueryChange,
+}: OrdersPageProps) => {
+  /**
+   * 窄屏只有一栏可用：列表 ↔ 详情靠它切换，桌面端两栏同时显示，这个值不起作用。
+   * 它不单独存一份 state —— 选中订单本身就是「停在详情」的意思，两处状态并存迟早对不上。
+   */
+  const activePane: 'list' | 'detail' = selectedOrderId ? 'detail' : 'list';
   const [actioningOrderAction, setActioningOrderAction] = useState<{ orderId: string; action: string } | null>(null);
   const [actioningAfterSaleId, setActioningAfterSaleId] = useState<number | null>(null);
   const [logisticsRetryingOrderId, setLogisticsRetryingOrderId] = useState<string | null>(null);
@@ -368,7 +386,7 @@ export const OrdersPage: React.FC<OrdersPageProps> = ({
             </div>
             <button
               type="button"
-              onClick={() => setActivePane('list')}
+              onClick={() => onQueryChange?.({ status: statusFilter, order: null })}
               className="flex items-center gap-1 text-xs font-semibold text-zinc-500 transition hover:text-zinc-900 lg:hidden"
             >
               <ChevronLeft className="h-4 w-4" />
@@ -588,8 +606,8 @@ export const OrdersPage: React.FC<OrdersPageProps> = ({
               role="tab"
               aria-selected={isActive}
               onClick={() => {
-                setStatusFilter(key);
-                setActivePane('list');
+                // 换页签就丢掉选中项：新列表里那一单未必还在，留着会在窄屏上直接落到详情。
+                onQueryChange?.({ status: key, order: null });
               }}
               className={`rounded-xl px-3 py-2 text-xs font-semibold transition ${
                 isActive ? 'bg-zinc-900 text-white' : 'text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900'
@@ -632,10 +650,7 @@ export const OrdersPage: React.FC<OrdersPageProps> = ({
                     key={order.id}
                     type="button"
                     aria-current={isSelected ? 'true' : undefined}
-                    onClick={() => {
-                      setSelectedOrderId(order.id);
-                      setActivePane('detail');
-                    }}
+                    onClick={() => onQueryChange?.({ status: statusFilter, order: order.id })}
                     className={`block w-full border-b border-zinc-100 px-4 py-3 text-left transition last:border-b-0 ${
                       isSelected ? 'bg-amber-50/70 shadow-[inset_3px_0_0_0_#BA7517]' : 'hover:bg-zinc-50'
                     }`}
