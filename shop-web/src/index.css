@@ -32,6 +32,43 @@
   }
 }
 
+/* 登录页背景装饰：极淡方格网缓慢漂移，几条细流线沿网格线匀速掠过。
+   漂移的位移正好是一个网格间距（32px），所以循环处没有接缝。
+   两条流线的进出点都落在视口外（起点 -128px，终点 100vw + 128px），不需要淡入淡出。 */
+.login-bg-grid {
+  background-image:
+    linear-gradient(to right, rgba(148, 163, 184, 0.13) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(148, 163, 184, 0.13) 1px, transparent 1px);
+  background-size: 32px 32px;
+  animation: login-grid-drift 7s linear infinite;
+}
+
+@keyframes login-grid-drift {
+  from {
+    transform: translate3d(0, 0, 0);
+  }
+
+  to {
+    transform: translate3d(-32px, -32px, 0);
+  }
+}
+
+.login-bg-line {
+  animation-name: login-line-sweep;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+
+@keyframes login-line-sweep {
+  from {
+    transform: translate3d(0, 0, 0);
+  }
+
+  to {
+    transform: translate3d(calc(100vw + 256px), 0, 0);
+  }
+}
+
 /* 键盘焦点和减少动效由全局样式统一兜底，确保后台可用键盘操作。 */
 :where(button, a, input, select, textarea):focus-visible {
   outline: 3px solid #2563eb;

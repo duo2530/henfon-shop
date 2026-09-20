@@ -17,6 +17,46 @@ assert.match(api, /refreshAdminToken/);
 assert.match(api, /catalog\/products/);
 assert.match(api, /trade\/orders/);
 assert.match(login, /登录|username|password/);
+// 登录页保持单栏居中：不要回到「左侧蓝渐变品牌块 + 网点/模糊光斑」那版装饰。
+assert.doesNotMatch(login, /<aside/);
+assert.doesNotMatch(login, /blur-\[/);
+assert.doesNotMatch(login, /radial-gradient/);
+// 背景动态元素只是装饰层：不进无障碍树、不接管指针，且系统开启「减少动效」时不跑视差。
+assert.match(login, /aria-hidden="true" className="pointer-events-none fixed inset-0 -z-10 overflow-hidden"/);
+assert.match(login, /login-bg-grid/);
+assert.match(login, /prefers-reduced-motion: reduce/);
+// 背景照片：路径必须走 BASE_URL 前缀（部署到子路径下不会 404），且必须有白纱压住可见度，
+// 否则照片会跟卡片争视觉。图片本身是 JPEG，体积守住上限，防止有人塞一张几 MB 的原图进来。
+assert.match(login, /url\(\$\{import\.meta\.env\.BASE_URL\}login-bg\.jpg\)/);
+assert.match(login, /from-white\/66 via-white\/52 to-white\/76/);
+assert.match(login, /from-white\/55 via-white\/20 to-white\/55/);
+const loginBg = readFileSync(new URL('../public/login-bg.jpg', import.meta.url));
+assert.equal(loginBg[0], 0xff);
+assert.equal(loginBg[1], 0xd8);
+assert.ok(loginBg.length > 20 * 1024 && loginBg.length < 400 * 1024, `登录页背景图体积异常：${Math.round(loginBg.length / 1024)}KB`);
+// 背景动画定义在 index.css：网格漂移一个周期正好一个格距（32px），否则循环处会跳一下；
+// 流线终点必须落在视口外（起点 -128px、终点 100vw + 128px），否则会看见它凭空出现。
+const indexCss = readFileSync(new URL('../src/index.css', import.meta.url), 'utf8');
+assert.match(indexCss, /\.login-bg-grid \{/);
+assert.match(indexCss, /background-size: 32px 32px/);
+assert.match(indexCss, /@keyframes login-grid-drift \{/);
+assert.match(indexCss, /translate3d\(-32px, -32px, 0\)/);
+assert.match(indexCss, /@keyframes login-line-sweep \{/);
+assert.match(indexCss, /translate3d\(calc\(100vw \+ 256px\), 0, 0\)/);
+assert.match(login, /className="w-full max-w-\[400px\]"/);
+// 登录页不再外露演示账号与说明文案（用户明确要求去掉）。
+assert.doesNotMatch(login, /演示账号|一键填入|DEMO_ACCOUNT/);
+assert.doesNotMatch(login, /使用后台账号登录/);
+// 「记住密码」必须真的读写成对（门户那个「30天内免登录」就是只 setState 的摆设，别在这里重演）。
+assert.match(login, /REMEMBERED_PASSWORD_KEY = 'henfon\.admin\.remembered-password'/);
+assert.match(login, /useState\(\(\) => localStorage\.getItem\(REMEMBERED_PASSWORD_KEY\)/);
+assert.match(login, /localStorage\.setItem\(REMEMBERED_PASSWORD_KEY, password\)/);
+assert.match(login, /localStorage\.removeItem\(REMEMBERED_PASSWORD_KEY\)/);
+assert.doesNotMatch(login, /记住用户名/);
+// 标题「管理员登录」已去掉（品牌名用 h1 承担页面标题语义），验证码提示直接说「验证码」。
+assert.doesNotMatch(login, /管理员登录/);
+assert.match(login, /placeholder="请输入验证码"/);
+assert.doesNotMatch(login, /请输入右侧字符/);
 assert.match(products, /Product|商品/);
 assert.match(orders, /发货|shipping|shipment/i);
 assert.match(analytics, /getReportingDashboardMetrics/);
@@ -41,6 +81,8 @@ const unlockedModals = readdirSync(componentsDir, { withFileTypes: true, recursi
   .map((entry) => join(entry.parentPath ?? entry.path, entry.name))
   .filter((file) => {
     const source = readFileSync(file, 'utf8');
+    // 纯装饰层（aria-hidden + pointer-events-none 的整屏背景）不是弹层，不需要锁滚动。
+    if (source.includes('pointer-events-none fixed inset-0')) return false;
     return source.includes('fixed inset-0') && !source.includes('useBodyScrollLock');
   })
   .map((file) => relative(componentsRoot, file).replace(/\\/g, '/'));
