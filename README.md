@@ -489,6 +489,32 @@ dev 默认把全部消费监听器摘掉（`SHOP_ROCKETMQ_CONSUMER_ENABLED=false
 
 `SHOP_INVOICE_CALLBACK_TOKEN` 已经在 `application-prod.yml` 里声明，但当前没有任何代码读取它——第三方开票平台还没对接，回调固定返回 403。发票的申请、审核、置开票中、上传 PDF、门户下载这条链路本身是通的。
 
+#### AI 智能客服：百炼 + Qdrant（按需）
+
+不配不影响其余功能：关闭时门户不挂客服入口（`/api/portal/ai/status` 返回 `false`）。dev 默认打开，prod 默认关闭。
+
+| 变量 | 说明 |
+| --- | --- |
+| `SHOP_AI_ENABLED` | 总开关。同时驱动 `spring.ai.dashscope.enabled` 与 `shop.ai.enabled` |
+| `SHOP_DASHSCOPE_API_KEY` | 百炼 API Key，对话、向量化、精排共用同一个 |
+| `SHOP_QDRANT_HOST` / `SHOP_QDRANT_PORT` / `SHOP_QDRANT_API_KEY` | Qdrant 集群地址与 database 级 Key。云端 gRPC 端口 `6334`，要开 TLS（`SHOP_QDRANT_USE_TLS`，默认 `true`） |
+| `SHOP_QDRANT_COLLECTION_PORTAL` / `SHOP_QDRANT_COLLECTION_ADMIN` | 门户与内部两个 collection，默认 `shop_knowledge_portal` / `shop_knowledge_admin` |
+
+`SHOP_QDRANT_HOST` 只填主机名，不要带 `https://` 和端口。两个 collection 要先在 Qdrant 控制台建好：匿名向量、1024 维、Cosine。维度在运行期改不了，建错只能重建，缺失时启动日志里会有一条 error。
+
+总开关只有一个环境变量，这一点不能拆：两处配置共用 `SHOP_AI_ENABLED`，默认值也必须一致，否则会出现「建了百炼客户端但没有任何 AI Bean」这类半开状态，症状是开关看着是开的、接口却回「客服未启用」。
+
+知识库内容有两个来源，都不用手工灌：
+
+- 商品：上架商品自动向量化，文本取自商品名、类目与卖点。
+- 平台规则问答：放在 `ai_faq` 表，`category` 分售后、运费、支付、发票、会员。新库由 `db/init/056_ai_faq_policy.sql` 带入初始条目，后续由运营维护（还没有管理界面，接口是 `/api/admin/ai/faqs`）。
+
+改完内容调一次 `POST /api/admin/ai/knowledge/sync`（要管理端令牌）。它按内容指纹跳过没变的条目，所以只改答案是即时生效的——答案不参与向量化，命中后由检索层按 `source_type=FAQ` 回表取原文；只有改问法或关键词才需要重新同步。
+
+限流在 `shop.ai.limit` 下，会员按会员 ID、未登录访客按来源 IP 分开计数，各有一道分钟闸和一道日闸（`SHOP_AI_LIMIT_*`）。配额拒绝走流内的 `AI_RATE_LIMITED` 事件，不是 HTTP 429。
+
+排查两处：`SHOP_DASHSCOPE_API_KEY` 为空不阻断启动，日志里只有一行 warn，问答报鉴权错先看它；Qdrant 连不上在启动时打一条带地址的 error，同样不中断启动，此时买家提问会落到「知识库里没有」的兜底话术并引导转人工。
+
 ### 管理端（shop-web）
 
 关键文件是 `package.json`、`vite.config.ts`、`.env.example`。开发端口 `3000`，接口地址通过 `VITE_API_BASE_URL` 指定，要指向实际后端地址（例如 `http://127.0.0.1:8080`）。

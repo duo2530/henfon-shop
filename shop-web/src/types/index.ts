@@ -20,6 +20,8 @@ export type NavigationTab =
   // 内容与运营
   | 'content_banners'
   | 'content_reviews'
+  // AI 客服
+  | 'ai_tickets'
   // 权限与系统
   | 'system_users' 
   | 'roles' 

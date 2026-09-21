@@ -28,6 +28,7 @@ import { AnalyticsOverviewView } from './components/analytics/AnalyticsOverviewV
 import { ProductAnalyticsView } from './components/analytics/ProductAnalyticsView';
 import { BannerManagementView } from './components/content/BannerManagementView';
 import { ReviewManagementView } from './components/content/ReviewManagementView';
+import { AiTicketManagementView } from './components/content/AiTicketManagementView';
 import { SettingsView } from './components/settings/SettingsView';
 import { LoginLogManagementView } from './components/settings/LoginLogManagementView';
 import { OperationLogManagementView } from './components/settings/OperationLogManagementView';
@@ -115,6 +116,9 @@ const AdminLayoutContent: React.FC = () => {
         {/* Content Views */}
         {hasCurrentTab && currentTab === 'content_banners' && <BannerManagementView />}
         {hasCurrentTab && currentTab === 'content_reviews' && <ReviewManagementView />}
+
+        {/* AI 客服 */}
+        {hasCurrentTab && currentTab === 'ai_tickets' && <AiTicketManagementView />}
 
         {/* RBAC & System */}
         {hasCurrentTab && currentTab === 'roles' && <RoleManagementView />}

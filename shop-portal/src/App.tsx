@@ -12,6 +12,7 @@ import { OrdersPage } from './components/OrdersPage';
 import { WishlistPage } from './components/WishlistPage';
 import { ComparePage } from './components/ComparePage';
 import { CompareFloatingBar } from './components/CompareFloatingBar';
+import { SupportChatWidget } from './components/SupportChatWidget';
 import { AuthModal, AuthMode, PRESET_TEST_USERS } from './components/AuthModal';
 import { UserProfilePage } from './components/UserProfilePage';
 import { CouponCenterBanner } from './components/CouponCenterBanner';
@@ -3248,6 +3249,9 @@ export default function App() {
         onDeleteHistoryItem={handleDeleteHistoryItem}
         onClearHistory={handleClearCompareHistory}
       />
+
+      {/* 在线客服入口。客服未启用的环境里该组件自行不渲染，调用方不需要判断开关。 */}
+      <SupportChatWidget />
 
       {/* Login / Register Authentication Modal */}
       <AuthModal

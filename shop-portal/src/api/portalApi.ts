@@ -1197,3 +1197,114 @@ export async function deletePortalAddress(memberId: number, addressId: number) {
 export async function setDefaultPortalAddress(memberId: number, addressId: number) {
   return request<void>(`/api/portal/member/addresses/${addressId}/default?memberId=${memberId}`, { method: 'PUT' });
 }
+
+/** 客服对话的流式事件，与后端 AiChatEvent 一一对应。 */
+export interface PortalAiChatEvent {
+  type: 'meta' | 'delta' | 'done' | 'error';
+  conversationId?: string;
+  content?: string;
+  refs?: Array<{ sourceType?: string; sourceId?: string; title?: string }>;
+  /** 本轮是否命中了知识库，false 表示回答没有资料依据，可以引导转人工。 */
+  hit?: boolean;
+  finishReason?: string;
+  /** 异常分类，用于把配额拒绝与模型故障分开呈现。 */
+  code?: string;
+  message?: string;
+}
+
+/**
+ * 查询在线客服是否可用。
+ *
+ * 未启用的环境里不挂客服入口：点开只报错的按钮比没有入口更糟。
+ */
+export async function fetchPortalAiStatus(): Promise<{ enabled: boolean }> {
+  return request<{ enabled: boolean }>('/api/portal/ai/status');
+}
+
+/**
+ * 读取一段 SSE 事件里的 data 内容。
+ *
+ * @param chunk 一个完整事件（不含结尾空行）
+ * @returns data 字段拼接后的文本，没有 data 行时返回空串
+ */
+function readSseData(chunk: string): string {
+  return chunk
+    .split('\n')
+    .filter((line) => line.startsWith('data:'))
+    .map((line) => line.slice(5).trim())
+    .join('\n');
+}
+
+/**
+ * 流式提问，逐段回调。
+ *
+ * 不走 request 封装：那条路径会把响应当统一响应体解析 JSON，而这个接口的响应体是一串
+ * SSE 事件，只有 HTTP 头部的错误（会话不存在等）才是 JSON。
+ */
+export async function streamPortalAiChat(params: {
+  question: string;
+  conversationId?: string;
+  subjectType?: string;
+  subjectId?: string;
+  signal?: AbortSignal;
+  onEvent: (event: PortalAiChatEvent) => void;
+}): Promise<void> {
+  const token = localStorage.getItem(MEMBER_TOKEN_KEY);
+  const response = await fetch(`${API_BASE_URL}/api/portal/ai/chat`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify({
+      question: params.question,
+      conversationId: params.conversationId,
+      subjectType: params.subjectType,
+      subjectId: params.subjectId,
+    }),
+    signal: params.signal,
+  });
+  if (!response.ok) {
+    // 推流之前的业务异常（会话不存在、会话不属于当前账号）仍是统一响应体，能取到可读原因。
+    const body = await response.json().catch(() => null) as ApiResponse<unknown> | null;
+    throw new Error(body?.message || `客服接口请求失败：${response.status}`);
+  }
+  if (!response.body) {
+    throw new Error('当前浏览器不支持流式响应');
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder('utf-8');
+  let buffer = '';
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    // 统一换行后再按空行切事件，避免 \r\n\r\n 这种写法漏切。
+    buffer = (buffer + decoder.decode(value, { stream: true })).replace(/\r\n/g, '\n');
+    let boundary = buffer.indexOf('\n\n');
+    while (boundary >= 0) {
+      const payload = readSseData(buffer.slice(0, boundary));
+      buffer = buffer.slice(boundary + 2);
+      if (payload) {
+        try {
+          params.onEvent(JSON.parse(payload) as PortalAiChatEvent);
+        } catch {
+          // 单个分片解析失败不该中断整轮回答，跳过即可。
+        }
+      }
+      boundary = buffer.indexOf('\n\n');
+    }
+  }
+}
+
+/** 提交转人工工单，返回可报给客服的工单编号。 */
+export async function submitPortalAiTicket(payload: {
+  conversationId?: string;
+  contact: string;
+  question: string;
+}): Promise<{ ticketNo?: string; createdAt?: string }> {
+  return request<{ ticketNo?: string; createdAt?: string }>('/api/portal/ai/tickets', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}

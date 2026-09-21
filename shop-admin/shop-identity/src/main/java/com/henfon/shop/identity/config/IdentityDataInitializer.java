@@ -346,6 +346,14 @@ public class IdentityDataInitializer implements ApplicationRunner {
                 content.getId(), "BannerManagementView", "Image"));
         menus.add(ensureMenu("客户评价", "MENU", "content:review:query", "/content/reviews", 2,
                 content.getId(), "ReviewManagementView", "MessageSquare"));
+        // 客服工单沿用 ai:ticket:query 作为页面访问权限。该权限码上一批先按 BUTTON 登记过，
+        // 而 ensureMenu 对已存在的记录只补图标、不改类型与路由，所以必须再走一次 normalizeMenu
+        // 把它补齐成 MENU，否则侧边栏拿不到路由与组件名（与类目管理的历史兼容处理同理）。
+        SysMenu ticketMenu = ensureMenu("客服工单", "MENU", "ai:ticket:query", "/content/ai-tickets", 3,
+                content.getId(), "AiTicketManagementView", "Headphones");
+        normalizeMenu(ticketMenu, "客服工单", "MENU", "ai:ticket:query", "/content/ai-tickets", 3,
+                content.getId(), "AiTicketManagementView", "Headphones");
+        menus.add(ticketMenu);
 
         // 订单操作按钮用于控制后台发货、取消、备注和退款等写权限。
         String[][] tradeButtons = {
@@ -544,6 +552,16 @@ public class IdentityDataInitializer implements ApplicationRunner {
                 {"登录日志导出", "system:audit:login:export"},
                 {"操作日志导出", "system:audit:operation:export"}
         }, settings.getId(), 108);
+        // AI 客服的权限点按 BUTTON 登记；ai:ticket:query 已在上面的客服工单菜单里作为页面权限
+        // 承载，这里不再重复登记。查询与写入分开授权：只给查询的运营账号能看工单但不能改状态，
+        // 也不会拿到知识库内容的维护权。
+        ensureChildButtons(menus, new String[][]{
+                {"客服工单处理", "ai:ticket:handle"},
+                {"知识库问答查询", "ai:faq:query"},
+                {"知识库问答保存", "ai:faq:save"},
+                {"知识库问答删除", "ai:faq:delete"},
+                {"知识库向量同步", "ai:knowledge:sync"}
+        }, content.getId(), 109);
         return menus;
     }
 

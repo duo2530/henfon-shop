@@ -28,6 +28,21 @@ spring:
       password: ${SHOP_REDIS_PASSWORD}
       database: ${SHOP_REDIS_DATABASE:0}
       timeout: ${SHOP_REDIS_TIMEOUT:3s}
+  ai:
+    # 三个模型都要显式点名，自动配置才会创建对应的 Bean；能否真正建立连接由 dashscope.enabled 决定。
+    model:
+      chat: dashscope
+      embedding: dashscope
+      rerank: dashscope
+    # 关掉 Qdrant 官方自动配置：它的条件 matchIfMissing=true，classpath 有 qdrant starter 时不显式声明
+    # 就会激活并要求 EmbeddingModel，AI 关闭时会导致启动失败。两个 collection 由 AiConfiguration 自建。
+    vectorstore:
+      type: none
+    dashscope:
+      # 与 shop.ai.enabled 绑同一变量：未启用 AI 时不创建任何指向百炼的客户端，
+      # 因此没注入 API Key 的生产环境也能正常启动。
+      enabled: ${SHOP_AI_ENABLED:false}
+      api-key: ${SHOP_DASHSCOPE_API_KEY:}
 
 mybatis-plus:
   configuration:
@@ -126,6 +141,41 @@ shop:
       access-key: ${MINIO_ACCESS_KEY}
       secret-key: ${MINIO_SECRET_KEY}
       bucket: ${MINIO_BUCKET:shop}
+  ai:
+    # 生产环境默认关闭；确认百炼与 Qdrant 都配好后注入 SHOP_AI_ENABLED=true 启用。
+    enabled: ${SHOP_AI_ENABLED:false}
+    portal-collection: ${SHOP_QDRANT_COLLECTION_PORTAL:shop_knowledge_portal}
+    admin-collection: ${SHOP_QDRANT_COLLECTION_ADMIN:shop_knowledge_admin}
+    qdrant:
+      # 只填主机名，不带协议与端口；云端集群必须开 TLS。
+      host: ${SHOP_QDRANT_HOST:}
+      port: ${SHOP_QDRANT_PORT:6334}
+      api-key: ${SHOP_QDRANT_API_KEY:}
+      use-tls: ${SHOP_QDRANT_USE_TLS:true}
+      timeout-seconds: ${SHOP_QDRANT_TIMEOUT_SECONDS:10}
+    retrieval:
+      top-k: ${SHOP_AI_RETRIEVAL_TOP_K:20}
+      rerank-top-n: ${SHOP_AI_RERANK_TOP_N:5}
+      score-threshold: ${SHOP_AI_SCORE_THRESHOLD:0.5}
+    chat:
+      chat-model: ${SHOP_AI_CHAT_MODEL:qwen-plus}
+      embedding-model: ${SHOP_AI_EMBEDDING_MODEL:text-embedding-v4}
+      rerank-model: ${SHOP_AI_RERANK_MODEL:qwen3-rerank}
+      max-tokens: ${SHOP_AI_MAX_TOKENS:1024}
+      temperature: ${SHOP_AI_TEMPERATURE:0.3}
+      max-history-messages: ${SHOP_AI_MAX_HISTORY_MESSAGES:12}
+      first-token-timeout-ms: ${SHOP_AI_FIRST_TOKEN_TIMEOUT_MS:15000}
+      stream-timeout-ms: ${SHOP_AI_STREAM_TIMEOUT_MS:60000}
+    vectorize:
+      batch-size: ${SHOP_AI_VECTORIZE_BATCH_SIZE:10}
+      max-retries: ${SHOP_AI_VECTORIZE_MAX_RETRIES:3}
+      throttle-ms: ${SHOP_AI_VECTORIZE_THROTTLE_MS:200}
+    limit:
+      enabled: ${SHOP_AI_LIMIT_ENABLED:true}
+      member-per-minute: ${SHOP_AI_LIMIT_MEMBER_PER_MINUTE:30}
+      member-per-day: ${SHOP_AI_LIMIT_MEMBER_PER_DAY:500}
+      anonymous-per-minute: ${SHOP_AI_LIMIT_ANONYMOUS_PER_MINUTE:10}
+      anonymous-per-day: ${SHOP_AI_LIMIT_ANONYMOUS_PER_DAY:100}
 
 management:
   endpoints:

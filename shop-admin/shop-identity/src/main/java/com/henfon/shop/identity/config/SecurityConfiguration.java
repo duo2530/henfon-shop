@@ -52,7 +52,9 @@ public class SecurityConfiguration {
                                 "/api/payment/invoices/callback").permitAll()
                         // 商品、内容、可领取优惠券和秒杀活动查询面向访客开放；会员数据和交易接口必须携带会员 JWT。
                         // 同时放行带尾斜杠的 GET 请求，兼容浏览器或网关规范化后的门户地址。
-                        .requestMatchers("/api/portal/auth/**", "/api/portal/catalog/**", "/api/portal/content/**")
+                        .requestMatchers("/api/portal/auth/**", "/api/portal/catalog/**", "/api/portal/content/**",
+                                // 在线客服对访客开放：没登录也能问商品与规则问题，未登录身份由接口自行判空处理。
+                                "/api/portal/ai/**")
                         .permitAll()
                         .requestMatchers(HttpMethod.GET,
                                 "/api/portal/marketing/coupons", "/api/portal/marketing/coupons/",

@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   BadgePercent, BarChart3, Boxes, ChevronDown, ChevronRight, ClipboardCheck, Coins, DollarSign,
-  FileText, Image as ImageIcon, LayoutDashboard, LineChart, Lock, LogOut,
+  FileText, Headphones, Image as ImageIcon, LayoutDashboard, LineChart, Lock, LogOut,
   LogIn, Menu as MenuIcon, MessageSquare, Package, Shield, ShieldCheck,
   ShoppingBag, ShoppingCart, Settings, Ticket, Truck, UserCheck, Users,
   Warehouse, X, Zap
@@ -19,7 +19,7 @@ interface NavGroup { id: string; label: string; icon: React.ReactNode; children?
 const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
   LayoutDashboard, ShoppingBag, Package, ShoppingCart, UserCheck, ShieldCheck, Shield,
   Menu: MenuIcon, Users, Lock, Ticket, Zap, Boxes, Truck, Warehouse, LogIn, ClipboardCheck,
-  DollarSign, FileText, LineChart, BarChart3, Image: ImageIcon, MessageSquare, BadgePercent, Coins, Settings
+  DollarSign, FileText, LineChart, BarChart3, Image: ImageIcon, MessageSquare, BadgePercent, Coins, Settings, Headphones
 };
 
 function renderIcon(name?: string): React.ReactNode {

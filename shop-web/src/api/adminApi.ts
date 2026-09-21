@@ -1872,3 +1872,40 @@ export function updateAdminProfile(payload: {
 export function getAdminMenus(): Promise<BackendMenu[]> {
   return request<BackendMenu[]>('/api/admin/auth/menus');
 }
+
+/** AI 客服转人工工单。 */
+export interface BackendAiTicket {
+  id: number;
+  ticketNo?: string;
+  conversationId?: string;
+  memberId?: number;
+  contact?: string;
+  question: string;
+  aiSummary?: string;
+  /** PENDING 待处理，PROCESSING 处理中，CLOSED 已关闭。 */
+  status: 'PENDING' | 'PROCESSING' | 'CLOSED';
+  handlerId?: number;
+  handlerName?: string;
+  handleNote?: string;
+  handledAt?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export function listAiTickets(params: { current?: number; size?: number; status?: string; keyword?: string } = {}): Promise<BackendPage<BackendAiTicket>> {
+  const query = new URLSearchParams({ current: String(params.current || 1), size: String(params.size || 20) });
+  if (params.status) query.set('status', params.status);
+  if (params.keyword) query.set('keyword', params.keyword);
+  return request<BackendPage<BackendAiTicket>>(`/api/admin/ai/tickets?${query.toString()}`);
+}
+
+export function getAiTicket(id: number): Promise<BackendAiTicket> {
+  return request<BackendAiTicket>(`/api/admin/ai/tickets/${id}`);
+}
+
+export function handleAiTicket(id: number, payload: { status: string; handleNote?: string }): Promise<BackendAiTicket> {
+  return request<BackendAiTicket>(`/api/admin/ai/tickets/${id}/handle`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
