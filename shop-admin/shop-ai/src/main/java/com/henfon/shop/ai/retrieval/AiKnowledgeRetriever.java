@@ -104,24 +104,46 @@ public class AiKnowledgeRetriever {
      * @date 2026-09-21
      */
     public RetrievalResult retrieve(String query, String categoryCode) {
+        RecallTest test = recallTest(query, categoryCode);
+        // 未命中时不把资料交给上层：模型手里没有依据，才不会拿着不相关的内容硬答。
+        return new RetrievalResult(test.hit(), test.chunks(), test.hit() ? test.context() : "");
+    }
+
+    /**
+     * 走一遍召回与精排，把中间结果全部返回。
+     *
+     * 给知识库运营界面用：运营改完一条问答或换一个问法，需要看到「这句话会召回什么、分数多少、
+     * 够不够阈值、命中的资料长什么样」。对话链路只关心「命中与否」，看不到这些。
+     *
+     * 这里不调用大模型，只有一次向量检索加一次精排，所以可以放心让界面反复点。
+     *
+     * @param query 测试问句
+     * @param categoryCode 类目编码，为空时不按类目过滤
+     * @return 召回测试结果
+     * @author Henfon
+     * @date 2026-09-21
+     */
+    public RecallTest recallTest(String query, String categoryCode) {
         AiProperties.Retrieval retrieval = properties.getRetrieval();
         List<Document> documents = similaritySearch(query, categoryCode, retrieval.getTopK());
-        if (documents.isEmpty()) {
-            return new RetrievalResult(false, List.of(), "");
-        }
         double threshold = retrieval.getScoreThreshold();
         double bestScore = documents.stream()
                 .mapToDouble(document -> document.getScore() == null ? 0D : document.getScore())
                 .max()
                 .orElse(0D);
-        List<RetrievedChunk> chunks = rerank(query, documents, retrieval.getRerankTopN());
-        if (bestScore < threshold) {
-            // 召回全都不相关时也把结果返回给上层，用于日志与引用展示，但按"未命中"处理，
-            // 上层据此把回答收成"查不到"而不是让模型拿着无关资料硬答。
-            log.info("知识库未命中：最高相似度 {}，阈值 {}，问题 {}", bestScore, threshold, abbreviate(query));
-            return new RetrievalResult(false, chunks, "");
+        boolean hit = !documents.isEmpty() && bestScore >= threshold;
+        List<RetrievedChunk> chunks = documents.isEmpty()
+                ? List.of()
+                : rerank(query, documents, retrieval.getRerankTopN());
+        if (!hit) {
+            // 空结果也记一条：向量库不可达与知识库没灌在对外表现上一模一样（都是没命中），
+            // 不记的话这两种情况的排查方向完全分不开。
+            log.info("知识库未命中：最高相似度 {}，阈值 {}，召回 {} 条，问题 {}",
+                    bestScore, threshold, documents.size(), abbreviate(query));
         }
-        return new RetrievalResult(true, chunks, buildContext(chunks));
+        // 资料无论命中与否都拼出来：召回测试要回答的是「这段内容会不会真的喂到模型嘴里」，
+        // 只有分数看不出这一点。未命中时上层不会用它，仅作展示。
+        return new RecallTest(hit, bestScore, threshold, chunks, buildContext(chunks));
     }
 
     /**
@@ -370,5 +392,23 @@ public class AiKnowledgeRetriever {
                     .map(chunk -> new Ref(chunk.sourceType(), chunk.sourceId(), chunk.title()))
                     .toList();
         }
+    }
+
+    /**
+     * 一次召回测试的结果，给知识库运营界面看。
+     *
+     * @param hit 是否命中，判定口径与对话链路完全一致
+     * @param bestScore 本次召回的最高向量相似度
+     * @param threshold 配置的命中阈值，与 bestScore 一起解释「为什么算命中/不算命中」
+     * @param chunks 召回并精排后的条目，未命中时也可能有值，用于看「差在哪里」
+     * @param context 命中时会喂给模型的资料文本，未命中时仅作展示
+     * @author Henfon
+     * @date 2026-09-21
+     */
+    public record RecallTest(boolean hit,
+                             double bestScore,
+                             double threshold,
+                             List<RetrievedChunk> chunks,
+                             String context) {
     }
 }

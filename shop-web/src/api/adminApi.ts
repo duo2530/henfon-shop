@@ -1909,3 +1909,137 @@ export function handleAiTicket(id: number, payload: { status: string; handleNote
     body: JSON.stringify(payload),
   });
 }
+
+/** AI 客服知识库问答条目。 */
+export interface BackendAiFaq {
+  id: number;
+  question: string;
+  answer: string;
+  /** AFTER_SALE 售后 / SHIPPING 物流 / INVOICE 发票 / PAYMENT 支付 / MEMBER 会员 / OTHER 其他。 */
+  category?: string;
+  /** 人工维护的检索关键词，英文逗号分隔。 */
+  keywords?: string;
+  sortNo?: number;
+  /** 1 启用，0 停用；停用后不参与向量化。 */
+  enabled?: number;
+  /** 向量同步状态：PENDING 待同步，SYNCED 已同步，FAILED 失败。 */
+  syncStatus?: string;
+  syncedAt?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export function listAiFaqs(params: {
+  current?: number;
+  size?: number;
+  keyword?: string;
+  category?: string;
+  enabled?: number;
+} = {}): Promise<BackendPage<BackendAiFaq>> {
+  const query = new URLSearchParams({ current: String(params.current || 1), size: String(params.size || 20) });
+  if (params.keyword) query.set('keyword', params.keyword);
+  if (params.category) query.set('category', params.category);
+  if (params.enabled !== undefined) query.set('enabled', String(params.enabled));
+  return request<BackendPage<BackendAiFaq>>(`/api/admin/ai/faqs?${query.toString()}`);
+}
+
+/** 新增或修改知识库问答。id 为空表示新增。返回记录 ID。 */
+export function saveAiFaq(payload: {
+  id?: number;
+  question: string;
+  answer: string;
+  category?: string;
+  keywords?: string;
+  sortNo?: number;
+  enabled?: number;
+}): Promise<number> {
+  return request<number>('/api/admin/ai/faqs', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export function deleteAiFaq(id: number): Promise<void> {
+  return request<void>(`/api/admin/ai/faqs/${id}`, { method: 'DELETE' });
+}
+
+/** 单次向量同步的统计。 */
+export interface BackendAiSyncResult {
+  total: number;
+  success: number;
+  skipped: number;
+  failed: number;
+}
+
+/** 知识库向量同步概况。 */
+export interface BackendAiKnowledgeStatus {
+  total: number;
+  synced: number;
+  pending: number;
+  failed: number;
+  /** 按来源类型再按状态计数，用于分辨是商品还是问答卡住了。 */
+  bySource: Record<string, Record<string, number>>;
+  /** 失败明细，服务端最多给 50 条。 */
+  failures: {
+    id: number;
+    sourceType: string;
+    sourceId: string;
+    retryCount?: number;
+    errorMessage?: string;
+    updatedAt?: string;
+  }[];
+  /** AI 客服是否已启用。未启用时同步与召回测试都会被拒。 */
+  enabled: boolean;
+}
+
+export function getAiKnowledgeStatus(): Promise<BackendAiKnowledgeStatus> {
+  return request<BackendAiKnowledgeStatus>('/api/admin/ai/knowledge/status');
+}
+
+/** 触发全量同步。force 为 true 时忽略内容指纹强制重建，会重新消耗 embedding 额度。 */
+export function syncAiKnowledge(force = false): Promise<{
+  product: BackendAiSyncResult;
+  faq: BackendAiSyncResult;
+  staleRemoved: number;
+}> {
+  return request(`/api/admin/ai/knowledge/sync?force=${force ? 'true' : 'false'}`, { method: 'POST' });
+}
+
+/** 只重跑失败过的来源，不碰已同步好的数据。 */
+export function retryFailedAiKnowledge(): Promise<BackendAiSyncResult> {
+  return request<BackendAiSyncResult>('/api/admin/ai/knowledge/retry-failed', { method: 'POST' });
+}
+
+/** 召回测试里的一条命中。 */
+export interface BackendAiRecallChunk {
+  sourceType?: string;
+  sourceId?: string;
+  title?: string;
+  /** 向量库里的原文；问答条目这里是问法与关键词，命中后拼进模型的是回表取的答案。 */
+  text?: string;
+  vectorScore: number;
+  /** 精排得分，精排未开通或降级时为空。 */
+  rerankScore?: number | null;
+  /** 服务端拼好的展示标题，形如「平台问答：退货要多久」。 */
+  label: string;
+}
+
+export interface BackendAiRecallTest {
+  hit: boolean;
+  bestScore: number;
+  threshold: number;
+  chunks: BackendAiRecallChunk[];
+  /** 命中时会喂给模型的资料文本。 */
+  context: string;
+}
+
+/** 召回测试：走真实召回与精排，不调用大模型，可反复点。 */
+export function testAiKnowledgeRecall(payload: {
+  question: string;
+  categoryCode?: string;
+}): Promise<BackendAiRecallTest> {
+  return request<BackendAiRecallTest>('/api/admin/ai/knowledge/recall-test', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}

@@ -22,6 +22,7 @@ export type NavigationTab =
   | 'content_reviews'
   // AI 客服
   | 'ai_tickets'
+  | 'ai_knowledge'
   // 权限与系统
   | 'system_users' 
   | 'roles' 

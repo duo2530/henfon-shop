@@ -1,6 +1,7 @@
 package com.henfon.shop.ai.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.henfon.shop.ai.config.AiProperties;
 import com.henfon.shop.ai.entity.AiFaq;
@@ -26,8 +27,11 @@ import java.security.NoSuchAlgorithmException;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -153,6 +157,103 @@ public class AiKnowledgeSyncService {
     }
 
     /**
+     * 只重跑失败过的来源。
+     *
+     * 不做 force 全量重算：库里几百条正常数据跟着重跑一遍 embedding 全是白花的钱，而失败项
+     * 的状态不是 SYNCED，同步批次本来就不会跳过它们。所以这里按 source_type 圈出失败的
+     * source_id，只把这些来源重新组装文本送进去。
+     *
+     * @return 同步结果统计
+     * @author Henfon
+     * @date 2026-09-21
+     */
+    public SyncResult retryFailed() {
+        List<AiVectorSync> failures = vectorSyncMapper.selectList(Wrappers.lambdaQuery(AiVectorSync.class)
+                .eq(AiVectorSync::getStatus, STATUS_FAILED)
+                .eq(AiVectorSync::getCollectionName, properties.getPortalCollection()));
+        if (failures.isEmpty()) {
+            return new SyncResult(0, 0, 0, 0);
+        }
+        Set<Long> productIds = new LinkedHashSet<>();
+        Set<Long> faqIds = new LinkedHashSet<>();
+        for (AiVectorSync failure : failures) {
+            Long id = parseSourceId(failure.getSourceId());
+            if (id == null) {
+                continue;
+            }
+            if (SOURCE_PRODUCT.equals(failure.getSourceType())) {
+                productIds.add(id);
+            } else if (SOURCE_FAQ.equals(failure.getSourceType())) {
+                faqIds.add(id);
+            }
+        }
+        int[] stats = new int[4];
+        if (!productIds.isEmpty()) {
+            // 失败之后又被下架的商品不再重试：索引了下架商品会答出买不到的东西，
+            // 它的位点交给 removeStaleVectors() 清理。
+            List<CatalogProduct> products = productMapper.selectBatchIds(productIds).stream()
+                    .filter(product -> Integer.valueOf(1).equals(product.getStatus()))
+                    .toList();
+            if (!products.isEmpty()) {
+                Map<Long, List<CatalogProductSpec>> specMap = loadSpecs(products);
+                accumulate(stats, syncBatch(SOURCE_PRODUCT, products,
+                        product -> String.valueOf(product.getId()),
+                        product -> buildProductText(product, specMap.getOrDefault(product.getId(), List.of())),
+                        true));
+            }
+        }
+        if (!faqIds.isEmpty()) {
+            List<AiFaq> faqs = faqMapper.selectBatchIds(faqIds).stream()
+                    .filter(faq -> Integer.valueOf(1).equals(faq.getEnabled()))
+                    .toList();
+            if (!faqs.isEmpty()) {
+                accumulate(stats, syncBatch(SOURCE_FAQ, faqs,
+                        faq -> String.valueOf(faq.getId()),
+                        this::buildFaqText,
+                        true));
+            }
+        }
+        SyncResult result = new SyncResult(stats[0], stats[1], stats[2], stats[3]);
+        log.info("失败项重试完成：共 {} 条，成功 {}，跳过 {}，失败 {}",
+                result.total(), result.success(), result.skipped(), result.failed());
+        return result;
+    }
+
+    /**
+     * 累加同步统计。
+     *
+     * @param stats 累计数组，顺序为 total / success / skipped / failed
+     * @param result 本次同步结果
+     * @author Henfon
+     * @date 2026-09-21
+     */
+    private void accumulate(int[] stats, SyncResult result) {
+        stats[0] += result.total();
+        stats[1] += result.success();
+        stats[2] += result.skipped();
+        stats[3] += result.failed();
+    }
+
+    /**
+     * 解析来源标识。
+     *
+     * @param sourceId 来源标识
+     * @return 数字 ID，非数字时返回 null
+     * @author Henfon
+     * @date 2026-09-21
+     */
+    private Long parseSourceId(String sourceId) {
+        if (!StringUtils.hasText(sourceId)) {
+            return null;
+        }
+        try {
+            return Long.parseLong(sourceId);
+        } catch (NumberFormatException exception) {
+            return null;
+        }
+    }
+
+    /**
      * 清理来源已不存在的向量点。
      *
      * 商品下架、FAQ 删除或停用后，位点仍在库里。不清理的后果是召回出已经买不到或已经
@@ -240,6 +341,10 @@ public class AiKnowledgeSyncService {
         int failed = 0;
         List<Document> batch = new ArrayList<>(batchSize);
         List<PendingPoint> pending = new ArrayList<>(batchSize);
+        // 内容没变、位点也是已同步，但源表还标着待同步的条目（典型场景是只改了答案，答案不参与
+        // 向量化）。它们不会被写向量，若不同步收敛源表状态，界面上就会一直挂着「待同步」，
+        // 而点同步又每次都被跳过——看起来像同步坏了。
+        List<String> converged = new ArrayList<>();
 
         for (T source : sources) {
             String sourceId = idGetter.apply(source);
@@ -249,6 +354,7 @@ public class AiKnowledgeSyncService {
             if (!force && existing != null && hash.equals(existing.getContentHash())
                     && STATUS_SYNCED.equals(existing.getStatus())) {
                 skipped++;
+                converged.add(sourceId);
                 continue;
             }
             String pointId = existing != null && existing.getPointId() != null
@@ -278,6 +384,7 @@ public class AiKnowledgeSyncService {
                 failed += batch.size();
             }
         }
+        writeSourceStatus(sourceType, converged, STATUS_SYNCED);
         log.info("向量同步完成：来源 {}，成功 {}，跳过 {}，失败 {}", sourceType, success, skipped, failed);
         return new SyncResult(sources.size(), success, skipped, failed);
     }
@@ -306,6 +413,8 @@ public class AiKnowledgeSyncService {
                 for (PendingPoint point : pending) {
                     markSynced(point, sourceType, collection);
                 }
+                writeSourceStatus(sourceType, pending.stream().map(PendingPoint::sourceId).toList(),
+                        STATUS_SYNCED);
                 return true;
             } catch (Exception exception) {
                 lastError = exception;
@@ -317,7 +426,44 @@ public class AiKnowledgeSyncService {
         for (PendingPoint point : pending) {
             markFailed(point, sourceType, collection, lastError);
         }
+        writeSourceStatus(sourceType, pending.stream().map(PendingPoint::sourceId).toList(), STATUS_FAILED);
         return false;
+    }
+
+    /**
+     * 回写源表的同步状态。
+     *
+     * 位点表是同步任务自己的账本，源表上的 sync_status 是给运营看的：保存问答时置为 PENDING，
+     * 索引成功后收敛回 SYNCED。少了这一半回写，源表就永远停在 PENDING——同步明明成功，
+     * 列表却整片显示「待同步」。商品表没有这个字段，它的索引状态只看位点表。
+     *
+     * @param sourceType 来源类型
+     * @param sourceIds 来源标识列表
+     * @param status 目标状态
+     * @author Henfon
+     * @date 2026-09-21
+     */
+    private void writeSourceStatus(String sourceType, List<String> sourceIds, String status) {
+        if (sourceIds.isEmpty() || !SOURCE_FAQ.equals(sourceType)) {
+            return;
+        }
+        List<Long> ids = sourceIds.stream().map(this::parseSourceId).filter(Objects::nonNull).toList();
+        if (ids.isEmpty()) {
+            return;
+        }
+        try {
+            LambdaUpdateWrapper<AiFaq> update = Wrappers.lambdaUpdate(AiFaq.class)
+                    .in(AiFaq::getId, ids)
+                    .set(AiFaq::getSyncStatus, status);
+            if (STATUS_SYNCED.equals(status)) {
+                update.set(AiFaq::getSyncedAt, LocalDateTime.now());
+            }
+            faqMapper.update(null, update);
+        } catch (Exception exception) {
+            // 向量已经写进库了，回写失败只影响界面上的状态展示，不该把整批同步算作失败。
+            log.warn("回写问答同步状态失败（{} → {}）：{}", String.join(",", sourceIds), status,
+                    exception.getMessage());
+        }
     }
 
     /**

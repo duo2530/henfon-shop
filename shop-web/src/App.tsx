@@ -29,6 +29,7 @@ import { ProductAnalyticsView } from './components/analytics/ProductAnalyticsVie
 import { BannerManagementView } from './components/content/BannerManagementView';
 import { ReviewManagementView } from './components/content/ReviewManagementView';
 import { AiTicketManagementView } from './components/content/AiTicketManagementView';
+import { AiKnowledgeView } from './components/content/AiKnowledgeView';
 import { SettingsView } from './components/settings/SettingsView';
 import { LoginLogManagementView } from './components/settings/LoginLogManagementView';
 import { OperationLogManagementView } from './components/settings/OperationLogManagementView';
@@ -119,6 +120,7 @@ const AdminLayoutContent: React.FC = () => {
 
         {/* AI 客服 */}
         {hasCurrentTab && currentTab === 'ai_tickets' && <AiTicketManagementView />}
+        {hasCurrentTab && currentTab === 'ai_knowledge' && <AiKnowledgeView />}
 
         {/* RBAC & System */}
         {hasCurrentTab && currentTab === 'roles' && <RoleManagementView />}

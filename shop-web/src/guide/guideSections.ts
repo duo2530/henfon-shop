@@ -719,6 +719,8 @@ export const MENU_PERMISSIONS: Array<[string, string, string]> = [
   ['商品动销榜', '/analytics/products', 'reporting:product:query'],
   ['轮播海报', '/content/banners', 'content:banner:query'],
   ['客户评价', '/content/reviews', 'content:review:query'],
+  ['客服工单', '/content/ai-tickets', 'ai:ticket:query'],
+  ['知识库运营', '/content/ai-knowledge', 'ai:faq:query'],
   ['参数配置', '/settings', 'system:config:view'],
   ['登录记录', '/settings/login-logs', 'system:audit:login'],
   ['操作审计', '/settings/operation-logs', 'system:audit:operation'],
@@ -745,5 +747,7 @@ export const ACTION_PERMISSIONS: Array<[string, string, string]> = [
   ['商品动销榜', '动销导出', 'reporting:product:export'],
   ['参数配置', '保存系统配置', 'system:config:save'],
   ['导出中心', '查询 / 创建 / 下载', 'export:task:query | create | download'],
+  ['客服工单', '工单处理', 'ai:ticket:handle'],
+  ['知识库运营', '问答保存与删除 / 向量同步与召回测试', 'ai:faq:save | ai:faq:delete | ai:knowledge:sync'],
   ['操作审计', '日志导出', 'system:audit:login:export | system:audit:operation:export'],
 ];

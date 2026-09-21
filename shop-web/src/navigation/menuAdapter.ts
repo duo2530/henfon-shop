@@ -18,6 +18,7 @@ const routeTabMap: Record<string, NavigationTab> = {
   '/content/banners': 'content_banners',
   '/content/reviews': 'content_reviews',
   '/content/ai-tickets': 'ai_tickets',
+  '/content/ai-knowledge': 'ai_knowledge',
   '/system/roles': 'roles',
   '/system/menus': 'menus',
   '/system/users': 'system_users',

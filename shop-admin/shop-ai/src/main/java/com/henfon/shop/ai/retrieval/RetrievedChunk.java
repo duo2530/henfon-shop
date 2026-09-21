@@ -1,5 +1,7 @@
 package com.henfon.shop.ai.retrieval;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
+
 /**
  * 一条检索结果。
  *
@@ -25,10 +27,14 @@ public record RetrievedChunk(String sourceType,
     /**
      * 生成资料在上下文中的标题行。
      *
+     * 标注成 JSON 属性是给召回测试接口用的：它把这条记录直接下发给知识库界面，前端要显示
+     * 「商品：实木置物架」这一行。不加这个注解，记录序列化只输出构造参数，label 会丢掉。
+     *
      * @return 形如「商品：实木置物架」的标题
      * @author Henfon
      * @date 2026-09-21
      */
+    @JsonProperty("label")
     public String label() {
         return switch (sourceType == null ? "" : sourceType) {
             case "PRODUCT" -> "商品";
