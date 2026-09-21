@@ -245,6 +245,58 @@ public class TradeOrderService {
     }
 
     /**
+     * 查询会员自己的订单列表，按创建时间倒序。
+     *
+     * 门户的「我的订单」是控制器直接查 Mapper 的，没有可复用的服务方法；AI 客服需要同一份
+     * 数据，这里补一个带条数上限的入口。上限不能省：调用方是模型，条数写大了会把整个订单
+     * 列表塞进对话上下文，既撑爆 token，又淹掉真正要回答的那一单。
+     *
+     * @param memberId 会员 ID，为空时返回空列表
+     * @param orderStatus 订单状态，为空表示不限
+     * @param limit 最多返回条数，会被压到 1 到 20 之间
+     * @return 订单列表
+     * @author Henfon
+     * @date 2026-09-21
+     */
+    public List<TradeOrder> listMemberOrders(Long memberId, Integer orderStatus, int limit) {
+        if (memberId == null) {
+            return List.of();
+        }
+        int safeLimit = Math.min(Math.max(limit, 1), 20);
+        return tradeOrderMapper.selectList(new LambdaQueryWrapper<TradeOrder>()
+                .eq(TradeOrder::getMemberId, memberId)
+                .eq(orderStatus != null, TradeOrder::getOrderStatus, orderStatus)
+                .orderByDesc(TradeOrder::getCreatedAt)
+                .last("LIMIT " + safeLimit));
+    }
+
+    /**
+     * 按订单号查询会员自己的订单。
+     *
+     * 越权与不存在返回同一个 null，既不抛异常也不区分原因。调用方是 AI 客服工具，
+     * 「这个订单存在但不属于你」本身就是不该给出的信息——拿单号就能探出订单是否存在，
+     * 正是越权探测的第一步。需要明确报错的场景走 requireMemberOrder。
+     *
+     * @param memberId 会员 ID
+     * @param orderNo 订单号
+     * @return 订单，不存在或不属于该会员时返回 null
+     * @author Henfon
+     * @date 2026-09-21
+     */
+    public TradeOrder findMemberOrderByNo(Long memberId, String orderNo) {
+        if (memberId == null || !StringUtils.hasText(orderNo)) {
+            return null;
+        }
+        TradeOrder order = tradeOrderMapper.selectOne(new LambdaQueryWrapper<TradeOrder>()
+                .eq(TradeOrder::getOrderNo, orderNo.trim())
+                .last("LIMIT 1"));
+        if (order == null || !memberId.equals(order.getMemberId())) {
+            return null;
+        }
+        return order;
+    }
+
+    /**
      * 从物流服务商同步订单轨迹。
      *
      * <p>同步结果写入现有物流轨迹表，门户查询接口无需改动；第三方调用失败时不覆盖已有人工节点。</p>

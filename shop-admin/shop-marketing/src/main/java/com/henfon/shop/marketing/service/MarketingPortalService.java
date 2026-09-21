@@ -8,6 +8,7 @@ import com.henfon.shop.marketing.mapper.MarketingMemberCouponMapper;
 import com.henfon.shop.marketing.mapper.MarketingCouponUsageMapper;
 import com.henfon.shop.marketing.entity.MarketingCouponUsage;
 import com.henfon.shop.marketing.dto.MarketingCouponRedeemRequest;
+import com.henfon.shop.marketing.dto.MarketingMemberCouponView;
 import com.henfon.shop.common.exception.BusinessException;
 import com.henfon.shop.trade.entity.TradeOrder;
 import com.henfon.shop.trade.entity.TradeOrderItem;
@@ -22,6 +23,8 @@ import org.springframework.util.StringUtils;
 import java.time.LocalDateTime;
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * 门户营销查询服务。
@@ -92,6 +95,47 @@ public class MarketingPortalService {
                 .eq(MarketingMemberCoupon::getMemberId, memberId)
                 .eq(status != null, MarketingMemberCoupon::getReceiveStatus, status)
                 .orderByDesc(MarketingMemberCoupon::getReceivedAt));
+    }
+
+    /**
+     * 查询会员已领取的优惠券，并补上券名与面额。
+     *
+     * 会员券表不存券名与金额，调用方（门户券包、AI 客服）都需要展示这些字段，
+     * 在这里一次补齐，避免每个调用方各写一遍回表逻辑。券主表记录缺失时对应字段留空，
+     * 不抛异常：券被删除不该让「我的券包」整页打不开。
+     *
+     * @param memberId 会员ID
+     * @param status 领取状态，可为空
+     * @return 带券面额信息的会员优惠券列表
+     * @author Henfon
+     * @date 2026-09-21
+     */
+    public List<MarketingMemberCouponView> memberCouponViews(Long memberId, Integer status) {
+        List<MarketingMemberCoupon> records = memberCoupons(memberId, status);
+        if (records.isEmpty()) {
+            return List.of();
+        }
+        List<Long> couponIds = records.stream()
+                .map(MarketingMemberCoupon::getCouponId)
+                .filter(java.util.Objects::nonNull)
+                .distinct()
+                .toList();
+        Map<Long, MarketingCoupon> coupons = couponIds.isEmpty()
+                ? Map.of()
+                : couponMapper.selectBatchIds(couponIds).stream()
+                        .collect(Collectors.toMap(MarketingCoupon::getId, coupon -> coupon, (left, right) -> left));
+        return records.stream().map(record -> {
+            MarketingCoupon coupon = coupons.get(record.getCouponId());
+            return new MarketingMemberCouponView(
+                    record.getCouponId(),
+                    coupon == null ? null : coupon.getCouponTitle(),
+                    coupon == null ? null : coupon.getDiscountAmount(),
+                    coupon == null ? null : coupon.getMinSpend(),
+                    coupon == null ? null : coupon.getStartAt(),
+                    coupon == null ? null : coupon.getEndAt(),
+                    record.getReceiveStatus(),
+                    record.getReceivedAt());
+        }).toList();
     }
 
     /**

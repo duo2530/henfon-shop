@@ -8,6 +8,7 @@ import com.henfon.shop.ai.dto.AiChatRequest;
 import com.henfon.shop.ai.dto.Ref;
 import com.henfon.shop.ai.entity.AiConversation;
 import com.henfon.shop.ai.retrieval.AiKnowledgeRetriever;
+import com.henfon.shop.ai.tool.AiPortalTools;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
@@ -63,6 +64,8 @@ public class AiChatService {
 
     private final AiConversationService conversationService;
 
+    private final AiPortalTools portalTools;
+
     private final AiProperties properties;
 
     private final ObjectMapper objectMapper;
@@ -73,6 +76,7 @@ public class AiChatService {
      * @param aiChatClient 客服对话客户端
      * @param retriever 知识库检索组件
      * @param conversationService 会话管理服务
+     * @param portalTools 买家侧查询工具，订单与物流走它
      * @param properties AI 配置
      * @param objectMapper JSON 序列化器
      * @author Henfon
@@ -81,11 +85,13 @@ public class AiChatService {
     public AiChatService(ChatClient aiChatClient,
                          AiKnowledgeRetriever retriever,
                          AiConversationService conversationService,
+                         AiPortalTools portalTools,
                          AiProperties properties,
                          ObjectMapper objectMapper) {
         this.aiChatClient = aiChatClient;
         this.retriever = retriever;
         this.conversationService = conversationService;
+        this.portalTools = portalTools;
         this.properties = properties;
         this.objectMapper = objectMapper;
     }
@@ -110,12 +116,20 @@ public class AiChatService {
         String conversationId = conversation.getConversationId();
 
         AiKnowledgeRetriever.RetrievalResult retrieval = retriever.retrieve(request.question(), null);
-        String systemPrompt = AiPrompts.withKnowledge(AiPrompts.PORTAL_SYSTEM, retrieval.context());
+        String systemPrompt = AiPrompts.portalSystem(retrieval.context(), memberId != null);
         StreamState state = new StreamState(retrieval.hit(), retrieval.toRefs());
 
-        Flux<AiChatEvent> deltas = aiChatClient.prompt()
+        ChatClient.ChatClientRequestSpec spec = aiChatClient.prompt()
                 .system(systemPrompt)
-                .user(request.question())
+                .user(request.question());
+        if (memberId != null) {
+            // 身份在这里进工具上下文，工具签名里不出现它，模型也就改不了它。
+            // 未登录时干脆不挂工具：模型看不到有哪些查询手段，就没有东西可以拿来讲。
+            spec = spec.tools(portalTools)
+                    .toolContext(Map.<String, Object>of(AiPortalTools.CONTEXT_MEMBER_ID, memberId));
+        }
+
+        Flux<AiChatEvent> deltas = spec
                 .advisors(advisor -> advisor.param(ChatMemory.CONVERSATION_ID, conversationId))
                 .stream()
                 .chatClientResponse()

@@ -23,6 +23,29 @@ public final class AiPrompts {
     public static final String KNOWLEDGE_EMPTY = "本次没有检索到任何资料。";
 
     /**
+     * 已登录时追加的说明。
+     *
+     * 必须点明「工具存在」：不写这一句，模型倾向于按纯知识问答的方式作答，买家问订单时它
+     * 会直接答「请转人工」，工具等于白挂。
+     */
+    private static final String LOGGED_IN_NOTICE =
+            "\n当前买家已登录，他的订单列表、订单详情与物流、售后进度、已领优惠券都可以用工具查到，"
+                    + "涉及这些内容时先取数据再回答。买家只说「我的订单」「我的物流」而没给订单号时，"
+                    + "先查他的订单列表并据此回答，不要反过来让买家自己提供订单号。\n";
+
+    /**
+     * 未登录时追加的说明。
+     *
+     * 未登录时工具不会挂上去，模型手里没有任何查询手段，只能靠这句话挡住订单类提问。
+     * 同时明确不要接收买家发来的订单号：陌生人报来的单号没有可信度，收下再查就是越权。
+     */
+    private static final String ANONYMOUS_NOTICE =
+            "\n当前买家没有登录，订单、物流、售后、优惠券都查不到，也没有可用的查询工具。"
+                    + "遇到这类问题，说明需要登录后才能查看，不要凭猜测回答；即使买家把订单号发过来，"
+                    + "未登录状态下也查不到任何内容，不要顺着订单号展开。回答里不要出现「把订单号发给我」"
+                    + "「提供订单号我帮你查」这类话，需要人工介入时只留手机号或邮箱。\n";
+
+    /**
      * 门户买家侧客服的系统提示。
      *
      * 核心是第 1 条与第 2 条：把模型的角色限制在「组织语言」，事实只能来自检索资料。
@@ -37,8 +60,9 @@ public final class AiPrompts {
             2. 不许给出任何承诺性表述，包括但不限于送达时效、发货时间、价格优惠、赔偿金额、退款到账时间。资料里如果写了时效，照抄资料原文，不要换算、不要加码。
             3. 不许编造订单号、物流单号、金额、政策条款、活动名称。没有实时查询结果时，就说明需要转人工核实。
             4. 只用中文回答，像正常客服说话那样，直接给结论。不要重复买家的问题，不要自我介绍，不要罗列一堆无关选项，长度控制在 200 字以内。
-            5. 问题指向某个具体订单、账户或售后单，而你手上没有对应的实时数据时，明确说明需要转人工，并提示买家留下手机号或邮箱。
-            6. 与商城购物无关的话题，直接说明你只负责商城购物咨询，不要展开。
+            5. 买家的订单、物流、售后、优惠券状态，只能引用查询工具返回的结果。工具说查不到，就照实说查不到，不要猜测，也不要拿别的订单顶上。买家泛指「我的订单」「我的物流」而没有给订单号时，自己先查订单列表再回答，不要张口就要订单号。
+            6. 没有任何查询工具可用（通常是买家未登录），或者工具查不到而买家坚持要个说法时，说明需要转人工，并提示买家留下手机号或邮箱；未登录时不要提示买家提供订单号。
+            7. 与商城购物无关的话题，直接说明你只负责商城购物咨询，不要展开。
             """;
 
     /** 管理端运营助手的系统提示，P2 启用，先把边界写死在这里。 */
@@ -53,22 +77,29 @@ public final class AiPrompts {
             """;
 
     /**
-     * 拼装带资料的系统提示。
+     * 拼装门户客服的系统提示。
      *
-     * @param basePrompt 基础系统提示
+     * 登录态与资料都在这里合进去，而不是让业务层自己拼字符串：两者都会影响模型说什么，
+     * 散在两个地方改的时候很容易只改一处，出现「工具挂了但提示词还写着未登录」这种自相
+     * 矛盾的上下文。
+     *
      * @param knowledge 检索到的资料文本，无资料时传空串
+     * @param loggedIn 买家是否已登录
      * @return 系统提示
      * @author Henfon
      * @date 2026-09-21
      */
-    public static String withKnowledge(String basePrompt, String knowledge) {
-        StringBuilder prompt = new StringBuilder(basePrompt);
-        prompt.append('\n').append(KNOWLEDGE_HEADER).append('\n');
+    public static String portalSystem(String knowledge, boolean loggedIn) {
+        StringBuilder prompt = new StringBuilder(PORTAL_SYSTEM);
+        prompt.append(KNOWLEDGE_HEADER).append('\n');
         if (knowledge == null || knowledge.isBlank()) {
             prompt.append(KNOWLEDGE_EMPTY).append('\n');
         } else {
             prompt.append(knowledge).append('\n');
         }
+        // 登录态说明放到最后。它决定了模型「能不能查、该不该索要订单号」，
+        // 夹在资料前面时遵守度明显下降：实测未登录用例仍会反过来让买家提供订单号。
+        prompt.append(loggedIn ? LOGGED_IN_NOTICE : ANONYMOUS_NOTICE);
         return prompt.toString();
     }
 
