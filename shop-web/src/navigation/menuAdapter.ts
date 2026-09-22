@@ -35,8 +35,32 @@ const routeTabMap: Record<string, NavigationTab> = {
   '/settings/operation-logs': 'operation_logs'
 };
 
+/**
+ * 不占导航项的从属页面：没有自己的菜单，靠权限点进入。
+ *
+ * 角色授权页就是这类页面——它只能从角色管理某一行点进去，进不去时提示的
+ * 「暂无该页面访问权限」并不是权限没配，而是菜单树里根本没有 /system/auth 这个节点。
+ */
+const dependentTabPermissions: Partial<Record<NavigationTab, string>> = {
+  authorization: 'system:role-menu:save'
+};
+
 export function routeToTab(path?: string): NavigationTab | undefined {
   return path ? routeTabMap[path] : undefined;
+}
+
+/**
+ * 判断当前用户能否打开指定页面：菜单树里有对应菜单，或该页面是从属页面且持有对应权限点。
+ *
+ * @param items 后端菜单树
+ * @param tab 页面标识
+ * @param permissions 当前用户权限字
+ * @returns 是否允许打开
+ */
+export function hasTabAccess(items: MenuItem[], tab: NavigationTab, permissions: string[]): boolean {
+  if (containsMenuTab(items, tab)) return true;
+  const required = dependentTabPermissions[tab];
+  return !!required && (permissions.includes('*:*:*') || permissions.includes(required));
 }
 
 /**

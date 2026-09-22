@@ -77,7 +77,7 @@ import {
   markContentNotificationRead,
   markAllContentNotificationsRead
 } from '../api/adminApi';
-import { backendMenusToTree, containsMenuTab, firstMenuTab } from '../navigation/menuAdapter';
+import { backendMenusToTree, containsMenuTab, firstMenuTab, hasTabAccess } from '../navigation/menuAdapter';
 import { backendDataRulesToFrontend, backendDepartmentsToFrontend, backendMembersToFrontend, backendMenusToFrontend, backendRolesToFrontend, backendUsersToFrontend } from '../navigation/identityAdapter';
 import { backendCategoriesToMap, backendCategoriesToOptions, backendProductsToFrontend } from '../navigation/catalogAdapter';
 import { AdminDialog, type AdminDialogRequest } from '../components/common/AdminDialog';
@@ -105,6 +105,10 @@ interface AdminContextType {
   }) => Promise<void>;
   currentTab: NavigationTab;
   setCurrentTab: (tab: NavigationTab) => void;
+  /** 打开角色权限配置页并定位到指定角色；无权限时不跳转也不提示额外信息。 */
+  openRoleAuthorization: (roleId: string) => void;
+  /** 上一次从角色管理进入权限配置页时指定的角色，进入后消费一次即清空。 */
+  pendingAuthorizationRoleId: string | null;
   /** 判断当前管理员是否拥有指定按钮权限（支持超级管理员通配符）。 */
   hasPermission: (permission: string) => boolean;
   /** 在执行写操作前统一校验权限，并在拒绝时给出可理解的提示。 */
@@ -311,6 +315,7 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   const [roles, setRoles] = useState<Role[]>([]);
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [authorizedMenuItems, setAuthorizedMenuItems] = useState<MenuItem[]>([]);
+  const [pendingAuthorizationRoleId, setPendingAuthorizationRoleId] = useState<string | null>(null);
   const [systemUsers, setSystemUsers] = useState<SystemUser[]>([]);
   const [departments, setDepartmentsState] = useState<Department[]>([]);
   const [dataRules, setDataRules] = useState<DataRule[]>([]);
@@ -393,14 +398,31 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     return false;
   }, [hasPermission]);
 
-  /** 仅允许跳转到后端菜单返回的页面，避免手工篡改状态访问未授权路由。 */
+  /** 仅允许跳转到后端菜单返回或权限点放行的页面，避免手工篡改状态访问未授权路由。 */
   const setCurrentTab = useCallback((tab: NavigationTab) => {
-    if (authorizedMenuItems.length > 0 && !containsMenuTab(authorizedMenuItems, tab)) {
+    if (authorizedMenuItems.length > 0
+        && !hasTabAccess(authorizedMenuItems, tab, currentUser?.permissions || [])) {
       showToast('暂无该页面访问权限，请联系管理员', 'warning');
       return;
     }
     setCurrentTabState(tab);
-  }, [authorizedMenuItems, showToast]);
+  }, [authorizedMenuItems, currentUser, showToast]);
+
+  /**
+   * 从角色管理进入权限配置页，并定位到指定角色。
+   *
+   * 权限配置页没有自己的菜单，靠 system:role-menu:save 放行；带角色进去是因为它默认
+   * 选中列表第一个角色（超级管理员），不定位就会在不知情的情况下改动超管的授权。
+   */
+  const openRoleAuthorization = useCallback((roleId: string) => {
+    if (authorizedMenuItems.length > 0
+        && !hasTabAccess(authorizedMenuItems, 'authorization', currentUser?.permissions || [])) {
+      showToast('暂无该页面访问权限，请联系管理员', 'warning');
+      return;
+    }
+    setPendingAuthorizationRoleId(roleId);
+    setCurrentTabState('authorization');
+  }, [authorizedMenuItems, currentUser, showToast]);
 
   const hydrateIdentityMetadata = async (authorizedMenus: BackendMenu[]) => {
     const [usersResult, memberResult, deptsResult, rolesResult, menusResult, rulesResult] = await Promise.allSettled([
@@ -1652,6 +1674,8 @@ export const AdminProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         updateCurrentProfile,
         currentTab,
         setCurrentTab,
+        openRoleAuthorization,
+        pendingAuthorizationRoleId,
         hasPermission,
         requirePermission,
         products,

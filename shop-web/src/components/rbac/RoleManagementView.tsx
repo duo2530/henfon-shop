@@ -28,6 +28,7 @@ export const RoleManagementView: React.FC = () => {
     updateRoleDataScope,
     systemUsers,
     setCurrentTab,
+    openRoleAuthorization,
     departments,
     confirm
   } = useAdmin();
@@ -320,7 +321,7 @@ export const RoleManagementView: React.FC = () => {
                           {/* Quick Assign Permissions */}
                           <button
                             id={`btn-role-auth-${role.id}`}
-                            onClick={() => setCurrentTab('authorization')}
+                            onClick={() => openRoleAuthorization(role.id)}
                             title="配置功能权限"
                             className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-md transition-colors"
                           >

@@ -41,23 +41,27 @@ import { NotificationDrawer } from './components/common/NotificationDrawer';
 import { ToastContainer } from './components/common/ToastContainer';
 import { AdminLogin } from './components/auth/AdminLogin';
 import { PermissionDenied } from './components/common/PermissionGate';
-import { containsMenuTab, firstMenuTab } from './navigation/menuAdapter';
+import { firstMenuTab, hasTabAccess } from './navigation/menuAdapter';
 
 const AdminLayoutContent: React.FC = () => {
-  const { currentTab, authorizedMenuItems, setCurrentTab } = useAdmin();
+  const { currentTab, authorizedMenuItems, setCurrentTab, currentUser, pendingAuthorizationRoleId } = useAdmin();
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const permissions = currentUser?.permissions || [];
 
   useEffect(() => {
-    // 菜单加载完成后纠正可能来自旧状态/深链的未授权页面。
-    if (authorizedMenuItems.length > 0 && !containsMenuTab(authorizedMenuItems, currentTab)) {
+    // 菜单加载完成后纠正可能来自旧状态/深链的未授权页面。判定口径与渲染一致，
+    // 否则从属页面会被这里当成未授权踢回第一个菜单。
+    if (authorizedMenuItems.length > 0 && !hasTabAccess(authorizedMenuItems, currentTab, permissions)) {
       const fallbackTab = firstMenuTab(authorizedMenuItems);
       if (fallbackTab) setCurrentTab(fallbackTab);
     }
-  }, [authorizedMenuItems, currentTab, setCurrentTab]);
+  }, [authorizedMenuItems, currentTab, permissions, setCurrentTab]);
 
   // 菜单加载完成后严格按服务端授权判断；空菜单代表账号没有可访问页面。
-  const hasCurrentTab = authorizedMenuItems.length > 0 && containsMenuTab(authorizedMenuItems, currentTab);
+  // 从属页面没有菜单，改按权限点放行，否则永远渲染不出来。
+  const hasCurrentTab = authorizedMenuItems.length > 0
+    && hasTabAccess(authorizedMenuItems, currentTab, permissions);
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] text-[#191C1E] font-sans antialiased flex flex-col">
@@ -134,7 +138,8 @@ const AdminLayoutContent: React.FC = () => {
         {hasCurrentTab && currentTab === 'roles' && <RoleManagementView />}
         {hasCurrentTab && currentTab === 'menus' && <MenuManagementView />}
         {hasCurrentTab && currentTab === 'system_users' && <SystemUserManagementView />}
-        {hasCurrentTab && currentTab === 'authorization' && <AuthorizationView />}
+        {hasCurrentTab && currentTab === 'authorization'
+          && <AuthorizationView initialRoleId={pendingAuthorizationRoleId ?? undefined} />}
         {hasCurrentTab && currentTab === 'data_permissions' && <DataPermissionView />}
         {hasCurrentTab && currentTab === 'settings' && <SettingsView />}
         {hasCurrentTab && currentTab === 'login_logs' && <LoginLogManagementView />}

@@ -22,13 +22,23 @@ import {
   Info
 } from 'lucide-react';
 
-export const AuthorizationView: React.FC = () => {
+interface AuthorizationViewProps {
+  /** 从角色管理某一行进入时指定的角色；不传则默认选中列表第一个。 */
+  initialRoleId?: string;
+}
+
+export const AuthorizationView: React.FC<AuthorizationViewProps> = ({ initialRoleId }) => {
   const { roles, updateRolePermissions, showToast, menuItems } = useAdmin();
   const permissionTreeData = useMemo(() => menuItemsToPermissionTree(menuItems), [menuItems]);
 
   // Selected active role
-  const [selectedRoleId, setSelectedRoleId] = useState<string>(roles[0]?.id || '');
+  const [selectedRoleId, setSelectedRoleId] = useState<string>(initialRoleId || roles[0]?.id || '');
   const activeRole = roles.find(r => r.id === selectedRoleId) || roles[0];
+
+  // 从角色管理换一行进来时重新定位，避免停留在上一次的角色上。
+  useEffect(() => {
+    if (initialRoleId) setSelectedRoleId(initialRoleId);
+  }, [initialRoleId]);
 
   // Local state for checked permission keys of active role
   const [checkedKeys, setCheckedKeys] = useState<string[]>([]);

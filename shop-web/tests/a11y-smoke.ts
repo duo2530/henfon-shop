@@ -51,6 +51,10 @@ const schedule = readFileSync(new URL('../src/components/content/AiAgentSchedule
 const stats = readFileSync(new URL('../src/components/content/AiAgentStatsView.tsx', import.meta.url), 'utf8');
 const knowledge = readFileSync(new URL('../src/components/content/AiKnowledgeView.tsx', import.meta.url), 'utf8');
 const addresses = readFileSync(new URL('../src/components/content/MemberAddressView.tsx', import.meta.url), 'utf8');
+const menuAdapter = readFileSync(new URL('../src/navigation/menuAdapter.ts', import.meta.url), 'utf8');
+const appShell = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8');
+const roleList = readFileSync(new URL('../src/components/rbac/RoleManagementView.tsx', import.meta.url), 'utf8');
+const authorization = readFileSync(new URL('../src/components/rbac/AuthorizationView.tsx', import.meta.url), 'utf8');
 
 assert.match(workbench, /lg:h-\[calc\(100vh-56px-4rem\)\]/);
 assert.ok(workbench.includes('lg:flex-1 lg:min-h-0'), '坐席栏在 lg 以上要能独立滚动');
@@ -189,4 +193,14 @@ assert.ok(
 assert.ok(addresses.includes('setDefaultMemberAddress('), '要有设为默认的入口');
 assert.ok(addresses.includes('aria-labelledby="member-address-editor-title"'), '编辑弹框要有可访问名称');
 
-console.log('shop-web 无障碍静态检查通过：跳过链接、主导航语义、菜单状态、管理员菜单标签、铃铛未读角标、操作指南独立页面、客服工作台与会话面板滚动容器、客服排班表说明、工作台发送商品卡片（入口带可见文字、服务端搜索、卡片回显、切会话收起、模态弹框）、等待与接待列表头像、排班三态配色、统计详情进出返回、知识库导出、知识库答案悬停与启停开关、收货地址管理已覆盖');
+// 角色权限配置页：它没有自己的菜单，靠权限点放行；从哪一行进来就定位到哪一行。
+assert.ok(menuAdapter.includes("authorization: 'system:role-menu:save'"),
+  '权限配置页不建菜单，改按角色菜单权限点放行，否则菜单树里永远查不到它');
+assert.ok(menuAdapter.includes('export function hasTabAccess'), '从属页面要有独立的放行判断，不能混在菜单树判定里');
+assert.ok(appShell.includes('hasTabAccess(authorizedMenuItems, currentTab, permissions)'),
+  '渲染分支也要按放行判断，只放开跳转会渲染不出来');
+assert.ok(roleList.includes('openRoleAuthorization(role.id)'),
+  '配置功能权限要把角色带过去，否则默认落在列表第一个角色上改错人');
+assert.ok(authorization.includes('initialRoleId'), '权限配置页要能接收指定角色');
+
+console.log('shop-web 无障碍静态检查通过：跳过链接、主导航语义、菜单状态、管理员菜单标签、铃铛未读角标、操作指南独立页面、客服工作台与会话面板滚动容器、客服排班表说明、工作台发送商品卡片（入口带可见文字、服务端搜索、卡片回显、切会话收起、模态弹框）、等待与接待列表头像、排班三态配色、统计详情进出返回、知识库导出、知识库答案悬停与启停开关、收货地址管理、角色权限配置页放行与定位已覆盖');
