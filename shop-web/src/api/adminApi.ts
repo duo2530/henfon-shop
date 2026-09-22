@@ -874,6 +874,69 @@ export function updateMemberTags(id: number, tags: string[]): Promise<BackendMem
   });
 }
 
+/** 后台会员收货地址，带所属会员的展示信息。 */
+export interface BackendMemberAddress {
+  id: number;
+  memberId: number;
+  memberNo?: string | null;
+  memberName?: string | null;
+  memberPhone?: string | null;
+  receiverName: string;
+  receiverPhone: string;
+  province: string;
+  city: string;
+  district: string;
+  detailAddress: string;
+  addressTag?: string | null;
+  isDefault?: number | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+}
+
+/**
+ * 分页查询会员收货地址。
+ *
+ * keyword 同时匹配地址（收货人、电话、详细地址）和所属会员（编号、用户名、昵称、手机号），
+ * 客服手上通常只有半截手机号或买家报的收货人姓名。
+ */
+export function listMemberAddresses(params: {
+  current?: number;
+  size?: number;
+  keyword?: string;
+  memberId?: number;
+  isDefault?: number;
+} = {}): Promise<BackendPage<BackendMemberAddress>> {
+  const query = new URLSearchParams({ current: String(params.current || 1), size: String(params.size || 20) });
+  if (params.keyword) query.set('keyword', params.keyword);
+  if (params.memberId !== undefined) query.set('memberId', String(params.memberId));
+  if (params.isDefault !== undefined) query.set('isDefault', String(params.isDefault));
+  return request<BackendPage<BackendMemberAddress>>(`/api/admin/member/addresses?${query.toString()}`);
+}
+
+export function updateMemberAddress(id: number, payload: {
+  receiverName: string;
+  receiverPhone: string;
+  province: string;
+  city: string;
+  district: string;
+  detailAddress: string;
+  addressTag?: string;
+  isDefault?: number;
+}): Promise<void> {
+  return request<void>(`/api/admin/member/addresses/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  });
+}
+
+export function deleteMemberAddress(id: number): Promise<void> {
+  return request<void>(`/api/admin/member/addresses/${id}`, { method: 'DELETE' });
+}
+
+export function setDefaultMemberAddress(id: number): Promise<void> {
+  return request<void>(`/api/admin/member/addresses/${id}/default`, { method: 'PUT' });
+}
+
 export function listDepartments(): Promise<BackendDepartment[]> {
   return request<BackendDepartment[]>('/api/admin/system/depts');
 }
@@ -1967,6 +2030,11 @@ export function saveAiFaq(payload: {
 
 export function deleteAiFaq(id: number): Promise<void> {
   return request<void>(`/api/admin/ai/faqs/${id}`, { method: 'DELETE' });
+}
+
+/** 启停单条知识库问答。改动要等下一次同步才生效，服务端会把该条标为待同步。 */
+export function setAiFaqEnabled(id: number, enabled: number): Promise<void> {
+  return request<void>(`/api/admin/ai/faqs/${id}/enabled?enabled=${enabled}`, { method: 'PUT' });
 }
 
 /**

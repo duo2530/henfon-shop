@@ -37,7 +37,10 @@ services:
       MYSQL_PASSWORD: ${SHOP_MYSQL_PASSWORD:?请在 .env 中设置 SHOP_MYSQL_PASSWORD}
     volumes:
       - mysql-data:/var/lib/mysql
-      - ./shop-admin/db/init:/docker-entrypoint-initdb.d:ro
+      # 只挂结构基线这一个文件。db/init 是逐版增量脚本，按目录挂进去会从 001 顺序执行，
+      # 而 045/046 用了 MariaDB 专有的 ADD COLUMN IF NOT EXISTS，MySQL 8.4 解析不了，
+      # 执行到 045 就停下，后面 14 个脚本（含全部 AI 表）都不会跑，建出来的是缺列的库。
+      - ./shop-admin/db/schema/henfon-shop.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u root -p$$MYSQL_ROOT_PASSWORD"]
       interval: 10s

@@ -387,6 +387,11 @@ public class IdentityDataInitializer implements ApplicationRunner {
                 content.getId(), "BannerManagementView", "Image"));
         menus.add(ensureMenu("客户评价", "MENU", "content:review:query", "/content/reviews", 2,
                 content.getId(), "ReviewManagementView", "MessageSquare"));
+        // 收货地址归到内容与客户运营：它跟评价一样是"看客户"的视角，而不是会员档案的一部分——
+        // 会员页管的是账户，这一页管的是买家要把货寄到哪。
+        SysMenu addressMenu = ensureMenu("收货地址", "MENU", "member:address:query", "/content/member-addresses", 3,
+                content.getId(), "MemberAddressView", "MapPin");
+        menus.add(addressMenu);
         // —— 客服中心的四个页面 ——
         // 排序把客服工作台放在第一位：客服账号登录后落地的是组内第一个页面，接待是他们的
         // 日常起点，落到工单列表上还得再点一次。路由统一收进 /service 前缀，与所属目录一致。
@@ -470,6 +475,16 @@ public class IdentityDataInitializer implements ApplicationRunner {
             SysMenu menu = ensureMenu(button[0], "BUTTON", button[1], null, 100);
             if (!member.getId().equals(menu.getParentId())) {
                 menu.setParentId(member.getId());
+                sysMenuMapper.updateById(menu);
+            }
+            menus.add(menu);
+        }
+        // 改地址单独一个权限点：地址改错就是发错货，能查地址的角色不一定该有改的权力。
+        String[][] addressButtons = {{"收货地址维护", "member:address:save"}};
+        for (String[] button : addressButtons) {
+            SysMenu menu = ensureMenu(button[0], "BUTTON", button[1], null, 100);
+            if (!addressMenu.getId().equals(menu.getParentId())) {
+                menu.setParentId(addressMenu.getId());
                 sysMenuMapper.updateById(menu);
             }
             menus.add(menu);

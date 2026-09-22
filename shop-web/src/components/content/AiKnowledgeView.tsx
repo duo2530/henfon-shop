@@ -10,6 +10,7 @@ import {
   listAiFaqs,
   retryFailedAiKnowledge,
   saveAiFaq,
+  setAiFaqEnabled,
   syncAiKnowledge,
   testAiKnowledgeRecall,
 } from '../../api/adminApi';
@@ -120,6 +121,8 @@ export const AiKnowledgeView: React.FC = () => {
   // 编辑弹窗
   const [editor, setEditor] = useState<EditorState | null>(null);
   const [saving, setSaving] = useState(false);
+  // 正在切换启停的条目：开关要单独转圈，否则连点几次不知道哪一次生效了。
+  const [togglingId, setTogglingId] = useState<number | null>(null);
 
   useBodyScrollLock(Boolean(editor));
 
@@ -281,6 +284,33 @@ export const AiKnowledgeView: React.FC = () => {
       showToast(error instanceof Error ? error.message : '保存失败，请稍后重试', 'error');
     } finally {
       setSaving(false);
+    }
+  };
+
+  /**
+   * 切换条目的启用状态。
+   *
+   * 停用的条目不再参与召回、启用的条目要重新索引，两种方向都得等下一次同步才生效，
+   * 所以成功后整页重取——列表上的「待同步」标记与顶部的计数都得跟着变，只改这一行
+   * 会让人以为开关已经即时生效。
+   */
+  const toggleEnabled = async (faq: BackendAiFaq) => {
+    const next = faq.enabled === 1 ? 0 : 1;
+    setTogglingId(faq.id);
+    try {
+      await setAiFaqEnabled(faq.id, next);
+      showToast(
+        next === 1
+          ? '已启用，记得点「增量同步」让这条重新进向量库'
+          : '已停用，其向量点会在下次同步时被清理',
+        'success',
+      );
+      await loadFaqs(current);
+      await loadStatus();
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : '启停失败，请稍后重试', 'error');
+    } finally {
+      setTogglingId(null);
     }
   };
 
@@ -733,26 +763,64 @@ export const AiKnowledgeView: React.FC = () => {
                   const meta = syncStatusMeta(item.syncStatus);
                   return (
                     <tr key={item.id} className="border-b border-gray-50 hover:bg-slate-50/60 align-top">
-                      <td className="py-2.5 pr-3 text-gray-800 font-medium">{item.question}</td>
+                      <td className="py-2.5 pr-3 text-gray-800 font-medium" title={item.question}>
+                        {item.question}
+                      </td>
                       <td className="py-2.5 pr-3 text-gray-600">
-                        <span className="line-clamp-2">{item.answer}</span>
+                        {/* 答案长的一律截断，完整内容挂在 title 上：鼠标移上去就能看全文，
+                            不必为了看一条答案点开编辑框。 */}
+                        <span className="line-clamp-2" title={item.answer}>{item.answer}</span>
                       </td>
                       <td className="py-2.5 pr-3 whitespace-nowrap text-gray-600">
                         {CATEGORY_LABELS[item.category || ''] || item.category || '-'}
                       </td>
                       <td className="py-2.5 pr-3 text-gray-500 max-w-[160px]">
-                        <span className="line-clamp-2">{item.keywords || '-'}</span>
+                        <span className="line-clamp-2" title={item.keywords || undefined}>
+                          {item.keywords || '-'}
+                        </span>
                       </td>
                       <td className="py-2.5 pr-3 whitespace-nowrap">
-                        <span
-                          className={`px-1.5 py-0.5 rounded border font-semibold ${
-                            item.enabled === 1
-                              ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                              : 'bg-slate-100 text-slate-600 border-slate-200'
-                          }`}
+                        <PermissionGate
+                          permission="ai:faq:save"
+                          fallback={(
+                            <span
+                              className={`px-1.5 py-0.5 rounded border font-semibold ${
+                                item.enabled === 1
+                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                  : 'bg-slate-100 text-slate-600 border-slate-200'
+                              }`}
+                            >
+                              {item.enabled === 1 ? '启用' : '停用'}
+                            </span>
+                          )}
                         >
-                          {item.enabled === 1 ? '启用' : '停用'}
-                        </span>
+                          <span className="inline-flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              role="switch"
+                              aria-checked={item.enabled === 1}
+                              aria-label={`${item.question}：${item.enabled === 1 ? '已启用' : '已停用'}`}
+                              title={item.enabled === 1 ? '点击停用' : '点击启用'}
+                              disabled={togglingId === item.id}
+                              onClick={() => void toggleEnabled(item)}
+                              className={`relative inline-flex h-[18px] w-8 shrink-0 items-center rounded-full px-[2px] transition-colors disabled:opacity-50 ${
+                                item.enabled === 1 ? 'bg-blue-600' : 'bg-slate-300'
+                              }`}
+                            >
+                              <span
+                                className={`h-3.5 w-3.5 rounded-full bg-white transition-transform ${
+                                  item.enabled === 1 ? 'translate-x-[14px]' : 'translate-x-0'
+                                }`}
+                              />
+                            </button>
+                            <span className={`text-[11px] font-semibold ${
+                              item.enabled === 1 ? 'text-blue-700' : 'text-slate-500'
+                            }`}
+                            >
+                              {togglingId === item.id ? '切换中' : item.enabled === 1 ? '启用' : '停用'}
+                            </span>
+                          </span>
+                        </PermissionGate>
                       </td>
                       <td className="py-2.5 pr-3 whitespace-nowrap">
                         <span className={`px-1.5 py-0.5 rounded border font-semibold ${meta.chip}`}>{meta.label}</span>

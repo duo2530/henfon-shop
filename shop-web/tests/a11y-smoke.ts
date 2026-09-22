@@ -50,6 +50,7 @@ const workbench = readFileSync(new URL('../src/components/content/AiAgentWorkben
 const schedule = readFileSync(new URL('../src/components/content/AiAgentScheduleView.tsx', import.meta.url), 'utf8');
 const stats = readFileSync(new URL('../src/components/content/AiAgentStatsView.tsx', import.meta.url), 'utf8');
 const knowledge = readFileSync(new URL('../src/components/content/AiKnowledgeView.tsx', import.meta.url), 'utf8');
+const addresses = readFileSync(new URL('../src/components/content/MemberAddressView.tsx', import.meta.url), 'utf8');
 
 assert.match(workbench, /lg:h-\[calc\(100vh-56px-4rem\)\]/);
 assert.ok(workbench.includes('lg:flex-1 lg:min-h-0'), '坐席栏在 lg 以上要能独立滚动');
@@ -171,4 +172,21 @@ assert.ok(knowledge.includes('导出'), '导出按钮要有可见文字');
 assert.ok(knowledge.includes('exportAiFaqs('), '导出走服务端，不在前端拼当前页数据');
 assert.ok(knowledge.includes('.csv`'), '落地文件名要带 .csv');
 
-console.log('shop-web 无障碍静态检查通过：跳过链接、主导航语义、菜单状态、管理员菜单标签、铃铛未读角标、操作指南独立页面、客服工作台与会话面板滚动容器、客服排班表说明、工作台发送商品卡片（入口带可见文字、服务端搜索、卡片回显、切会话收起、模态弹框）、等待与接待列表头像、排班三态配色、统计详情进出返回、知识库导出已覆盖');
+// 知识库：答案截断后要能在悬停时看到全文，启停做成开关而不是文字按钮。
+assert.ok(
+  /<span className="line-clamp-2" title=\{item\.answer\}>/.test(knowledge),
+  '标准答案截断后要把全文挂在 title 上，否则只能点开编辑框才看得到',
+);
+assert.ok(knowledge.includes('role="switch"') && knowledge.includes('aria-checked={item.enabled === 1}'),
+  '启用列要是开关：状态能被读屏读出，也不必进编辑框改一个字段');
+assert.ok(knowledge.includes('setAiFaqEnabled('), '开关走独立接口，不要把整条记录回写给保存接口');
+
+// 收货地址：写操作按权限点收口，默认地址要标得出来。
+assert.ok(
+  addresses.includes('permission="member:address:save"'),
+  '改地址单独一个权限点，看得到地址的角色不一定能改',
+);
+assert.ok(addresses.includes('setDefaultMemberAddress('), '要有设为默认的入口');
+assert.ok(addresses.includes('aria-labelledby="member-address-editor-title"'), '编辑弹框要有可访问名称');
+
+console.log('shop-web 无障碍静态检查通过：跳过链接、主导航语义、菜单状态、管理员菜单标签、铃铛未读角标、操作指南独立页面、客服工作台与会话面板滚动容器、客服排班表说明、工作台发送商品卡片（入口带可见文字、服务端搜索、卡片回显、切会话收起、模态弹框）、等待与接待列表头像、排班三态配色、统计详情进出返回、知识库导出、知识库答案悬停与启停开关、收货地址管理已覆盖');

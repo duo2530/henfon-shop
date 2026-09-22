@@ -20,6 +20,7 @@ export type NavigationTab =
   // 内容与运营
   | 'content_banners'
   | 'content_reviews'
+  | 'content_member_addresses'
   // 客服中心
   | 'ai_tickets'
   | 'ai_knowledge'

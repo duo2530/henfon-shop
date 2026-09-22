@@ -6,6 +6,10 @@ import com.baomidou.mybatisplus.core.toolkit.IdWorker;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.henfon.shop.common.exception.BusinessException;
 import com.henfon.shop.identity.entity.MemberUser;
+import com.henfon.shop.identity.entity.MemberAddress;
+import com.henfon.shop.identity.dto.MemberAddressAdminUpdateRequest;
+import com.henfon.shop.identity.dto.MemberAddressAdminView;
+import com.henfon.shop.identity.dto.MemberAddressRequest;
 import com.henfon.shop.identity.dto.MemberAdminAdjustRequest;
 import com.henfon.shop.identity.dto.MemberAdminCreateRequest;
 import com.henfon.shop.identity.dto.MemberAdminUpdateRequest;
@@ -17,6 +21,7 @@ import com.henfon.shop.identity.entity.MemberTag;
 import com.henfon.shop.identity.entity.MemberUserTag;
 import com.henfon.shop.identity.entity.MemberConsumptionStat;
 import com.henfon.shop.identity.entity.MemberAssetAudit;
+import com.henfon.shop.identity.mapper.MemberAddressMapper;
 import com.henfon.shop.identity.mapper.MemberAssetAuditMapper;
 import com.henfon.shop.identity.dto.MemberTagSaveRequest;
 import com.henfon.shop.identity.dto.MemberUserTagsRequest;
@@ -50,6 +55,8 @@ public class MemberAdminService {
     private final MemberUserTagMapper memberUserTagMapper;
     private final MemberConsumptionStatMapper memberConsumptionStatMapper;
     private final MemberAssetAuditMapper memberAssetAuditMapper;
+    private final MemberAddressMapper memberAddressMapper;
+    private final MemberPortalService memberPortalService;
     private final ImageReferenceResolver imageReferenceResolver;
 
     /**
@@ -68,12 +75,18 @@ public class MemberAdminService {
                               MemberUserTagMapper memberUserTagMapper,
                               MemberConsumptionStatMapper memberConsumptionStatMapper,
                               MemberAssetAuditMapper memberAssetAuditMapper,
+                              MemberAddressMapper memberAddressMapper,
+                              MemberPortalService memberPortalService,
                               ImageReferenceResolver imageReferenceResolver) {
         this.memberUserMapper = memberUserMapper;
         this.memberTagMapper = memberTagMapper;
         this.memberUserTagMapper = memberUserTagMapper;
         this.memberConsumptionStatMapper = memberConsumptionStatMapper;
         this.memberAssetAuditMapper = memberAssetAuditMapper;
+        this.memberAddressMapper = memberAddressMapper;
+        // 改地址走门户那套逻辑而不是在这里重写一遍：「一个会员只能有一个默认地址」「删掉默认
+        // 之后要补位」这些约束只有一份实现才不会前后不一致。
+        this.memberPortalService = memberPortalService;
         this.imageReferenceResolver = imageReferenceResolver;
     }
 
@@ -126,6 +139,142 @@ public class MemberAdminService {
         IPage<MemberUser> page = memberUserMapper.selectPage(new Page<>(Math.max(current, 1), Math.min(Math.max(size, 1), 200)), wrapper);
         page.getRecords().forEach(this::enrichMember);
         return page;
+    }
+
+    /**
+     * 分页查询会员收货地址。
+     *
+     * 关键字同时匹配地址本身（收货人、电话、详细地址）和所属会员（编号、用户名、昵称、
+     * 手机号）——客服手上通常只有半截手机号或买家报的收货人姓名，只能按会员查的话
+     * 这条链路就断了。
+     *
+     * 会员这一侧按数据权限租户过滤，与会员列表页一致；地址表本身没有租户列，不再叠加
+     * 过滤，否则要么拼出超长的 IN 列表，要么分页总数与实际行数对不上。
+     *
+     * @param keyword 收货人、电话、详细地址或会员关键字
+     * @param memberId 指定会员，为空表示全部
+     * @param isDefault 是否默认地址
+     * @param current 当前页
+     * @param size 页大小
+     * @param tenantId 当前数据权限租户
+     * @return 地址分页数据
+     * @author Henfon
+     * @date 2026-09-22
+     */
+    public IPage<MemberAddressAdminView> pageAddresses(String keyword, Long memberId, Integer isDefault,
+                                                       long current, long size, Long tenantId) {
+        long scopedTenantId = tenantId == null ? 0L : tenantId;
+        String text = StringUtils.hasText(keyword) ? keyword.trim() : null;
+        List<Long> matched = List.of();
+        if (text != null) {
+            matched = memberUserMapper.selectList(new LambdaQueryWrapper<MemberUser>()
+                            .eq(MemberUser::getTenantId, scopedTenantId)
+                            .and(query -> query.like(MemberUser::getMemberNo, text)
+                                    .or().like(MemberUser::getUsername, text)
+                                    .or().like(MemberUser::getNickname, text)
+                                    .or().like(MemberUser::getPhone, text))
+                            .select(MemberUser::getId))
+                    .stream().map(MemberUser::getId).toList();
+        }
+        List<Long> matchedMemberIds = matched;
+        LambdaQueryWrapper<MemberAddress> wrapper = new LambdaQueryWrapper<MemberAddress>()
+                .eq(memberId != null, MemberAddress::getMemberId, memberId)
+                .eq(isDefault != null, MemberAddress::getIsDefault, isDefault)
+                .and(text != null, query -> query
+                        .like(MemberAddress::getReceiverName, text)
+                        .or().like(MemberAddress::getReceiverPhone, text)
+                        .or().like(MemberAddress::getDetailAddress, text)
+                        .or().in(!matchedMemberIds.isEmpty(), MemberAddress::getMemberId, matchedMemberIds))
+                .orderByDesc(MemberAddress::getIsDefault)
+                .orderByDesc(MemberAddress::getUpdatedAt);
+        IPage<MemberAddress> page = memberAddressMapper.selectPage(
+                new Page<>(Math.max(current, 1), Math.min(Math.max(size, 1), 200)), wrapper);
+        Map<Long, MemberUser> members = memberUserMapper.selectBatchIds(page.getRecords().stream()
+                        .map(MemberAddress::getMemberId).distinct().toList())
+                .stream().collect(Collectors.toMap(MemberUser::getId, Function.identity(), (left, right) -> left));
+        return page.convert(address -> toAddressView(address, members));
+    }
+
+    /**
+     * 修改会员收货地址。
+     *
+     * 会员归属以库里的记录为准，不采信请求里的 memberId：后台改地址不该顺带把地址划到
+     * 另一个会员名下，那是另一种操作，走错一次就是发错货。
+     *
+     * @param id 地址ID
+     * @param request 地址内容
+     * @author Henfon
+     * @date 2026-09-22
+     */
+    @Transactional
+    public void updateAddress(Long id, MemberAddressAdminUpdateRequest request) {
+        MemberAddress address = requireAddress(id);
+        memberPortalService.saveAddress(new MemberAddressRequest(address.getId(), address.getMemberId(),
+                request.receiverName(), request.receiverPhone(), request.province(), request.city(),
+                request.district(), request.detailAddress(), request.addressTag(), request.isDefault()));
+    }
+
+    /**
+     * 删除会员收货地址。
+     *
+     * @param id 地址ID
+     * @author Henfon
+     * @date 2026-09-22
+     */
+    @Transactional
+    public void deleteAddress(Long id) {
+        MemberAddress address = requireAddress(id);
+        memberPortalService.deleteAddress(address.getMemberId(), address.getId());
+    }
+
+    /**
+     * 把某条地址设为该会员的默认地址。
+     *
+     * @param id 地址ID
+     * @author Henfon
+     * @date 2026-09-22
+     */
+    @Transactional
+    public void setDefaultAddress(Long id) {
+        MemberAddress address = requireAddress(id);
+        memberPortalService.setDefaultAddress(address.getMemberId(), address.getId());
+    }
+
+    /**
+     * 读取地址并在不存在时报错。
+     *
+     * @param id 地址ID
+     * @return 地址记录
+     * @author Henfon
+     * @date 2026-09-22
+     */
+    private MemberAddress requireAddress(Long id) {
+        MemberAddress address = memberAddressMapper.selectById(id);
+        if (address == null) {
+            throw new BusinessException("MEMBER_ADDRESS_NOT_FOUND", "收货地址不存在或已删除");
+        }
+        return address;
+    }
+
+    /**
+     * 把地址记录补上所属会员的展示信息。
+     *
+     * @param address 地址记录
+     * @param members 本次分页涉及的会员
+     * @return 后台地址视图
+     * @author Henfon
+     * @date 2026-09-22
+     */
+    private MemberAddressAdminView toAddressView(MemberAddress address, Map<Long, MemberUser> members) {
+        MemberUser member = members.get(address.getMemberId());
+        String name = member == null ? null
+                : StringUtils.hasText(member.getNickname()) ? member.getNickname() : member.getUsername();
+        return new MemberAddressAdminView(address.getId(), address.getMemberId(),
+                member == null ? null : member.getMemberNo(), name,
+                member == null ? null : member.getPhone(),
+                address.getReceiverName(), address.getReceiverPhone(), address.getProvince(),
+                address.getCity(), address.getDistrict(), address.getDetailAddress(),
+                address.getAddressTag(), address.getIsDefault(), address.getCreatedAt(), address.getUpdatedAt());
     }
 
     /**

@@ -17,6 +17,7 @@ const routeTabMap: Record<string, NavigationTab> = {
   '/analytics/products': 'analytics_products',
   '/content/banners': 'content_banners',
   '/content/reviews': 'content_reviews',
+  '/content/member-addresses': 'content_member_addresses',
   // 客服中心的四个页面同属一级目录「客服中心」，路由前缀与目录一致。
   '/service/ai-tickets': 'ai_tickets',
   '/service/ai-knowledge': 'ai_knowledge',

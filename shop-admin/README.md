@@ -67,7 +67,14 @@ java -jar shop-boot/target/shop-boot-0.0.1-SNAPSHOT.jar
 
 ## 演示数据与媒体
 
-用 `db/schema/henfon-shop.sql` 建出来的是空库，跑起来门户没有商品图、管理端没有订单。`db/seed/` 放了一份可直接导入的快照：
+用 `db/schema/henfon-shop.sql` 建出来的是空库，跑起来门户没有商品图、管理端没有订单。要一步拿到有数据的库，用 `db/schema/henfon-shop-all.sql`（0.59 MB）：它是 `db/schema/henfon-shop.sql`、`db/seed/demo-data.sql`、`db/seed/category-tree.sql` 按顺序拼成的合订本，自带 `CREATE DATABASE` 与 `USE`：
+
+```powershell
+mysql -uroot -p --default-character-set=utf8mb4 < db/schema/henfon-shop-all.sql
+node db/seed/import-demo.mjs
+```
+
+分步做就用 `db/seed/` 里的快照：
 
 - `demo-data.sql`：27 张业务表的 `INSERT IGNORE` 快照，覆盖商品、SKU、商品媒体、库存与流水、营销活动、会员与地址收藏、购物车、订单与物流、售后、发票、站内通知、登录日志。
 - `category-tree.sql`：二级、三级类目与商品归属。按 `category_code` 幂等插入，商品归属改动以「当前挂在一级类目下」为前提，重复执行不会产生副本。要在 `demo-data.sql` 之后执行，它会覆盖快照里商品的一级类目归属。
@@ -115,9 +122,11 @@ node db/seed/import-demo.mjs --sql
 MinIO 控制台 `http://127.0.0.1:9001` 的 `shop` 桶下应能看到 `media/` 目录，`media/` 前缀下的对象数与本地 `db/seed/media/` 的文件数一致。库里核对几行关键数据：
 
 ```sql
-SELECT COUNT(*) FROM catalog_product;         -- 394
+SELECT COUNT(*) FROM catalog_category;        -- 101，一级 8 + 二级 27 + 三级 66
+SELECT COUNT(*) FROM catalog_product;         -- 394，其中 1 条已逻辑删除
 SELECT COUNT(*) FROM catalog_product_media;   -- 391
 SELECT COUNT(*) FROM trade_order;             -- 15
+SELECT COUNT(*) FROM ai_faq;                  -- 20，结构基线从 056 带进来
 ```
 
 启动后端、打开门户首页，商品图、轮播图、评价图都应正常显示。

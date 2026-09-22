@@ -42,8 +42,9 @@ henfon-shop
 │  ├─ shop-integration/                # 快递物流查询、对象存储等外部集成
 │  ├─ shop-boot/                       # Spring Boot 启动模块、全局配置与健康检查
 │  └─ db/                              # 数据库脚本与演示数据
-│     ├─ init/                         # 逐版增量迁移脚本（001~054）
-│     ├─ schema/henfon-shop.sql        # 完整结构基线，一条命令建好 60 张表
+│     ├─ init/                         # 逐版增量迁移脚本（001~060）
+│     ├─ schema/henfon-shop.sql        # 完整结构基线，一条命令建好 69 张表
+│     ├─ schema/henfon-shop-all.sql    # 结构 + 演示数据的合订本，一条命令建出可演示的库
 │     ├─ migration/                    # 迁移脚本的版本校验
 │     └─ seed/                         # 演示数据：27 张表快照 + 399 张图片 + 导入脚本
 ├─ shop-web/                           # React 管理端
@@ -167,7 +168,7 @@ henfon-shop
 
 #### 内容与客户运营
 
-轮播海报与页面装修、客户评价与晒单管理。
+轮播海报与页面装修、客户评价与晒单管理、会员收货地址。
 
 ![轮播海报与页面装修](docs/screenshots/admin-content-banners.png)
 
@@ -278,13 +279,17 @@ henfon-shop
 
 ### 2. 初始化数据库
 
-用 `shop-admin/db/schema/henfon-shop.sql` 建库。它自带 `CREATE DATABASE` 和 `USE`，一条命令建好 60 张表，外加默认仓库、物流承运商字典、配送模板这三份基础数据（共 6 行）：
+用 `shop-admin/db/schema/henfon-shop.sql` 建库。它自带 `CREATE DATABASE` 和 `USE`，一条命令建好 69 张表，外加默认仓库、物流承运商字典、配送模板三份基础数据，以及 `056` 写入的 20 条政策问答初始条目（共 26 行）：
 
 ```powershell
 mysql -uroot -p --default-character-set=utf8mb4 < shop-admin/db/schema/henfon-shop.sql
 ```
 
-`shop-admin/db/init/` 是逐版增量迁移脚本，给已有环境升级用，新环境不需要逐个执行——其中 `045` 和 `046` 用了 MariaDB 专有的 `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`，MySQL 8.4 解析不了，从零顺序执行会停在 `045`，后面 9 个脚本都不再执行，建出来的库只有 55 张表、比完整结构少 69 个列；即使让 mysql 跳过错误继续跑，这两个脚本负责的 6 个列也一样加不上。schema 文件头已记录这几处已知差异，并按原始意图补齐了对应的列。需要校验迁移脚本有没有被改动或遗漏时跑：
+建完是空库，没有商品也没有订单。想一步拿到有图有数据的库，改用 `shop-admin/db/schema/henfon-shop-all.sql`，它是「结构 + 演示数据」的合订本，用法见下面的演示数据一节。
+
+`shop-admin/db/init/` 是逐版增量迁移脚本，给已有环境升级用，新环境不需要逐个执行——其中 `045` 和 `046_catalog_product_audit` 用了 MariaDB 专有的 `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`，MySQL 8.4 解析不了，从零顺序执行会停在 `045`，后面 17 个脚本都不再执行，建出来的库只有 55 张表、比完整的 69 张少 14 张、少 182 个列（实测值，含 055 之后的全部 AI 表）；即使让 mysql 跳过错误继续跑，这两个脚本负责的 6 个列也一样加不上。schema 文件头已记录这几处已知差异，并按原始意图补齐了对应的列。
+
+新增迁移脚本时要把版本号、文件名和 SHA-256 追加到 `manifest.sha256`，再跑校验；漏登记会让下面这条命令直接失败（报 `SQL files not listed in manifest`）：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File shop-admin/db/migration/verify-migrations.ps1
@@ -299,6 +304,8 @@ Copy-Item .env.example .env
 # 编辑 .env，替换其中所有 change-me 配置
 docker compose up -d --build
 ```
+
+compose 里的 MySQL 只在首次初始化时执行 `db/schema/henfon-shop.sql`，建出来的是空库；想要演示数据接着按下面演示数据一节导入。已经初始化过的 volume 不会重新执行，结构升级走 `db/init/` 的增量脚本。
 
 不想用 Docker 的话，本地准备好 MySQL、Redis（按需加 MinIO、RocketMQ）后执行：
 
@@ -349,11 +356,21 @@ npm run dev -- --port 3001
 
 ## 演示数据
 
-新环境建出来的库只有表结构和基础数据，商品、订单、会员都是空的，页面上一张图也没有。`shop-admin/db/seed/` 里备了一份快照，导入后门户和管理端直接就是有图有数据的状态：
+新环境建出来的库只有表结构和基础数据，商品、订单、会员都是空的，页面上一张图也没有。
+
+一步到位用 `shop-admin/db/schema/henfon-shop-all.sql`（0.59 MB）。它是 `db/schema/henfon-shop.sql`、`db/seed/demo-data.sql`、`db/seed/category-tree.sql` 三段按顺序拼起来的合订本，一条命令建表并灌完演示数据，之后只要再传图片：
+
+```powershell
+mysql -uroot -p --default-character-set=utf8mb4 < shop-admin/db/schema/henfon-shop-all.sql
+node shop-admin/db/seed/import-demo.mjs
+```
+
+想分步做就用 `shop-admin/db/seed/` 里的快照，导入后门户和管理端直接就是有图有数据的状态：
 
 | 文件 | 内容 |
 | --- | --- |
-| `demo-data.sql` | 27 张业务表的 `INSERT IGNORE` 快照（0.33 MB），覆盖商品、SKU、商品媒体、库存与流水、营销活动、会员与地址收藏、购物车、订单与物流、售后、发票、站内通知和登录日志 |
+| `demo-data.sql` | 27 张业务表的 `INSERT IGNORE` 快照（0.44 MB），覆盖商品、SKU、商品媒体、库存与流水、营销活动、会员与地址收藏、购物车、订单与物流、售后、发票、站内通知和登录日志 |
+| `category-tree.sql` | 27 个二级类目、66 个三级类目，以及把商品下沉到三级叶子。按 `category_code` 幂等，必须在 `demo-data.sql` 之后执行 |
 | `media/` | 399 张图片，目录结构与库里的对象键一一对应 |
 | `import-demo.mjs` | 零依赖上传脚本，把 `media/` 传到 MinIO 的 `shop` 桶 |
 
@@ -361,10 +378,11 @@ npm run dev -- --port 3001
 
 ```powershell
 mysql -uroot -p --default-character-set=utf8mb4 henfon-shop < db/seed/demo-data.sql
+mysql -uroot -p --default-character-set=utf8mb4 henfon-shop < db/seed/category-tree.sql
 node db/seed/import-demo.mjs
 ```
 
-第二行需要 Node 18+，不装任何 npm 包。凭据要对得上：脚本默认连 `http://127.0.0.1:9000`、用 `minioadmin / minioadmin`，而 `docker compose` 起的 MinIO 账号密码取的是 `.env` 里的 `MINIO_ACCESS_KEY` 和 `MINIO_SECRET_KEY`（示例值是 `henfon-minio`），两者不一样会报 403。用 compose 起的就先把这两个变量设成同样的值：
+最后一行需要 Node 18+，不装任何 npm 包。凭据要对得上：脚本默认连 `http://127.0.0.1:9000`、用 `minioadmin / minioadmin`，而 `docker compose` 起的 MinIO 账号密码取的是 `.env` 里的 `MINIO_ACCESS_KEY` 和 `MINIO_SECRET_KEY`（示例值是 `henfon-minio`），两者不一样会报 403。用 compose 起的就先把这两个变量设成同样的值：
 
 ```powershell
 $env:MINIO_ACCESS_KEY = "henfon-minio"
@@ -508,7 +526,7 @@ dev 默认把全部消费监听器摘掉（`SHOP_ROCKETMQ_CONSUMER_ENABLED=false
 知识库内容有两个来源，都不用手工灌：
 
 - 商品：上架商品自动向量化，文本取自商品名、类目与卖点。
-- 平台规则问答：放在 `ai_faq` 表，`category` 分售后、运费、支付、发票、会员。新库由 `db/init/056_ai_faq_policy.sql` 带入初始条目，后续由运营维护（还没有管理界面，接口是 `/api/admin/ai/faqs`）。
+- 平台规则问答：放在 `ai_faq` 表，`category` 分售后、运费、支付、发票、会员。新库由 `db/init/056_ai_faq_policy.sql` 带入 20 条初始条目（结构基线 `db/schema/henfon-shop.sql` 里带的也是这 20 条），后续由运营在「内容与客户运营 → 知识库运营」维护，支持按分类与关键字筛选、导出 CSV，接口是 `/api/admin/ai/faqs`。
 
 改完内容调一次 `POST /api/admin/ai/knowledge/sync`（要管理端令牌）。它按内容指纹跳过没变的条目，所以只改答案是即时生效的——答案不参与向量化，命中后由检索层按 `source_type=FAQ` 回表取原文；只有改问法或关键词才需要重新同步。
 
@@ -574,7 +592,7 @@ npm test
 
 ### 数据库脚本只增不改
 
-`shop-admin/db/init` 下的脚本是版本基线，改已有脚本会让历史环境和新环境不一致。结构变更请新增编号脚本，然后跑一次迁移校验：
+`shop-admin/db/init` 下的脚本是版本基线，改已有脚本会让历史环境和新环境不一致。结构变更请新增编号脚本，把版本号、文件名与 SHA-256 追加进 `db/migration/manifest.sha256`，再跑一次迁移校验：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File shop-admin/db/migration/verify-migrations.ps1

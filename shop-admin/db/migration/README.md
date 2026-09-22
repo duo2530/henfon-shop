@@ -4,8 +4,19 @@
 
 ## 新增迁移
 
-1. 在 `shop-admin/db/init` 新增下一个连续编号的 SQL 文件，例如 `023_add_xxx.sql`。
-2. 执行校验脚本生成新的摘要（脚本检测到清单不一致时会提示更新清单）。
+1. 在 `shop-admin/db/init` 新增下一个连续编号的 SQL 文件，例如 `061_add_xxx.sql`。
+2. 把「版本号、文件名、SHA-256」三列追加到 `manifest.sha256`（列之间是 `\t`，版本号接上一个继续递增）。校验脚本只比对、不写清单，漏登记它会直接报错退出。摘要这样取：
+
+   ```powershell
+   (Get-FileHash -Algorithm SHA256 shop-admin/db/init/061_add_xxx.sql).Hash.ToLowerInvariant()
+   ```
+
+   追加的行形如下（现有清单里用的是字面量反斜杠加 t，校验脚本对真制表符同样认，两种都行）：
+
+   ```
+   61\t061_add_xxx.sql\t<上面拿到的摘要>
+   ```
+
 3. 人工审核 SQL 后，将新文件及 `manifest.sha256` 一并提交。已经发布的版本不得修改；修复请新增更高版本。
 
 ## 校验

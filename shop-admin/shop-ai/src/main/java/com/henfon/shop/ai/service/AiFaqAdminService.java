@@ -98,6 +98,34 @@ public class AiFaqAdminService {
     }
 
     /**
+     * 启停单条知识库问答。
+     *
+     * 与保存共用「改动即标脏」的规则：停用后这条不再参与召回、启用后要重新索引，两种
+     * 情况都得等下一次同步才真正生效，所以这里同样把 sync_status 置回 PENDING，让列表上
+     * 的「待同步」能反映出来，否则运营会以为开关已经即时生效。
+     *
+     * @param id 记录 ID
+     * @param enabled 目标状态，1 启用，0 停用
+     * @author Henfon
+     * @date 2026-09-22
+     */
+    @Transactional
+    public void updateEnabled(Long id, Integer enabled) {
+        AiFaq entity = faqMapper.selectById(id);
+        if (entity == null) {
+            throw new BusinessException("AI_FAQ_NOT_FOUND", "知识条目不存在或已删除");
+        }
+        int target = enabled != null && enabled == 1 ? 1 : 0;
+        int current = entity.getEnabled() == null ? 1 : entity.getEnabled();
+        if (target == current) {
+            return;
+        }
+        entity.setEnabled(target);
+        entity.setSyncStatus(SYNC_PENDING);
+        faqMapper.updateById(entity);
+    }
+
+    /**
      * 导出知识库问答为 CSV 文本。
      *
      * 沿用分页那套筛选条件，导的就是界面上筛出来的内容，而不是整张表——运营通常是按某个

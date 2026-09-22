@@ -3,45 +3,46 @@
 -- =============================================================================
 --
 -- 用途
---   1. 在新环境快速创建完整的空库结构（60 张表）。
+--   1. 在新环境快速创建完整的空库结构（69 张表）。
 --   2. 作为结构与 db/init/ 迁移脚本的一致性审计基准。
 --
 -- 生成方式
---   由已落库的结构整体导出生成，请勿手工编辑。
---   结构来源：把 db/init/ 下全部脚本按编号顺序重放至一个空库，再整体导出。
---   之所以要重放而不是直接分析脚本，有三个原因：有 6 张表在 repair 脚本里被重复
---   CREATE；017/026/047/049 用 PREPARE/EXECUTE 动态拼 DDL，语句文本不在脚本里；
---   脚本里还混着数据迁移（015/028/033/034），静态分析分不清哪句改结构、哪句改数据。
+--   由迁移脚本重放后的库结构导出，请勿手工编辑。
+--   步骤：把 db/init/ 下全部脚本按编号顺序重放至一个空库，用 mysqldump --no-data 导出，
+--   再归一化（去掉 DROP TABLE 与 AUTO_INCREMENT 计数，建表改为 IF NOT EXISTS）。
+--   重放而不是静态分析脚本的原因：有 6 张表在 repair 脚本里被重复 CREATE；
+--   017/026/047/049 用 PREPARE/EXECUTE 动态拼 DDL，语句文本不在脚本里；
+--   脚本里还混着数据迁移（015/028/033/034/056），静态分析分不清哪句改结构、哪句改数据。
 --
 -- 内容范围
---   ✅ 全部表结构：列、索引、外键、表/列注释、字符集与排序规则
---   ✅ 系统基础数据（6 行 / 3 张表）：默认仓库、物流承运商字典、配送模板
---   ❌ 不含任何业务数据（商品、订单、会员、库存流水等一律不导出）
+--   全部表结构：列、索引、外键、表/列注释、字符集与排序规则。
+--   系统基础数据（26 行 / 4 张表）：默认仓库、物流承运商字典、配送模板，
+--   以及 056 写入的 20 条政策问答初始条目。
+--   不含业务数据：商品、订单、会员、库存流水等一律不导出，演示数据见 db/seed/。
 --
--- 明确排除的内容
---   · RBAC 相关数据（部门、角色、菜单权限、admin 账号）由应用启动时自动写入，
---     见 shop-identity/.../config/IdentityDataInitializer.java，无需包含在脚本中。
---   · db/init/ 中的业务回填脚本（015 会员消费统计、033 商品默认 SKU 回填）在空库上
---     天然不产生任何行，因此本文件不含其产物。
+-- 排除的内容
+--   RBAC 相关数据（部门、角色、菜单权限、admin 账号）由应用启动时自动写入，
+--   见 shop-identity/.../config/IdentityDataInitializer.java。
+--   db/init 中的业务回填脚本（015 会员消费统计、033 商品默认 SKU 回填）在空库上不产生
+--   任何行，因此本文件不含其产物。
 --
 -- 使用方式
 --   mysql -h <host> -P <port> -u <user> -p < shop-admin/db/schema/henfon-shop.sql
+--   面向空库执行：建表用 IF NOT EXISTS，但基础数据是普通 INSERT，
+--   在已有库上重复执行会遇到主键冲突。
 --
--- 重要约定
---   · 全部使用 CREATE TABLE IF NOT EXISTS，不包含 DROP TABLE，重复执行不会破坏已有数据；
---     反过来说，它不会修改已存在的表——若表已存在但结构过旧，脚本会静默跳过，
---     此时应改用 db/init/ 下的增量迁移脚本。
---   · 目标库名默认为 henfon-shop，如需改库名请修改下方 CREATE DATABASE / USE 两行。
+-- 重放说明
+--   045_payment_reconciliation_action.sql 与 046_catalog_product_audit.sql 使用了 MariaDB
+--   专有的 ALTER TABLE ... ADD COLUMN IF NOT EXISTS，MySQL 8.4 无法解析。重放时按空库语义
+--   去掉 IF NOT EXISTS 即可成功，得到的列定义与两个脚本的原始意图一致。
 --
--- 已知结构不一致（来自线上库实测）
---   · db/init/045_payment_reconciliation_action.sql 与 046_catalog_product_audit.sql
---     使用了 MariaDB 专有的 ALTER TABLE ... ADD COLUMN IF NOT EXISTS，
---     MySQL 8.4 无法解析，两个脚本均执行失败。本文件已按两者的原始意图包含相应列。
---   · inventory_purchase_order / inventory_purchase_item / inventory_supplier_stock
---     三张表在源脚本中未声明 COLLATE，在 MySQL 8.4 下会落到 utf8mb4_0900_ai_ci，
---     与其余 56 张表的 utf8mb4_unicode_ci 不一致。
---   · 早期开发库的 content_notification 多出 remark 列，db/init/ 下没有任何脚本声明它，
---     因此本文件不含该列。052 在回填注释时对这列做了存在性判断，两种库结构均可执行。
+-- 已知结构不一致
+--   inventory_purchase_order / inventory_purchase_item / inventory_supplier_stock
+--   三张表在源脚本中未声明 COLLATE，MySQL 8.4 下落到 utf8mb4_0900_ai_ci，与其余
+--   66 张表的 utf8mb4_unicode_ci 不一致。本文件忠实沿用，不做归一化。
+--   存量开发库与这里另有 15 处差异：12 处列注释停留在旧版本、content_notification 多出
+--   remark 列、marketing_flash_sale 两个列是 utf8mb4_0900_ai_ci —— 037 与 052 从未在那些
+--   库上执行过。要用脚本补齐应新增编号脚本，不要直接改库。
 -- =============================================================================
 
 SET NAMES utf8mb4;
@@ -55,8 +56,205 @@ USE `henfon-shop`;
 SET FOREIGN_KEY_CHECKS = 0;
 
 -- =============================================================================
--- 第一部分：表结构（59 张表）
+-- 第一部分：表结构（69 张表）
 -- =============================================================================
+
+-- ----------------------------
+-- 表结构: ai_agent_status
+-- ----------------------------
+CREATE TABLE IF NOT EXISTS `ai_agent_status` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `agent_id` bigint unsigned NOT NULL COMMENT '坐席管理员ID',
+  `agent_name` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '坐席名称快照，避免账号改名后历史记录无法辨认',
+  `status` varchar(16) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'OFFLINE' COMMENT '坐席状态：ONLINE在线/BREAK小休/OFFLINE离线',
+  `last_heartbeat_at` datetime(3) DEFAULT NULL COMMENT '最近心跳时间，超过阈值即视为掉线',
+  `online_at` datetime(3) DEFAULT NULL COMMENT '本次上线时间',
+  `offline_at` datetime(3) DEFAULT NULL COMMENT '本次下线时间',
+  `created_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) COMMENT '创建时间',
+  `updated_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3) COMMENT '更新时间',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_ai_agent_status_agent` (`agent_id`),
+  KEY `idx_ai_agent_status_live` (`status`,`last_heartbeat_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='AI 客服坐席在线状态表';
+
+-- ----------------------------
+-- 表结构: ai_conversation
+-- ----------------------------
+CREATE TABLE IF NOT EXISTS `ai_conversation` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `conversation_id` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '会话标识，对外暴露，由服务端生成',
+  `channel` varchar(16) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '入口渠道：PORTAL门户买家/ADMIN管理端助手',
+  `member_id` bigint unsigned DEFAULT NULL COMMENT '所属会员ID，未登录会话为空',
+  `admin_id` bigint unsigned DEFAULT NULL COMMENT '所属管理员ID，管理端会话使用',
+  `subject_type` varchar(32) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '会话绑定的业务对象类型，如 PRODUCT/ORDER',
+  `subject_id` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '会话绑定的业务对象标识',
+  `title` varchar(120) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '会话标题，取首条用户提问的前若干字',
+  `message_count` int unsigned NOT NULL DEFAULT '0' COMMENT '消息条数，含用户与助手消息',
+  `last_message_at` datetime(3) DEFAULT NULL COMMENT '最近一条消息时间，会话列表按它倒序',
+  `status` varchar(16) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'ACTIVE' COMMENT '会话状态：ACTIVE进行中/TICKETED已转人工/CLOSED已结束',
+  `service_mode` varchar(16) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'AI' COMMENT '接待模式：AI智能客服/WAITING等待人工/HUMAN人工接待中',
+  `agent_id` bigint unsigned DEFAULT NULL COMMENT '接管会话的管理员ID，未接管为空',
+  `agent_requested_at` datetime(3) DEFAULT NULL COMMENT '买家请求转人工的时间，等待时长按它计算',
+  `agent_joined_at` datetime(3) DEFAULT NULL COMMENT '客服接入时间',
+  `agent_ended_at` datetime(3) DEFAULT NULL COMMENT '人工会话结束时间',
+  `created_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) COMMENT '创建时间',
+  `updated_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3) COMMENT '更新时间',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_ai_conversation_id` (`conversation_id`),
+  KEY `idx_ai_conversation_member` (`channel`,`member_id`,`last_message_at`),
+  KEY `idx_ai_conversation_admin` (`channel`,`admin_id`,`last_message_at`),
+  KEY `idx_ai_conversation_waiting` (`service_mode`,`agent_requested_at`),
+  KEY `idx_ai_conversation_agent` (`agent_id`,`service_mode`,`last_message_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='AI 客服会话表';
+
+-- ----------------------------
+-- 表结构: ai_document
+-- ----------------------------
+CREATE TABLE IF NOT EXISTS `ai_document` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `title` varchar(200) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '文档标题',
+  `doc_type` varchar(32) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'POLICY' COMMENT '文档类型：POLICY政策/SOP流程/OTHER其他',
+  `source` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '原文来源，MinIO 对象键或外部链接',
+  `doc_version` varchar(32) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '文档版本号，由运营人工维护',
+  `status` varchar(16) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'DRAFT' COMMENT '索引状态：DRAFT草稿/INDEXED已索引/FAILED索引失败',
+  `chunk_count` int unsigned NOT NULL DEFAULT '0' COMMENT '切分后的片段数量',
+  `error_message` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '索引失败原因，直接展示给运营',
+  `indexed_at` datetime(3) DEFAULT NULL COMMENT '最近一次索引完成时间',
+  `created_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) COMMENT '创建时间',
+  `updated_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3) COMMENT '更新时间',
+  `is_deleted` tinyint unsigned NOT NULL DEFAULT '0' COMMENT '逻辑删除：1已删除，0正常',
+  PRIMARY KEY (`id`),
+  KEY `idx_ai_document_status` (`status`,`updated_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='AI 知识文档表';
+
+-- ----------------------------
+-- 表结构: ai_faq
+-- ----------------------------
+CREATE TABLE IF NOT EXISTS `ai_faq` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `question` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '标准问法，同时作为向量化文本的来源',
+  `answer` text COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '标准答案，命中后直接拼进模型上下文',
+  `category` varchar(32) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '业务分类：AFTER_SALE/SHIPPING/INVOICE/PAYMENT/MEMBER/OTHER',
+  `keywords` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '人工维护的检索关键词，英文逗号分隔，供关键词兜底召回',
+  `sort_no` int NOT NULL DEFAULT '0' COMMENT '同分类内展示顺序，值小的在前',
+  `enabled` tinyint unsigned NOT NULL DEFAULT '1' COMMENT '是否启用：1启用，0停用。停用后不参与向量化',
+  `sync_status` varchar(16) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'PENDING' COMMENT '向量同步状态：PENDING待同步/SYNCED已同步/FAILED失败',
+  `synced_at` datetime(3) DEFAULT NULL COMMENT '最近一次向量化成功时间',
+  `created_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) COMMENT '创建时间',
+  `updated_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3) COMMENT '更新时间',
+  `is_deleted` tinyint unsigned NOT NULL DEFAULT '0' COMMENT '逻辑删除：1已删除，0正常',
+  `version` int NOT NULL DEFAULT '0' COMMENT '乐观锁版本号',
+  PRIMARY KEY (`id`),
+  KEY `idx_ai_faq_category` (`category`,`enabled`,`sort_no`),
+  KEY `idx_ai_faq_sync` (`sync_status`,`updated_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='AI 客服知识库问答表';
+
+-- ----------------------------
+-- 表结构: ai_message
+-- ----------------------------
+CREATE TABLE IF NOT EXISTS `ai_message` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `conversation_id` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '所属会话标识',
+  `sequence` int unsigned NOT NULL COMMENT '会话内消息序号，从 1 递增，读回上下文按它排序',
+  `role` varchar(16) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '消息角色：USER用户/ASSISTANT助手/TOOL工具/SYSTEM系统',
+  `sender` varchar(16) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '发送方：MEMBER买家/AI智能客服/AGENT人工客服；工具与系统消息为空',
+  `content` mediumtext COLLATE utf8mb4_unicode_ci COMMENT '消息正文，纯工具调用消息可为空',
+  `tool_name` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '工具调用名称，工具消息才有',
+  `tool_payload` text COLLATE utf8mb4_unicode_ci COMMENT '工具调用、检索引文与商品卡片的 JSON 快照，便于排查错误回答并支持消息回读',
+  `model` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '生成该条消息的模型名',
+  `tokens_in` int unsigned DEFAULT NULL COMMENT '输入 token 数',
+  `tokens_out` int unsigned DEFAULT NULL COMMENT '输出 token 数',
+  `latency_ms` int unsigned DEFAULT NULL COMMENT '本次响应耗时，单位毫秒，用于效果分析',
+  `created_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) COMMENT '创建时间',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_ai_message_seq` (`conversation_id`,`sequence`),
+  KEY `idx_ai_message_created` (`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='AI 客服消息明细表';
+
+-- ----------------------------
+-- 表结构: ai_rating
+-- ----------------------------
+CREATE TABLE IF NOT EXISTS `ai_rating` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `conversation_id` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '被评价的会话标识',
+  `member_id` bigint unsigned DEFAULT NULL COMMENT '评价人会员ID',
+  `agent_id` bigint unsigned NOT NULL COMMENT '被评价的坐席ID，从会话上带过来，便于按客服统计',
+  `agent_name` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '坐席名称快照',
+  `score` tinyint unsigned NOT NULL COMMENT '满意度评分：1-5 星',
+  `tags` varchar(120) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '评价标签，英文逗号分隔，如 响应快,态度好',
+  `comment` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '评价留言，可空',
+  `created_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) COMMENT '评价时间',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_ai_rating_conversation` (`conversation_id`),
+  KEY `idx_ai_rating_agent` (`agent_id`,`created_at`),
+  KEY `idx_ai_rating_score` (`score`,`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='AI 客服会话满意度评价表';
+
+-- ----------------------------
+-- 表结构: ai_schedule
+-- ----------------------------
+CREATE TABLE IF NOT EXISTS `ai_schedule` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `agent_id` bigint unsigned NOT NULL COMMENT '坐席管理员ID',
+  `agent_name` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '坐席名称快照',
+  `weekday` tinyint unsigned NOT NULL COMMENT '周几：1 周一 至 7 周日',
+  `start_time` time NOT NULL COMMENT '班次开始时间',
+  `end_time` time NOT NULL COMMENT '班次结束时间',
+  `enabled` tinyint unsigned NOT NULL DEFAULT '1' COMMENT '是否启用：1启用，0停用。停用后不参与服务时间判断',
+  `created_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) COMMENT '创建时间',
+  `updated_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3) COMMENT '更新时间',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_ai_schedule_agent_weekday` (`agent_id`,`weekday`),
+  KEY `idx_ai_schedule_weekday` (`weekday`,`enabled`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='AI 客服坐席排班表';
+
+-- ----------------------------
+-- 表结构: ai_ticket
+-- ----------------------------
+CREATE TABLE IF NOT EXISTS `ai_ticket` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `ticket_no` varchar(32) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '工单编号，形如 AI20260921-0001，插入后由主键回填',
+  `conversation_id` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '来源会话标识，用户直接提交留言时为空',
+  `member_id` bigint unsigned DEFAULT NULL COMMENT '提交会员ID，未登录为空',
+  `contact` varchar(120) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '联系方式，手机号或邮箱',
+  `question` varchar(1000) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '用户原始问题',
+  `ai_summary` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'AI 对问题的归类摘要，便于运营快速判断归属',
+  `status` varchar(16) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'PENDING' COMMENT '处理状态：PENDING待处理/PROCESSING处理中/CLOSED已关闭',
+  `handler_id` bigint unsigned DEFAULT NULL COMMENT '处理人管理员ID',
+  `handler_name` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '处理人名称快照，避免账号改名后历史工单无法辨认',
+  `handle_note` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '处理备注，仅运营可见',
+  `reply_content` varchar(1000) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '给买家的回复内容，门户可见',
+  `replied_at` datetime(3) DEFAULT NULL COMMENT '回复给买家的时间',
+  `handled_at` datetime(3) DEFAULT NULL COMMENT '处理完成时间',
+  `created_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) COMMENT '提交时间',
+  `updated_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3) COMMENT '更新时间',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_ai_ticket_no` (`ticket_no`),
+  KEY `idx_ai_ticket_status` (`status`,`created_at`),
+  KEY `idx_ai_ticket_conversation` (`conversation_id`),
+  KEY `idx_ai_ticket_member` (`member_id`,`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='AI 客服转人工工单表';
+
+-- ----------------------------
+-- 表结构: ai_vector_sync
+-- ----------------------------
+CREATE TABLE IF NOT EXISTS `ai_vector_sync` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `source_type` varchar(32) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '向量来源类型：PRODUCT商品/FAQ问答/DOCUMENT文档',
+  `source_id` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '来源记录标识，商品为商品ID，FAQ 为问答ID',
+  `collection_name` varchar(64) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '写入的 Qdrant collection 名',
+  `content_hash` char(64) COLLATE utf8mb4_unicode_ci NOT NULL COMMENT '向量化文本的 SHA-256，内容未变则跳过重新向量化',
+  `point_id` varchar(64) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT 'Qdrant 中的点 ID，删除与覆盖时使用',
+  `status` varchar(16) COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'PENDING' COMMENT '同步状态：PENDING待同步/SYNCED已同步/FAILED失败',
+  `retry_count` int unsigned NOT NULL DEFAULT '0' COMMENT '连续失败重试次数',
+  `error_message` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '最近一次失败原因',
+  `synced_at` datetime(3) DEFAULT NULL COMMENT '最近一次同步成功时间',
+  `created_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) COMMENT '创建时间',
+  `updated_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3) COMMENT '更新时间',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_ai_vector_sync_source` (`source_type`,`source_id`,`collection_name`),
+  KEY `idx_ai_vector_sync_status` (`status`,`updated_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='AI 向量同步位点表';
 
 -- ----------------------------
 -- 表结构: catalog_category
@@ -270,8 +468,8 @@ CREATE TABLE IF NOT EXISTS `content_notification` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_content_notification_dedupe` (`member_id`,`dedupe_key`,`is_deleted`),
   KEY `idx_content_notification_member_read` (`member_id`,`read_status`,`created_at`),
-  KEY `idx_content_notification_admin_read` (`admin_read_status`,`created_at`),
-  KEY `idx_content_notification_order` (`order_id`,`created_at`)
+  KEY `idx_content_notification_order` (`order_id`,`created_at`),
+  KEY `idx_content_notification_admin_read` (`admin_read_status`,`created_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='会员站内通知表';
 
 -- ----------------------------
@@ -288,7 +486,7 @@ CREATE TABLE IF NOT EXISTS `content_review` (
   `variant_summary` varchar(500) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '购买规格',
   `image_urls` text COLLATE utf8mb4_unicode_ci COMMENT '评价图片 URL JSON 数组',
   `helpful_count` int unsigned NOT NULL DEFAULT '0' COMMENT '有帮助数量',
-  `status` tinyint unsigned NOT NULL DEFAULT '1' COMMENT '状态：1展示，0待审核，2审核未通过',
+  `status` tinyint unsigned NOT NULL DEFAULT '1' COMMENT '状态：1展示，0隐藏',
   `reviewed_at` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) COMMENT '评价时间',
   `reply_content` varchar(2000) COLLATE utf8mb4_unicode_ci DEFAULT NULL COMMENT '商家回复内容',
   `replied_at` datetime(3) DEFAULT NULL COMMENT '商家回复时间',
@@ -1423,7 +1621,7 @@ CREATE TABLE IF NOT EXISTS `trade_order_logistics` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='订单物流轨迹表';
 
 -- =============================================================================
--- 第二部分：系统基础数据（6 行）
+-- 第二部分：系统基础数据（26 行）
 -- 说明：以下为应用运行所需的基础配置数据，属于系统初始化数据而非业务数据。
 -- =============================================================================
 
@@ -1441,6 +1639,30 @@ INSERT INTO `sys_dictionary_item` (`id`, `tenant_id`, `dict_type`, `item_code`, 
 -- 系统基础数据: trade_freight_template（非业务数据）
 -- ----------------------------
 INSERT INTO `trade_freight_template` (`id`, `template_name`, `carrier_name`, `base_weight_gram`, `base_fee`, `additional_weight_gram`, `additional_fee`, `free_shipping_threshold`, `remote_surcharge`, `remote_regions_csv`, `status`, `is_default`, `created_at`, `updated_at`, `is_deleted`, `version`, `remark`) VALUES (1,'全国配送模板',NULL,1000,15.00,1000,5.00,99.00,0.00,'西藏,新疆,港澳台',1,1,'2026-09-16 13:08:11.694','2026-09-16 13:08:11.694',0,0,NULL);
+
+-- ----------------------------
+-- 系统基础数据: ai_faq（非业务数据，来自 db/init/056_ai_faq_policy.sql）
+-- ----------------------------
+INSERT INTO `ai_faq` (`id`, `question`, `answer`, `category`, `keywords`, `sort_no`, `enabled`, `sync_status`, `synced_at`, `created_at`, `updated_at`, `is_deleted`, `version`) VALUES (1,'商品支持七天无理由退货吗？','支持。自签收次日起 7 天内，商品不影响二次销售（吊牌、包装、配件齐全，未使用、未洗涤、未安装）可以申请无理由退货。定制商品、贴身用品以及已拆封的耗材类商品不适用无理由退货。申请入口：在「我的订单」里找到对应订单，点「申请售后」选择「退货退款」，填写原因后提交即可。','AFTER_SALE','七天无理由,7天无理由,无理由退货,退货条件,影响二次销售,能不能退',10,1,'PENDING',NULL,'2026-09-22 19:59:21.346','2026-09-22 19:59:21.346',0,0);;
+INSERT INTO `ai_faq` (`id`, `question`, `answer`, `category`, `keywords`, `sort_no`, `enabled`, `sync_status`, `synced_at`, `created_at`, `updated_at`, `is_deleted`, `version`) VALUES (2,'退换货的运费由谁承担？','商品存在质量问题、发错货或运输破损的，退换货运费由本商城承担，您可以先垫付寄回，之后凭快递单号联系客服报销。无理由退货（比如不喜欢、拍错、尺码不合适）的往返运费由您承担；订单原本已包邮的，退回时仍需承担寄回的运费。','AFTER_SALE','退货运费,运费谁出,寄回运费,报销运费,免运费退回',20,1,'PENDING',NULL,'2026-09-22 19:59:21.346','2026-09-22 19:59:21.346',0,0);;
+INSERT INTO `ai_faq` (`id`, `question`, `answer`, `category`, `keywords`, `sort_no`, `enabled`, `sync_status`, `synced_at`, `created_at`, `updated_at`, `is_deleted`, `version`) VALUES (3,'订单还没发货，可以取消吗？','可以。待付款订单直接在「我的订单」取消即可；已付款但还没发货的订单，请申请售后并选择「仅退款」，说明取消原因。待发货订单不支持退货退款和换货。已经发货的订单需要按退货退款流程处理，等商品寄回后安排退款。','AFTER_SALE','未发货退款,取消订单,仅退款,不想买了,还没发货',30,1,'PENDING',NULL,'2026-09-22 19:59:21.346','2026-09-22 19:59:21.346',0,0);;
+INSERT INTO `ai_faq` (`id`, `question`, `answer`, `category`, `keywords`, `sort_no`, `enabled`, `sync_status`, `synced_at`, `created_at`, `updated_at`, `is_deleted`, `version`) VALUES (4,'售后申请提交后多久处理？各个状态是什么意思？','在「我的订单」页面的「售后进度」里可以看到状态：待审核表示已提交、等客服审核；处理中表示审核通过，退款或换货正在处理；已完成表示处理结束；已驳回表示不符合售后条件，会说明原因；已取消表示本次申请已撤销。提交后 24 小时内会有人工审核。','AFTER_SALE','售后进度,售后状态,待审核,处理中,已驳回,已取消,售后多久',40,1,'PENDING',NULL,'2026-09-22 19:59:21.346','2026-09-22 19:59:21.346',0,0);;
+INSERT INTO `ai_faq` (`id`, `question`, `answer`, `category`, `keywords`, `sort_no`, `enabled`, `sync_status`, `synced_at`, `created_at`, `updated_at`, `is_deleted`, `version`) VALUES (5,'换货可以同时退款吗？','换货不支持退款金额，只做同款商品的换尺码或换颜色。质量问题引起的换货，来回运费由本商城承担；非质量问题（比如不喜欢、拍错颜色）的换货，来回运费由您承担。','AFTER_SALE','换货,只换不退,换尺码,换颜色,换货运费',50,1,'PENDING',NULL,'2026-09-22 19:59:21.346','2026-09-22 19:59:21.346',0,0);;
+INSERT INTO `ai_faq` (`id`, `question`, `answer`, `category`, `keywords`, `sort_no`, `enabled`, `sync_status`, `synced_at`, `created_at`, `updated_at`, `is_deleted`, `version`) VALUES (6,'退款退到哪里？多久到账？','退款原路退回，退到您下单时使用的微信支付账户。审核通过后一般 1-3 个工作日到账，具体到账时间以微信支付的处理结果为准，可以在微信支付的账单记录里查看。','AFTER_SALE','退款到账,退款时间,原路退回,钱退到哪里,退款多久到',60,1,'PENDING',NULL,'2026-09-22 19:59:21.346','2026-09-22 19:59:21.346',0,0);;
+INSERT INTO `ai_faq` (`id`, `question`, `answer`, `category`, `keywords`, `sort_no`, `enabled`, `sync_status`, `synced_at`, `created_at`, `updated_at`, `is_deleted`, `version`) VALUES (7,'运费怎么算？多少钱可以包邮？','单笔订单满 99 元免运费。未满 99 元时按物流计费规则收取，首重 1kg 起步，超出部分每 1kg 加收 5 元。西藏、新疆以及中国香港、中国澳门、中国台湾等偏远地区按物流实际报价收取。下单结算页显示的运费为最终金额，也可以先领取运费券抵扣。','SHIPPING','运费,包邮,满99包邮,邮费怎么算,运费多少钱,免运费',10,1,'PENDING',NULL,'2026-09-22 19:59:21.346','2026-09-22 19:59:21.346',0,0);;
+INSERT INTO `ai_faq` (`id`, `question`, `answer`, `category`, `keywords`, `sort_no`, `enabled`, `sync_status`, `synced_at`, `created_at`, `updated_at`, `is_deleted`, `version`) VALUES (8,'哪些地区可以配送？偏远地区发货吗？','全国大部分地区正常配送。西藏、新疆以及中国香港、中国澳门、中国台湾属于偏远配送范围，运费与时效按物流实际报价和执行。海外地址暂不支持下单。','SHIPPING','配送范围,偏远地区,港澳台,海外发货,发不发货,能不能送到',20,1,'PENDING',NULL,'2026-09-22 19:59:21.346','2026-09-22 19:59:21.346',0,0);;
+INSERT INTO `ai_faq` (`id`, `question`, `answer`, `category`, `keywords`, `sort_no`, `enabled`, `sync_status`, `synced_at`, `created_at`, `updated_at`, `is_deleted`, `version`) VALUES (9,'什么时候发货？多久能收到？','现货商品在付款成功后 48 小时内安排发出，预售、大促和定制商品以商品详情页标注的发货时间为准。发货后可以在「我的订单」的物流信息里查看轨迹，实际送达时间以承运商的运输时效为准。','SHIPPING','发货时间,多久发货,什么时候发货,几天到,物流时效,什么时候到货',30,1,'PENDING',NULL,'2026-09-22 19:59:21.346','2026-09-22 19:59:21.346',0,0);;
+INSERT INTO `ai_faq` (`id`, `question`, `answer`, `category`, `keywords`, `sort_no`, `enabled`, `sync_status`, `synced_at`, `created_at`, `updated_at`, `is_deleted`, `version`) VALUES (10,'物流信息一直不更新怎么办？','快递揽收后一般 24 小时内会出现第一条物流轨迹。如果发货超过 48 小时仍然没有更新，请把订单号发给在线客服，我们帮您向承运商核实，也可以留下手机号或邮箱由人工跟进。','SHIPPING','物流不更新,快递没动静,物流没更新,查不到物流,快递停滞',40,1,'PENDING',NULL,'2026-09-22 19:59:21.346','2026-09-22 19:59:21.346',0,0);;
+INSERT INTO `ai_faq` (`id`, `question`, `answer`, `category`, `keywords`, `sort_no`, `enabled`, `sync_status`, `synced_at`, `created_at`, `updated_at`, `is_deleted`, `version`) VALUES (11,'可以指定快递公司或者加急发货吗？','目前订单由合作的承运商统一安排发出，暂不支持指定快递公司。确实需要加急的可以联系客服说明情况，我们会尽量协调，但不保证提前送达。','SHIPPING','指定快递,加急发货,顺丰,快递公司,催发货',50,1,'PENDING',NULL,'2026-09-22 19:59:21.346','2026-09-22 19:59:21.346',0,0);;
+INSERT INTO `ai_faq` (`id`, `question`, `answer`, `category`, `keywords`, `sort_no`, `enabled`, `sync_status`, `synced_at`, `created_at`, `updated_at`, `is_deleted`, `version`) VALUES (12,'支持哪些支付方式？','目前仅支持微信支付：下单后在支付页面用微信扫码完成付款。支付宝、银行卡等其它付款方式暂不支持。','PAYMENT','支付方式,怎么付款,微信支付,支付宝,银行卡,付款方式,能刷什么卡',10,1,'PENDING',NULL,'2026-09-22 19:59:21.346','2026-09-22 19:59:21.346',0,0);;
+INSERT INTO `ai_faq` (`id`, `question`, `answer`, `category`, `keywords`, `sort_no`, `enabled`, `sync_status`, `synced_at`, `created_at`, `updated_at`, `is_deleted`, `version`) VALUES (13,'下单后多久要付款？超时会怎样？','下单后请在 30 分钟内完成支付。超时未支付的订单会被系统自动关闭，占用的库存同时释放，需要时重新下单即可，不会产生额外费用。','PAYMENT','支付超时,多久付款,订单自动关闭,30分钟,付款时间限制',20,1,'PENDING',NULL,'2026-09-22 19:59:21.346','2026-09-22 19:59:21.346',0,0);;
+INSERT INTO `ai_faq` (`id`, `question`, `answer`, `category`, `keywords`, `sort_no`, `enabled`, `sync_status`, `synced_at`, `created_at`, `updated_at`, `is_deleted`, `version`) VALUES (14,'已经付款了，但订单还是显示待付款怎么办？','支付结果回传会有短暂延迟，一般 1-2 分钟内订单状态就会更新。如果超过 10 分钟仍显示待付款，请先确认微信是否已经实际扣款，再联系客服并提供订单号，我们人工核实。请不要重复下单或重复支付。','PAYMENT','支付成功订单未更新,重复支付,扣款了还是待付款,支付异常,付了钱没反应',30,1,'PENDING',NULL,'2026-09-22 19:59:21.346','2026-09-22 19:59:21.346',0,0);;
+INSERT INTO `ai_faq` (`id`, `question`, `answer`, `category`, `keywords`, `sort_no`, `enabled`, `sync_status`, `synced_at`, `created_at`, `updated_at`, `is_deleted`, `version`) VALUES (15,'优惠券有哪些？怎么使用？','当前可领取的优惠券有：新人专享满 199 元减 50 元、户外商品满 299 元减 30 元、全场满 99 元最高减免 15 元运费券，每张券每位会员限领 1 张，入口是页面顶部的「领券中心」。在结算页面的优惠券一栏选择后即可抵扣，注意有效期和使用门槛，逾期或未达门槛无法使用；已领取的券在「个人中心 → 我的券包」查看。','PAYMENT','优惠券,满减券,怎么用券,运费券,领券中心,优惠码,领券',40,1,'PENDING',NULL,'2026-09-22 19:59:21.346','2026-09-22 19:59:21.346',0,0);;
+INSERT INTO `ai_faq` (`id`, `question`, `answer`, `category`, `keywords`, `sort_no`, `enabled`, `sync_status`, `synced_at`, `created_at`, `updated_at`, `is_deleted`, `version`) VALUES (16,'可以开发票吗？支持哪些发票类型？','可以。支持电子普通发票和增值税专用发票，开票金额为订单实付金额，一个订单只能开一张发票。开具增值税专用发票需要提供公司名称和纳税人识别号。','INVOICE','开发票,发票类型,专票,普票,增值税发票,能开票吗',10,1,'PENDING',NULL,'2026-09-22 19:59:21.346','2026-09-22 19:59:21.346',0,0);;
+INSERT INTO `ai_faq` (`id`, `question`, `answer`, `category`, `keywords`, `sort_no`, `enabled`, `sync_status`, `synced_at`, `created_at`, `updated_at`, `is_deleted`, `version`) VALUES (17,'怎么申请发票？','订单支付成功后，在「我的订单」里找到对应订单并点「申请发票」，填写发票抬头、纳税人识别号（专用发票必填）和接收邮箱，提交后由财务审核开具，开好后会发送到您填写的邮箱。','INVOICE','申请发票,怎么开票,开票入口,发票抬头,发票邮箱,开票流程',20,1,'PENDING',NULL,'2026-09-22 19:59:21.346','2026-09-22 19:59:21.346',0,0);;
+INSERT INTO `ai_faq` (`id`, `question`, `answer`, `category`, `keywords`, `sort_no`, `enabled`, `sync_status`, `synced_at`, `created_at`, `updated_at`, `is_deleted`, `version`) VALUES (18,'发票开错了或者需要重开怎么办？','已开具的发票如需更换抬头、金额或类型，请把订单号和已开发票信息提供给客服，由人工核实后处理。未支付的订单以及已全额退款的订单不支持开票。','INVOICE','发票开错,重开发票,红冲,换抬头,退款后开票,发票抬头填错',30,1,'PENDING',NULL,'2026-09-22 19:59:21.346','2026-09-22 19:59:21.346',0,0);;
+INSERT INTO `ai_faq` (`id`, `question`, `answer`, `category`, `keywords`, `sort_no`, `enabled`, `sync_status`, `synced_at`, `created_at`, `updated_at`, `is_deleted`, `version`) VALUES (19,'会员等级怎么划分？有什么权益？','注册后即为普通会员，会员等级分为普通会员、黄金 VIP、黑金 SVIP 三档，等级越高权益越多。普通会员：新人礼包、实付满 99 元包邮、购物 1:1 累计积分、7 天无理由退换；黄金 VIP：全场自营 9.5 折、每月 1 张免邮券、1.5 倍积分返还、优先极速退款；黑金 SVIP：全场自营 9.2 折、每月 3 张免邮券、2 倍积分返还、1 对 1 专属管家。会员等级由平台根据消费情况评估调整，当前等级、积分、余额和累计消费在「个人中心 → 资料与特权」查看。','MEMBER','会员等级,会员权益,怎么升级,黄金VIP,黑金SVIP,会员有什么用,特权',10,1,'PENDING',NULL,'2026-09-22 19:59:21.346','2026-09-22 19:59:21.346',0,0);;
+INSERT INTO `ai_faq` (`id`, `question`, `answer`, `category`, `keywords`, `sort_no`, `enabled`, `sync_status`, `synced_at`, `created_at`, `updated_at`, `is_deleted`, `version`) VALUES (20,'怎么查看我的优惠券和积分？','登录后在「个人中心 → 资料与特权」可以看到商城积分、账户余额和累计消费；已领取的优惠券在「个人中心 → 我的券包」查看，券上会同时显示有效期和使用门槛。','MEMBER','我的优惠券,积分查询,账户余额,个人中心,我的券包,我的资产',20,1,'PENDING',NULL,'2026-09-22 19:59:21.346','2026-09-22 19:59:21.346',0,0);;
 
 
 SET FOREIGN_KEY_CHECKS = 1;

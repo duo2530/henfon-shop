@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -97,6 +98,25 @@ public class AiFaqAdminController {
     @PreAuthorize("hasAuthority('ai:faq:save')")
     public ApiResponse<Long> save(@Valid @RequestBody AiFaqSaveRequest request) {
         return ApiResponse.success(faqService.save(request), requestId());
+    }
+
+    /**
+     * 启停单条知识库问答。
+     *
+     * 走独立接口而不是让前端拿着整条记录回写保存：开关只改一个字段，把问法与答案一起
+     * 上传既多余，也会在两人同时编辑时把对方的改动覆盖回去。
+     *
+     * @param id 记录 ID
+     * @param enabled 目标状态，1 启用，0 停用
+     * @return 空响应
+     * @author Henfon
+     * @date 2026-09-22
+     */
+    @PutMapping("/{id}/enabled")
+    @PreAuthorize("hasAuthority('ai:faq:save')")
+    public ApiResponse<Void> updateEnabled(@PathVariable Long id, @RequestParam Integer enabled) {
+        faqService.updateEnabled(id, enabled);
+        return ApiResponse.success(requestId());
     }
 
     /**

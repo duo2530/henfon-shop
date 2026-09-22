@@ -3,6 +3,7 @@ package com.henfon.shop.identity.service;
 import com.henfon.shop.identity.dto.MemberAdminAdjustRequest;
 import com.henfon.shop.identity.entity.MemberAssetAudit;
 import com.henfon.shop.identity.entity.MemberUser;
+import com.henfon.shop.identity.mapper.MemberAddressMapper;
 import com.henfon.shop.identity.mapper.MemberAssetAuditMapper;
 import com.henfon.shop.identity.mapper.MemberConsumptionStatMapper;
 import com.henfon.shop.identity.mapper.MemberTagMapper;
@@ -37,6 +38,8 @@ class MemberAdminServiceAssetAuditTest {
     @Mock private MemberUserTagMapper memberUserTagMapper;
     @Mock private MemberConsumptionStatMapper memberConsumptionStatMapper;
     @Mock private MemberAssetAuditMapper memberAssetAuditMapper;
+    @Mock private MemberAddressMapper memberAddressMapper;
+    @Mock private MemberPortalService memberPortalService;
     @Mock private ImageReferenceResolver imageReferenceResolver;
 
     private MemberAdminService service;
@@ -50,7 +53,8 @@ class MemberAdminServiceAssetAuditTest {
     @BeforeEach
     void setUp() {
         service = new MemberAdminService(memberUserMapper, memberTagMapper, memberUserTagMapper,
-                memberConsumptionStatMapper, memberAssetAuditMapper, imageReferenceResolver);
+                memberConsumptionStatMapper, memberAssetAuditMapper, memberAddressMapper, memberPortalService,
+                imageReferenceResolver);
     }
 
     /**

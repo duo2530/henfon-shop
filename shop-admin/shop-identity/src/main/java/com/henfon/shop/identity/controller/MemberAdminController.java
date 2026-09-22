@@ -3,6 +3,8 @@ package com.henfon.shop.identity.controller;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.henfon.shop.common.api.ApiResponse;
 import com.henfon.shop.identity.entity.MemberUser;
+import com.henfon.shop.identity.dto.MemberAddressAdminUpdateRequest;
+import com.henfon.shop.identity.dto.MemberAddressAdminView;
 import com.henfon.shop.identity.dto.MemberAdminAdjustRequest;
 import com.henfon.shop.identity.dto.MemberAdminCreateRequest;
 import com.henfon.shop.identity.dto.MemberAdminUpdateRequest;
@@ -13,6 +15,7 @@ import com.henfon.shop.identity.entity.MemberAssetAudit;
 import com.henfon.shop.identity.service.MemberAdminService;
 import org.slf4j.MDC;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -73,6 +76,79 @@ public class MemberAdminController {
                 ? user.tenantId() : 0L;
         return ApiResponse.success(memberAdminService.page(keyword, memberLevel, status, current, size, tenantId),
                 MDC.get("requestId"));
+    }
+
+    /**
+     * 分页查询会员收货地址。
+     *
+     * @param keyword 收货人、电话、详细地址或会员关键字
+     * @param memberId 指定会员
+     * @param isDefault 是否默认地址
+     * @param current 当前页
+     * @param size 页大小
+     * @return 地址分页结果
+     * @author Henfon
+     * @date 2026-09-22
+     */
+    @GetMapping("/addresses")
+    @PreAuthorize("hasAuthority('member:address:query')")
+    public ApiResponse<IPage<MemberAddressAdminView>> pageAddresses(@RequestParam(required = false) String keyword,
+                                                                     @RequestParam(required = false) Long memberId,
+                                                                     @RequestParam(required = false) Integer isDefault,
+                                                                     @RequestParam(defaultValue = "1") long current,
+                                                                     @RequestParam(defaultValue = "20") long size,
+                                                                     Authentication authentication) {
+        Long tenantId = authentication != null && authentication.getPrincipal() instanceof AuthenticatedUser user
+                ? user.tenantId() : 0L;
+        return ApiResponse.success(memberAdminService.pageAddresses(keyword, memberId, isDefault, current, size, tenantId),
+                MDC.get("requestId"));
+    }
+
+    /**
+     * 修改会员收货地址。
+     *
+     * @param id 地址ID
+     * @param request 地址内容
+     * @return 空响应
+     * @author Henfon
+     * @date 2026-09-22
+     */
+    @PutMapping("/addresses/{id}")
+    @PreAuthorize("hasAuthority('member:address:save')")
+    public ApiResponse<Void> updateAddress(@PathVariable Long id,
+                                            @Valid @RequestBody MemberAddressAdminUpdateRequest request) {
+        memberAdminService.updateAddress(id, request);
+        return ApiResponse.success(MDC.get("requestId"));
+    }
+
+    /**
+     * 删除会员收货地址。
+     *
+     * @param id 地址ID
+     * @return 空响应
+     * @author Henfon
+     * @date 2026-09-22
+     */
+    @DeleteMapping("/addresses/{id}")
+    @PreAuthorize("hasAuthority('member:address:save')")
+    public ApiResponse<Void> deleteAddress(@PathVariable Long id) {
+        memberAdminService.deleteAddress(id);
+        return ApiResponse.success(MDC.get("requestId"));
+    }
+
+    /**
+     * 把某条地址设为该会员的默认地址。
+     *
+     * @param id 地址ID
+     * @return 空响应
+     * @author Henfon
+     * @date 2026-09-22
+     */
+    @PutMapping("/addresses/{id}/default")
+    @PreAuthorize("hasAuthority('member:address:save')")
+    public ApiResponse<Void> setDefaultAddress(@PathVariable Long id) {
+        memberAdminService.setDefaultAddress(id);
+        return ApiResponse.success(MDC.get("requestId"));
     }
 
     /**
