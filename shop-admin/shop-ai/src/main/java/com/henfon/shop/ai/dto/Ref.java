@@ -13,4 +13,7 @@ package com.henfon.shop.ai.dto;
  * @date 2026-09-21
  */
 public record Ref(String sourceType, String sourceId, String title) {
+
+    /** 商品来源类型，与向量库 source_type 的取值一致。 */
+    public static final String SOURCE_PRODUCT = "PRODUCT";
 }

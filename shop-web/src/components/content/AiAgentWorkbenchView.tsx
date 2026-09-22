@@ -785,10 +785,11 @@ export const AiAgentWorkbenchView: React.FC = () => {
                       onClick={() => setPickerOpen(true)}
                       aria-label="发送商品"
                       aria-haspopup="dialog"
-                      title="发送商品"
-                      className="h-9 w-9 rounded-lg border border-[#E2E8F0] text-gray-500 hover:border-gray-400 inline-flex items-center justify-center shrink-0"
+                      title="把商品卡片发给买家"
+                      className="h-9 px-2.5 rounded-lg border border-[#E2E8F0] text-gray-600 text-sm hover:border-gray-400 hover:text-gray-800 inline-flex items-center gap-1.5 shrink-0"
                     >
                       <Package className="w-4 h-4" />
+                      发送商品
                     </button>
                     <textarea
                       value={input}
@@ -831,12 +832,12 @@ export const AiAgentWorkbenchView: React.FC = () => {
             <div
               role="dialog"
               aria-modal="true"
-              aria-label="推送商品"
+              aria-label="发送商品"
               className="flex max-h-[85vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl animate-in fade-in zoom-in-95 duration-200"
             >
               <div className="flex items-start gap-3 border-b border-slate-100 px-5 py-4 shrink-0">
                 <div className="min-w-0 flex-1">
-                  <h2 className="text-base font-bold text-slate-900">推送商品</h2>
+                  <h2 className="text-base font-bold text-slate-900">发送商品</h2>
                   <p className="mt-1 text-xs text-slate-500">
                     选中后买家会在对话里收到带图卡片，点开即是商品详情页。
                   </p>

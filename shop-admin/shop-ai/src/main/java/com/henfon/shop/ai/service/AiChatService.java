@@ -10,6 +10,7 @@ import com.henfon.shop.ai.dto.Ref;
 import com.henfon.shop.ai.entity.AiConversation;
 import com.henfon.shop.ai.retrieval.AiKnowledgeRetriever;
 import com.henfon.shop.ai.tool.AiPortalTools;
+import com.henfon.shop.ai.tool.AiProductToolRecorder;
 import com.henfon.shop.ai.tool.AiProductTools;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -22,15 +23,21 @@ import org.springframework.ai.chat.metadata.ChatResponseMetadata;
 import org.springframework.ai.chat.metadata.Usage;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.model.Generation;
+import org.springframework.ai.tool.ToolCallback;
+import org.springframework.ai.tool.method.MethodToolCallbackProvider;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 import reactor.core.publisher.Flux;
 
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.TimeoutException;
 
 /**
@@ -60,9 +67,6 @@ public class AiChatService {
 
     private static final Logger log = LoggerFactory.getLogger(AiChatService.class);
 
-    /** 本轮商品检索的候选数量上限，与卡片上限分开：模型可以多看到几款，卡片只出最靠前的几张。 */
-    private static final int AI_CARD_CANDIDATES = 6;
-
     private final ChatClient aiChatClient;
 
     private final AiKnowledgeRetriever retriever;
@@ -72,6 +76,14 @@ public class AiChatService {
     private final AiPortalTools portalTools;
 
     private final AiProductTools productTools;
+
+    /**
+     * 商品工具的方法级回调，构造时解析一次。
+     *
+     * 每轮提问要的是「这些回调 + 本轮的收集器」，所以这里只留签名与描述那部分不变的东西，
+     * 收集器在包装时按轮传入。
+     */
+    private final ToolCallback[] productToolCallbacks;
 
     private final AiProductCardService productCardService;
 
@@ -106,6 +118,10 @@ public class AiChatService {
         this.conversationService = conversationService;
         this.portalTools = portalTools;
         this.productTools = productTools;
+        this.productToolCallbacks = MethodToolCallbackProvider.builder()
+                .toolObjects(productTools)
+                .build()
+                .getToolCallbacks();
         this.productCardService = productCardService;
         this.properties = properties;
         this.objectMapper = objectMapper;
@@ -147,10 +163,13 @@ public class AiChatService {
                 .system(systemPrompt)
                 .user(request.question());
         // 商品检索对未登录买家也开放（在售商品是公开信息），订单类工具不行：先挂公用的那个。
-        spec = spec.tools(productTools);
+        // 这里必须是 toolCallbacks：tools() 只认带 @Tool 注解的对象，传回调进去会被当成
+        // 待扫描的对象，运行期抛「没有找到 @Tool 方法」。
+        spec = spec.toolCallbacks(recordingProductTools(state));
         if (memberId != null) {
             // 身份在这里进工具上下文，工具签名里不出现它，模型也就改不了它。
             // 未登录时干脆不挂个人查询工具：模型看不到有哪些查询手段，就没有东西可以拿来讲。
+            // 商品工具的签名里不带 ToolContext，所以未登录时不给上下文也不会有问题。
             spec = spec.tools(portalTools)
                     .toolContext(Map.<String, Object>of(AiPortalTools.CONTEXT_MEMBER_ID, memberId));
         }
@@ -172,8 +191,6 @@ public class AiChatService {
 
         long firstTokenTimeout = properties.getChat().getFirstTokenTimeoutMs();
         long streamTimeout = properties.getChat().getStreamTimeoutMs();
-        // 检索状态挂在调用线程上，工具回调回来时把命中的商品主键记在里面，收尾时统一取卡片。
-        AiProductTools.ProductSearchState.begin(AI_CARD_CANDIDATES);
         return Flux.just(AiChatEvent.meta(conversationId, state.refs(), state.hit()))
                 .concatWith(deltas)
                 // 先卡"多久没有新内容"，再卡"整轮最长多久"：前者对应模型侧无响应，后者对应
@@ -183,21 +200,30 @@ public class AiChatService {
                         AiChatEvent.done(conversationId, state.finishReason(), drainCards(state)))))
                 .timeout(Duration.ofMillis(Math.max(1000, streamTimeout)))
                 .map(this::toJson)
-                .onErrorResume(error -> {
-                    // 出错时这一轮不会有卡片下发，检索状态必须就地丢掉：它与线程绑定，留着就会
-                    // 污染这个线程上的下一次请求，让另一个买家的回答里冒出上一位搜过的商品。
-                    AiProductTools.ProductSearchState.discard();
-                    return Flux.just(errorEvent(error));
-                })
+                .onErrorResume(error -> Flux.just(errorEvent(error)))
                 .doFinally(signal -> persist(conversationId, state));
     }
 
     /**
-     * 取出本轮检索命中的商品卡片，并清掉线程上的检索状态。
+     * 把商品工具包一层，让这一轮能收到工具返回里的商品编号。
      *
-     * 无论这一轮有没有检索到商品都必须取一次：状态是 ThreadLocal，不清掉会影响这个线程上的
-     * 下一次请求——买家换个人问，卡片会带着上一位买家的候选。异常收尾走 discard 那条路，
-     * 这里只负责正常结束的那一次。
+     * 包装按轮新建，收集器也就跟着一轮一个，不需要线程局部变量，也不会串到别的买家身上。
+     *
+     * @param state 本轮累积状态
+     * @return 可直接交给对话客户端的工具回调
+     * @author Henfon
+     * @date 2026-09-22
+     */
+    private ToolCallback[] recordingProductTools(StreamState state) {
+        List<ToolCallback> wrapped = new ArrayList<>(productToolCallbacks.length);
+        for (ToolCallback callback : productToolCallbacks) {
+            wrapped.add(new AiProductToolRecorder(callback, state::recordProductIds));
+        }
+        return wrapped.toArray(new ToolCallback[0]);
+    }
+
+    /**
+     * 取出本轮要下发的商品卡片。
      *
      * @param state 本轮累积状态
      * @return 商品卡片，没有检索结果时返回空列表
@@ -205,7 +231,7 @@ public class AiChatService {
      * @date 2026-09-22
      */
     private List<AiProductCard> drainCards(StreamState state) {
-        List<Long> productIds = AiProductTools.ProductSearchState.finish();
+        List<Long> productIds = cardCandidateIds(state);
         if (productIds.isEmpty()) {
             return List.of();
         }
@@ -217,6 +243,43 @@ public class AiChatService {
             log.warn("装配商品卡片失败：{}", exception.getMessage());
             return List.of();
         }
+    }
+
+    /**
+     * 取本轮要出卡片的商品主键，两个来源合并。
+     *
+     * <p>检索命中的 PRODUCT 引用：回答本身就是基于这批引用生成的，用同一批主键出卡片，推荐与
+     * 卡片必然一致。只认工具回调是不够的——提问前的那次检索已经把商品塞进上下文，模型拿到
+     * 现成清单后通常不会再调工具，落库快照里只有 refs、没有 toolCalls。</p>
+     *
+     * <p>商品检索工具的返回：模型判断「资料里没有、再搜一次」时主动调工具，那一批商品不在引用
+     * 里，但同样是它作答的依据，不并进来就会漏卡片。编号由 {@link AiProductToolRecorder} 在
+     * 工具返回时记下。</p>
+     *
+     * <p>工具在前、引用在后：卡片一次只出三张，顺序就是取舍。模型主动调了工具，说明它认为
+     * 手上的资料不够、要按当前提问实时查一遍，那批结果比相似度召回的引用更贴近问题；把引用
+     * 排前面，工具查到的商品会永远挤不进前三，等于这一路白接。重复的主键只算一次。</p>
+     *
+     * @param state 本轮累积状态
+     * @return 商品主键，已去重
+     * @author Henfon
+     * @date 2026-09-22
+     */
+    private List<Long> cardCandidateIds(StreamState state) {
+        LinkedHashSet<Long> ids = new LinkedHashSet<>(state.toolProductIds());
+        for (Ref ref : state.refs) {
+            if (!Ref.SOURCE_PRODUCT.equals(ref.sourceType())) {
+                continue;
+            }
+            try {
+                ids.add(Long.valueOf(ref.sourceId()));
+            } catch (NumberFormatException exception) {
+                // 非数字的来源标识不是商品主键，跳过即可，不值得为它中断整轮回答
+                log.debug("引用来源标识不是商品主键，忽略：{}", ref.sourceId());
+            }
+        }
+        ids.addAll(state.toolProductIds());
+        return List.copyOf(ids);
     }
 
     /**
@@ -341,6 +404,14 @@ public class AiChatService {
         /** 本轮引用到的知识来源。 */
         private final List<Ref> refs;
 
+        /**
+         * 本轮商品检索工具返回里的商品主键。
+         *
+         * 工具在框架内部的线程上执行，与本轮累积文本的不是同一条，所以读写都过同一把锁；
+         * 一轮之内只写几次、末尾读一次，锁的开销可以忽略。
+         */
+        private final Set<Long> toolProductIds = new LinkedHashSet<>();
+
         /** 本轮下发给买家的商品卡片，落库时一并写进消息快照。 */
         private List<AiProductCard> cards = List.of();
 
@@ -358,6 +429,30 @@ public class AiChatService {
         private StreamState(boolean hit, List<Ref> refs) {
             this.hit = hit;
             this.refs = refs;
+        }
+
+        /**
+         * 记下商品检索工具返回的商品主键。
+         *
+         * @param ids 商品主键
+         * @author Henfon
+         * @date 2026-09-22
+         */
+        synchronized void recordProductIds(Collection<Long> ids) {
+            if (ids != null) {
+                toolProductIds.addAll(ids);
+            }
+        }
+
+        /**
+         * 读出本轮工具返回的商品主键。
+         *
+         * @return 商品主键，按工具返回顺序
+         * @author Henfon
+         * @date 2026-09-22
+         */
+        synchronized List<Long> toolProductIds() {
+            return List.copyOf(toolProductIds);
         }
 
         /**

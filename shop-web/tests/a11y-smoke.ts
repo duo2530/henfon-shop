@@ -60,6 +60,33 @@ assert.match(schedule, /<caption className="sr-only">客服一周排班表，点
 assert.ok(schedule.includes('今日服务时段 ${todayWindow.start}-${todayWindow.end}，共 ${todayWindow.agents} 位客服排班'));
 assert.ok(schedule.includes('今日无排班，买家会看到「今天暂无客服值班」'));
 
+// 一键排班：入口带可见文字；生成结果先出预览，确认才写库。
+assert.match(
+  schedule,
+  /<CalendarPlus className="w-4 h-4" \/>\s*一键排班/,
+  '一键排班的入口要带可见文字，与发商品入口同一个道理',
+);
+assert.match(
+  schedule,
+  /role="dialog"\s+aria-modal="true"\s+aria-label="一键排班"/,
+  '排班弹框要有可读名称与模态语义',
+);
+assert.ok(schedule.includes('aria-label="用一句话说明怎么排班"'), '自然语言输入要有可读名称');
+assert.ok(
+  schedule.includes('disabled={!plan || plan.items.length === 0 || applying}'),
+  '没出预览就不能点应用：直接写库会把手工调过的班次悄悄覆盖掉',
+);
+assert.ok(
+  schedule.includes('生成预览') && schedule.includes('确认应用'),
+  '生成与应用要分成两步',
+);
+
+const adminApiSchedule = readFileSync(new URL('../src/api/adminApi.ts', import.meta.url), 'utf8');
+assert.ok(
+  adminApiSchedule.includes("'/api/admin/ai/agent/schedule/plan/apply'"),
+  '应用排班要独立成接口，且回传参数而不是回传计划条目',
+);
+
 // 工作台发商品卡片：挑商品要走服务端搜索，卡片由服务端装配。
 const adminApi = readFileSync(new URL('../src/api/adminApi.ts', import.meta.url), 'utf8');
 assert.ok(adminApi.includes("'snapshot' | 'message' | 'product' |"), '工作台要认推商品的 product 事件');
@@ -70,9 +97,14 @@ assert.ok(
 );
 assert.ok(
   adminApi.includes("'/products'") || adminApi.includes("}/products`"),
-  '推送商品要有独立接口，带上商品主键与说明',
+  '发送商品要有独立接口，带上商品主键与说明',
 );
 assert.ok(workbench.includes('aria-label="发送商品"'), '发商品的入口要有可读名称');
+assert.match(
+  workbench,
+  /<Package className="w-4 h-4" \/>\s*发送商品/,
+  '发商品的入口要带可见文字：只有一个图标时客服认不出来，会以为没有这个功能',
+);
 assert.ok(workbench.includes('aria-label="搜索要发送的商品"'), '商品搜索框要有可读名称');
 assert.ok(
   workbench.includes('setPickerResults(await searchAiAgentProducts(keyword));'),
@@ -90,10 +122,9 @@ assert.ok(
   workbench.includes('aria-haspopup="dialog"'),
   '商品入口要声明它会开出弹框，读屏用户才知道点下去是弹层而不是展开的行内区域',
 );
-assert.ok(
-  workbench.includes('role="dialog"') &&
-    workbench.includes('aria-modal="true"') &&
-    workbench.includes('aria-label="推送商品"'),
+assert.match(
+  workbench,
+  /role="dialog"\s+aria-modal="true"\s+aria-label="发送商品"/,
   '挑商品要用模态弹框，不能挤在输入框上方压掉聊天记录',
 );
 assert.ok(
@@ -105,4 +136,4 @@ assert.ok(
   'Esc 要能关掉商品弹框',
 );
 
-console.log('shop-web 无障碍静态检查通过：跳过链接、主导航语义、菜单状态、管理员菜单标签、铃铛未读角标、操作指南独立页面、客服工作台与会话面板滚动容器、客服排班表说明、工作台发商品卡片（服务端搜索、卡片回显、切会话收起、模态弹框）已覆盖');
+console.log('shop-web 无障碍静态检查通过：跳过链接、主导航语义、菜单状态、管理员菜单标签、铃铛未读角标、操作指南独立页面、客服工作台与会话面板滚动容器、客服排班表说明、工作台发送商品卡片（入口带可见文字、服务端搜索、卡片回显、切会话收起、模态弹框）已覆盖');

@@ -1,7 +1,9 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ArrowLeft,
+  Check,
   Headphones,
+  Link2,
   Loader2,
   MessageSquare,
   Send,
@@ -92,10 +94,60 @@ interface RatingTarget {
 }
 
 /**
+ * 商品详情页的站外可打开地址。
+ *
+ * 门户是 hash 路由，路径部分照抄当前页面，只换 hash：站点挂在子目录下时也站得住，
+ * 而复制出去的链接要能在微信里直接打开，必须是带域名的完整地址。
+ *
+ * @param productId 商品主键
+ * @returns 完整地址
+ */
+function productShareUrl(productId: number): string {
+  return `${window.location.origin}${window.location.pathname}#/product/prod-${productId}`;
+}
+
+/**
+ * 把商品链接写进剪贴板。
+ *
+ * 剪贴板接口只在安全上下文里给（https 与 localhost）；内网用 http 打开时它是 undefined，
+ * 这时退回选中文本再复制的老办法，两者都不行才告诉买家复制失败，不给一个点了没反应的按钮。
+ *
+ * @param url 待复制的地址
+ * @returns 是否复制成功
+ */
+async function copyText(url: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(url);
+      return true;
+    }
+  } catch {
+    // 落到下面的老办法，用户拒绝授权也会走到这里
+  }
+  try {
+    const holder = document.createElement('textarea');
+    holder.value = url;
+    holder.setAttribute('readonly', '');
+    holder.style.position = 'fixed';
+    holder.style.opacity = '0';
+    document.body.appendChild(holder);
+    holder.select();
+    const done = document.execCommand('copy');
+    document.body.removeChild(holder);
+    return done;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * 客服推荐的商品卡片。
  *
- * 卡片整块可点：买家在聊天窗口里看到的就是他要找的东西，让他再回去搜索一遍等于把推荐白做。
- * 跳转走站内路由，不新开页面——一旦开新标签，买家就离开了这次对话。
+ * 卡片主体的整块可点：买家在聊天窗口里看到的就是他要找的东西，让他再回去搜索一遍等于把推荐
+ * 白做。跳转走站内路由，不新开页面——一旦开新标签，买家就离开了这次对话。
+ *
+ * 复制链接是另一件事：买家要把它转到微信给朋友看，站内跳转解决不了，才需要一条能带走的
+ * 绝对地址。它与整卡跳转是两个动作，所以各自一个按钮，不是嵌在一起的一块。
  *
  * @param props 卡片列表与点击回调
  * @returns 卡片区块，没有卡片时返回 null
@@ -104,40 +156,69 @@ const ProductCards: React.FC<{ cards?: PortalAiProductCard[]; onOpen?: (productI
   cards,
   onOpen,
 }) => {
+  const [copied, setCopied] = useState<{ id: number; ok: boolean } | null>(null);
+  const onCopy = async (card: PortalAiProductCard) => {
+    const ok = await copyText(productShareUrl(card.productId));
+    setCopied({ id: card.productId, ok });
+    window.setTimeout(() => setCopied(null), 1600);
+  };
   if (!cards || cards.length === 0) {
     return null;
   }
   return (
     <div className="mt-2 space-y-2">
-      {cards.map((card) => (
-        <button
-          key={card.productId}
-          type="button"
-          onClick={() => onOpen?.(card.productId)}
-          className="w-full flex items-center gap-3 p-2 text-left bg-white border border-zinc-200 rounded-lg hover:border-zinc-400 hover:shadow-sm transition"
-        >
-          {card.imageUrl ? (
-            <img
-              src={card.imageUrl}
-              alt={card.title ?? ''}
-              className="w-14 h-14 object-cover rounded-md bg-zinc-100 shrink-0"
-              loading="lazy"
-            />
-          ) : (
-            <div className="w-14 h-14 rounded-md bg-zinc-100 shrink-0" />
-          )}
-          <div className="min-w-0 flex-1">
-            <div className="text-sm text-zinc-800 line-clamp-2">{card.title}</div>
-            {card.note && <div className="mt-0.5 text-[11px] text-zinc-500 truncate">{card.note}</div>}
-            <div className="mt-1 flex items-baseline gap-2">
-              {card.price && <span className="text-sm font-semibold text-rose-600">¥{card.price}</span>}
-              {card.marketPrice && card.marketPrice !== card.price && (
-                <span className="text-xs text-zinc-400 line-through">¥{card.marketPrice}</span>
+      {cards.map((card) => {
+        const done = copied?.id === card.productId;
+        return (
+          <div
+            key={card.productId}
+            className="flex items-center gap-1 p-2 bg-white border border-zinc-200 rounded-lg hover:border-zinc-400 transition"
+          >
+            <button
+              type="button"
+              onClick={() => onOpen?.(card.productId)}
+              className="flex flex-1 min-w-0 items-center gap-3 text-left"
+            >
+              {card.imageUrl ? (
+                <img
+                  src={card.imageUrl}
+                  alt={card.title ?? ''}
+                  className="w-14 h-14 object-cover rounded-md bg-zinc-100 shrink-0"
+                  loading="lazy"
+                />
+              ) : (
+                <div className="w-14 h-14 rounded-md bg-zinc-100 shrink-0" />
               )}
-            </div>
+              <div className="min-w-0 flex-1">
+                <div className="text-sm text-zinc-800 line-clamp-2">{card.title}</div>
+                {card.note && <div className="mt-0.5 text-[11px] text-zinc-500 truncate">{card.note}</div>}
+                <div className="mt-1 flex items-baseline gap-2">
+                  {card.price && <span className="text-sm font-semibold text-rose-600">¥{card.price}</span>}
+                  {card.marketPrice && card.marketPrice !== card.price && (
+                    <span className="text-xs text-zinc-400 line-through">¥{card.marketPrice}</span>
+                  )}
+                </div>
+              </div>
+            </button>
+            <button
+              type="button"
+              onClick={() => void onCopy(card)}
+              aria-label={done ? (copied?.ok ? '链接已复制' : '复制失败') : `复制「${card.title ?? '商品'}」的链接`}
+              title="复制链接"
+              className={`shrink-0 inline-flex items-center gap-1 px-1.5 py-1 rounded text-[11px] ${
+                done && copied?.ok ? 'text-emerald-600' : done ? 'text-rose-500' : 'text-zinc-500 hover:text-zinc-800'
+              }`}
+            >
+              {done && copied?.ok ? (
+                <Check className="w-3.5 h-3.5" />
+              ) : (
+                <Link2 className="w-3.5 h-3.5" />
+              )}
+              {done ? (copied?.ok ? '已复制' : '复制失败') : '复制链接'}
+            </button>
           </div>
-        </button>
-      ))}
+        );
+      })}
     </div>
   );
 };

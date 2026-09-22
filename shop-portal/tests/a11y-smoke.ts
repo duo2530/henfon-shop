@@ -216,6 +216,16 @@ assert.ok(
   supportWidget.includes('onOpenProduct,') && supportWidget.includes('onOpen={onOpenProduct}'),
   '跳转能力由 App 注入，客服组件不自己拼路由',
 );
+// 复制链接：卡片要能带出站外，链接必须是带域名的绝对地址，按钮还得有可见文字。
+assert.ok(
+  supportWidget.includes('function productShareUrl(productId: number)') &&
+    supportWidget.includes('${window.location.origin}${window.location.pathname}#/product/prod-${productId}'),
+  '复制出去的链接要带域名，站内 hash 在微信里打不开',
+);
+assert.ok(
+  supportWidget.includes("'复制链接'") && supportWidget.includes("'已复制'"),
+  '复制按钮要有可见文字与结果反馈，不能只留一个图标',
+);
 assert.ok(
   supportWidget.includes('patchMessage(assistantId, { pending: false, cards: event.cards });'),
   '智能客服的卡片随 done 事件下发，不进 delta 正文',
@@ -229,4 +239,4 @@ assert.ok(
   'App 要把商品 ID 归一成门户路由再跳转',
 );
 
-console.log('shop-portal 无障碍静态检查通过：跳过链接、中文语言、搜索 ARIA、左侧类目树（浮层与抽屉两态）、轮播位常驻、商品区栅格、领券横幅与券弹层（含不透明底色、英文枚举中文映射）、商品详情与个人中心整页（无弹层语义、页面级 h1、入口全部走路由）、客服悬浮入口（纯图标入口、条件闪烁、排队文案、评价弹层语义与结束后读回历史）、客服商品卡片（整卡可点、随 done 下发、历史读回带卡片）已覆盖');
+console.log('shop-portal 无障碍静态检查通过：跳过链接、中文语言、搜索 ARIA、左侧类目树（浮层与抽屉两态）、轮播位常驻、商品区栅格、领券横幅与券弹层（含不透明底色、英文枚举中文映射）、商品详情与个人中心整页（无弹层语义、页面级 h1、入口全部走路由）、客服悬浮入口（纯图标入口、条件闪烁、排队文案、评价弹层语义与结束后读回历史）、客服商品卡片（整卡可点、随 done 下发、历史读回带卡片、复制带域名的链接）已覆盖');

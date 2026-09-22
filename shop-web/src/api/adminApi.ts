@@ -2135,6 +2135,43 @@ export interface BackendAiScheduleBoard {
   schedules: BackendAiSchedule[];
 }
 
+/** 一键排班的生成参数。 */
+export interface AiSchedulePlanRequest {
+  /** 覆盖开始的时刻，HH:mm。 */
+  startTime: string;
+  endTime: string;
+  /** 同一时刻需要几个人在岗。 */
+  perDay?: number;
+  /** 生成哪几天：1 周一 至 7 周日，不传为整周。 */
+  weekdays?: number[];
+  /** 单人单班最多几小时，超过就把一天拆成几段。 */
+  maxShiftHours?: number;
+  /** 每人每周最多排几个班，用来留休。 */
+  maxShiftsPerAgent?: number;
+  /** 是否删除范围内没被覆盖到的旧班次。 */
+  clearUncovered?: boolean;
+}
+
+/** 排班计划里的一条变动。 */
+export interface AiSchedulePlanItem {
+  change: 'ADD' | 'UPDATE' | 'REMOVE';
+  agentId: number;
+  agentName?: string;
+  weekday: number;
+  startTime?: string | null;
+  endTime?: string | null;
+  /** 原来的开始时间，新增时为空。 */
+  previousStart?: string | null;
+  previousEnd?: string | null;
+}
+
+/** 排班计划：将要发生的变动与体检提醒，不含未变动的班次。 */
+export interface AiSchedulePlan {
+  items: AiSchedulePlanItem[];
+  warnings: string[];
+  shiftCounts: string[];
+}
+
 /** 客服工作台顶部的坐席状态卡。 */
 export interface BackendAiAgentDesk {
   agentId: number;
@@ -2264,6 +2301,30 @@ export function deleteAiAgentSchedule(id: number): Promise<void> {
   return request<void>(`/api/admin/ai/agent/schedule/${id}`, { method: 'DELETE' });
 }
 
+/** 按参数生成排班计划，只算不写。 */
+export function planAiAgentSchedule(payload: AiSchedulePlanRequest): Promise<AiSchedulePlan> {
+  return request<AiSchedulePlan>('/api/admin/ai/agent/schedule/plan', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+/** 按参数生成并写入排班。传参数而不是传计划，保证写入的就是预览的那一份。 */
+export function applyAiAgentSchedulePlan(payload: AiSchedulePlanRequest): Promise<AiSchedulePlan> {
+  return request<AiSchedulePlan>('/api/admin/ai/agent/schedule/plan/apply', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+/** 把一句排班要求翻译成生成参数，AI 未启用时会报错。 */
+export function parseAiAgentSchedulePlan(text: string): Promise<AiSchedulePlanRequest> {
+  return request<AiSchedulePlanRequest>('/api/admin/ai/agent/schedule/plan/parse', {
+    method: 'POST',
+    body: JSON.stringify({ text }),
+  });
+}
+
 /** 等待人工接入的会话，先来先服务。 */
 export function listAiAgentQueue(): Promise<BackendAiAgentSession[]> {
   return request<BackendAiAgentSession[]>('/api/admin/ai/agent/queue');
@@ -2301,7 +2362,7 @@ export function searchAiAgentProducts(keyword: string, limit = 6): Promise<Backe
   );
 }
 
-/** 推送商品卡片给买家。 */
+/** 发送商品卡片给买家。 */
 export function sendAiAgentProduct(
   conversationId: string,
   productId: number,
