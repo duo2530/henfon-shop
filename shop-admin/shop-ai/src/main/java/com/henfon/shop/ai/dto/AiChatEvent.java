@@ -22,6 +22,7 @@ import java.util.List;
  * @param finishReason 结束原因，仅 done 事件携带，length 表示被输出长度上限截断
  * @param code 异常分类，仅 error 事件携带，前端据此区分配额拒绝与模型故障
  * @param message 异常说明，仅 error 事件携带
+ * @param cards 商品卡片，仅 done 事件携带；模型这轮如果检索了商品，卡片随回答一起下发
  * @author Henfon
  * @date 2026-09-21
  */
@@ -33,7 +34,8 @@ public record AiChatEvent(String type,
                           Boolean hit,
                           String finishReason,
                           String code,
-                          String message) {
+                          String message,
+                          List<AiProductCard> cards) {
 
     /**
      * 会话信息事件。
@@ -46,7 +48,7 @@ public record AiChatEvent(String type,
      * @date 2026-09-21
      */
     public static AiChatEvent meta(String conversationId, List<Ref> refs, boolean hit) {
-        return new AiChatEvent("meta", conversationId, null, refs, hit, null, null, null);
+        return new AiChatEvent("meta", conversationId, null, refs, hit, null, null, null, null);
     }
 
     /**
@@ -58,7 +60,7 @@ public record AiChatEvent(String type,
      * @date 2026-09-21
      */
     public static AiChatEvent delta(String content) {
-        return new AiChatEvent("delta", null, content, null, null, null, null, null);
+        return new AiChatEvent("delta", null, content, null, null, null, null, null, null);
     }
 
     /**
@@ -71,7 +73,25 @@ public record AiChatEvent(String type,
      * @date 2026-09-21
      */
     public static AiChatEvent done(String conversationId, String finishReason) {
-        return new AiChatEvent("done", conversationId, null, null, null, finishReason, null, null);
+        return new AiChatEvent("done", conversationId, null, null, null, finishReason, null, null, null);
+    }
+
+    /**
+     * 正常结束事件，带上本轮检索到的商品卡片。
+     *
+     * 卡片挂在 done 上而不是单独一个事件：前端此时已经收完正文，把卡片与正文一次性落进同一个
+     * 气泡，不需要再维护"卡片比正文晚到、气泡要二次更新"这种中间态。
+     *
+     * @param conversationId 会话标识
+     * @param finishReason 结束原因
+     * @param cards 商品卡片
+     * @return 事件
+     * @author Henfon
+     * @date 2026-09-22
+     */
+    public static AiChatEvent done(String conversationId, String finishReason, List<AiProductCard> cards) {
+        return new AiChatEvent("done", conversationId, null, null, null, finishReason, null, null,
+                cards == null || cards.isEmpty() ? null : cards);
     }
 
     /**
@@ -84,6 +104,6 @@ public record AiChatEvent(String type,
      * @date 2026-09-21
      */
     public static AiChatEvent error(String code, String message) {
-        return new AiChatEvent("error", null, null, null, null, null, code, message);
+        return new AiChatEvent("error", null, null, null, null, null, code, message, null);
     }
 }

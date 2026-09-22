@@ -1198,6 +1198,20 @@ export async function setDefaultPortalAddress(memberId: number, addressId: numbe
   return request<void>(`/api/portal/member/addresses/${addressId}/default?memberId=${memberId}`, { method: 'PUT' });
 }
 
+/** 客服推荐的商品卡片，标题、图片、价格与链接都由服务端组装好。 */
+export interface PortalAiProductCard {
+  productId: number;
+  title?: string;
+  /** 已换发的可访问图片地址，直接放进 img 即可，不需要前端再拼域名。 */
+  imageUrl?: string;
+  price?: string;
+  marketPrice?: string;
+  /** 站内路由地址，如 #/product/prod-12。 */
+  url?: string;
+  /** 客服随卡片写的一句话。 */
+  note?: string;
+}
+
 /** 客服对话的流式事件，与后端 AiChatEvent 一一对应。 */
 export interface PortalAiChatEvent {
   type: 'meta' | 'delta' | 'done' | 'error';
@@ -1210,6 +1224,8 @@ export interface PortalAiChatEvent {
   /** 异常分类，用于把配额拒绝与模型故障分开呈现。 */
   code?: string;
   message?: string;
+  /** 本轮推荐的商品卡片，仅 done 携带。 */
+  cards?: PortalAiProductCard[];
 }
 
 /**
@@ -1219,6 +1235,29 @@ export interface PortalAiChatEvent {
  */
 export async function fetchPortalAiStatus(): Promise<{ enabled: boolean }> {
   return request<{ enabled: boolean }>('/api/portal/ai/status');
+}
+
+/** 会话里的一条历史消息；sender 决定气泡归属，人工客服与智能客服要能分开。 */
+export interface PortalAiConversationMessage {
+  /** 会话内序号，用于与界面上已有的消息对齐去重。 */
+  sequence?: number;
+  role: string;
+  /** MEMBER 买家，AI 智能客服，AGENT 人工客服。 */
+  sender: 'MEMBER' | 'AI' | 'AGENT';
+  content: string;
+  createdAt?: string;
+  /** 随消息一起下发的商品卡片，刷新页面后从历史记录里读回来。 */
+  cards?: PortalAiProductCard[];
+}
+
+/**
+ * 读取会话的历史消息。
+ *
+ * 刷新页面后靠它把聊天记录续上；人工会话也用它——比等服务端推快照来得早一步，
+ * 界面不会在连接建立前空着。
+ */
+export async function fetchPortalAiConversationMessages(conversationId: string): Promise<PortalAiConversationMessage[]> {
+  return request<PortalAiConversationMessage[]>(`/api/portal/ai/conversations/${encodeURIComponent(conversationId)}/messages`);
 }
 
 /**
@@ -1307,4 +1346,215 @@ export async function submitPortalAiTicket(payload: {
     method: 'POST',
     body: JSON.stringify(payload),
   });
+}
+
+/** 分页结构，字段与后端 MyBatis-Plus 的 IPage 对齐。 */
+export interface PortalPage<T> {
+  records: T[];
+  total: number;
+  current: number;
+  pages: number;
+}
+
+/** 买家在「我的工单」里看到的记录；内部处理备注与处理人不下发。 */
+export interface PortalAiTicketRecord {
+  id: number;
+  ticketNo?: string;
+  question: string;
+  status: 'PENDING' | 'PROCESSING' | 'CLOSED';
+  /** 客服回复内容，未回复为空。 */
+  reply?: string;
+  repliedAt?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+/** 查询自己提交过的工单。 */
+export async function fetchPortalAiTickets(current = 1, size = 10): Promise<PortalPage<PortalAiTicketRecord>> {
+  return request<PortalPage<PortalAiTicketRecord>>(`/api/portal/ai/tickets?current=${current}&size=${size}`);
+}
+
+/** 查询自己某张工单的详情。 */
+export async function fetchPortalAiTicketDetail(id: number): Promise<PortalAiTicketRecord> {
+  return request<PortalAiTicketRecord>(`/api/portal/ai/tickets/${id}`);
+}
+
+/** 人工客服会话状态，买家侧只关心"谁在接待、排了多久"。 */
+export interface PortalAiAgentState {
+  conversationId: string;
+  /** AI 智能客服 / WAITING 等待接入 / HUMAN 人工接待中。 */
+  serviceMode: 'AI' | 'WAITING' | 'HUMAN';
+  title?: string;
+  messageCount?: number;
+  waitingSeconds?: number | null;
+}
+
+/** 人工会话里的一条消息。 */
+export interface PortalAiAgentMessage {
+  sequence: number;
+  /** MEMBER 自己 / AI 智能客服 / AGENT 人工客服。 */
+  from: 'MEMBER' | 'AI' | 'AGENT';
+  content: string;
+  createdAt?: string;
+  /** 随消息一起下发的商品卡片，客服推商品时携带。 */
+  cards?: PortalAiProductCard[];
+}
+
+/** 人工会话的长连接事件。 */
+export interface PortalAiAgentEvent {
+  /** snapshot 订阅快照 / message 新消息 / product 商品卡片 / state 接待状态变化 / ended 人工接待结束 / idle 空闲催办 / ping 心跳。 */
+  type: 'snapshot' | 'message' | 'product' | 'state' | 'ended' | 'idle' | 'ping';
+  conversationId: string;
+  serviceMode?: string;
+  agentId?: number | null;
+  messages?: PortalAiAgentMessage[];
+  message?: PortalAiAgentMessage;
+  /** 已空闲的分钟数，仅 idle 携带。 */
+  idleMinutes?: number;
+}
+
+/**
+ * 买家主动结束本次人工咨询。
+ *
+ * 客服忘点「结束服务」是常事（去处理别的会话、下班、直接关了浏览器），会话会一直挂在
+ * 人工接待上：买家提问被拦住、智能客服也用不了。所以给买家一个出口，不必干等自动回收。
+ */
+export async function endPortalAiAgentSession(conversationId: string): Promise<void> {
+  await request<void>('/api/portal/ai/agent/end', {
+    method: 'POST',
+    body: JSON.stringify({ conversationId }),
+  });
+}
+
+/** 请求转人工，成功后进入等待队列。 */
+export async function requestPortalAiAgent(conversationId: string): Promise<PortalAiAgentState> {
+  return request<PortalAiAgentState>('/api/portal/ai/agent/request', {
+    method: 'POST',
+    body: JSON.stringify({ conversationId }),
+  });
+}
+
+/** 查询会话当前的接待状态，用于刷新页面后恢复上一次的人工会话。 */
+export async function fetchPortalAiAgentState(conversationId: string): Promise<PortalAiAgentState> {
+  return request<PortalAiAgentState>(`/api/portal/ai/agent/state?conversationId=${encodeURIComponent(conversationId)}`);
+}
+
+/** 在人工会话里发送消息。 */
+export async function sendPortalAiAgentMessage(conversationId: string, content: string): Promise<PortalAiAgentMessage> {
+  return request<PortalAiAgentMessage>('/api/portal/ai/agent/messages', {
+    method: 'POST',
+    body: JSON.stringify({ conversationId, content }),
+  });
+}
+
+/**
+ * 订阅人工会话的消息流。
+ *
+ * 与 AI 对话的流式接口一样自己解析 SSE：那条 request 封装会把响应当统一 JSON 解，
+ * 而这里的响应体是一串事件。
+ */
+export async function streamPortalAiAgent(params: {
+  conversationId: string;
+  signal: AbortSignal;
+  onEvent: (event: PortalAiAgentEvent) => void;
+  onError?: (error: unknown) => void;
+}): Promise<void> {
+  const token = localStorage.getItem(MEMBER_TOKEN_KEY);
+  try {
+    const response = await fetch(
+      `${API_BASE_URL}/api/portal/ai/agent/stream?conversationId=${encodeURIComponent(params.conversationId)}`,
+      {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        signal: params.signal,
+      },
+    );
+    if (!response.ok) {
+      const body = await response.json().catch(() => null) as ApiResponse<unknown> | null;
+      throw new Error(body?.message || `客服连接失败（${response.status}）`);
+    }
+    if (!response.body) {
+      throw new Error('当前浏览器不支持实时消息');
+    }
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder('utf-8');
+    let buffer = '';
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer = (buffer + decoder.decode(value, { stream: true })).replace(/\r\n/g, '\n');
+      let boundary = buffer.indexOf('\n\n');
+      while (boundary >= 0) {
+        const payload = readSseData(buffer.slice(0, boundary));
+        buffer = buffer.slice(boundary + 2);
+        if (payload) {
+          try {
+            params.onEvent(JSON.parse(payload) as PortalAiAgentEvent);
+          } catch {
+            // 单个分片解析失败不中断整条流。
+          }
+        }
+        boundary = buffer.indexOf('\n\n');
+      }
+    }
+  } catch (error) {
+    // 主动 abort（关闭窗口、组件卸载）是正常路径，不当成故障提示。
+    if (error instanceof DOMException && error.name === 'AbortError') return;
+    params.onError?.(error);
+  }
+}
+
+/**
+ * 买家侧的转人工可用性。
+ *
+ * 免登录可查，所以未登录的访客也能在点「转人工」之前知道现在有没有人接。文案由服务端给，
+ * 前端只负责展示——同一句提示在两处各写一遍，迟早会出现口径不一致。
+ */
+export interface PortalAiAgentAvailability {
+  /** 当前是否可以转人工，false 时前端不应放行。 */
+  accepting: boolean;
+  /** 在线坐席数。 */
+  onlineAgents: number;
+  /** 正在排队等待接入的会话数。 */
+  waitingCount: number;
+  /** 预计等待秒数，无需排队时为 0。 */
+  estimatedWaitSeconds?: number | null;
+  /** ONLINE 可接入 / NO_AGENT 服务时段内无人在线 / OFF_HOURS 非服务时间。 */
+  reason: 'ONLINE' | 'NO_AGENT' | 'OFF_HOURS';
+  /** 当日服务时段，如 09:00-21:00；当天无排班时为空。 */
+  serviceWindow?: string | null;
+  /** 直接展示给买家的一句话。 */
+  message: string;
+}
+
+/** 查询当前是否可以转人工。 */
+export async function fetchPortalAiAgentAvailability(): Promise<PortalAiAgentAvailability> {
+  return request<PortalAiAgentAvailability>('/api/portal/ai/agent/availability');
+}
+
+/** 待买家补评价的人工会话：客服结束会话时买家已经关掉页面才会有。 */
+export interface PortalAiPendingRating {
+  conversationId: string;
+  agentId?: number | null;
+  agentName?: string;
+  /** 会话标题，帮买家回忆起是哪一次咨询。 */
+  title?: string;
+  endedAt?: string;
+}
+
+/** 查询还没评价的最近一次人工服务，没有则返回 null。 */
+export async function fetchPortalAiPendingRating(): Promise<PortalAiPendingRating | null> {
+  return request<PortalAiPendingRating | null>('/api/portal/ai/agent/rating/pending');
+}
+
+/** 提交本次人工服务的满意度评价。评分必填，标签与留言可空，重复提交按幂等处理。 */
+export async function submitPortalAiRating(payload: {
+  conversationId: string;
+  score: number;
+  tags?: string[];
+  comment?: string;
+}): Promise<{ conversationId: string; score: number; tags?: string[]; comment?: string; agentName?: string }> {
+  return request<{ conversationId: string; score: number; tags?: string[]; comment?: string; agentName?: string }>(
+    '/api/portal/ai/agent/rating',
+    { method: 'POST', body: JSON.stringify(payload) },
+  );
 }

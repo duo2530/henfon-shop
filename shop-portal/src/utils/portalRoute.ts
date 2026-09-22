@@ -28,9 +28,9 @@ function readProductTab(value: string | null): ProductTab | undefined {
  * `profile` 是缺省值，地址上不给它单独留一段（`#/account` 就是它），
  * 这样同一个画面只有一种地址；带 `profile` 的地址仍能解析，只是归一化后与前者相同。
  */
-export type AccountSection = 'profile' | 'coupons' | 'reviews';
+export type AccountSection = 'profile' | 'coupons' | 'reviews' | 'tickets';
 
-const ACCOUNT_SECTIONS: readonly AccountSection[] = ['profile', 'coupons', 'reviews'];
+const ACCOUNT_SECTIONS: readonly AccountSection[] = ['profile', 'coupons', 'reviews', 'tickets'];
 
 function readAccountSection(value: string | undefined): AccountSection | undefined {
   return ACCOUNT_SECTIONS.includes(value as AccountSection) ? (value as AccountSection) : undefined;

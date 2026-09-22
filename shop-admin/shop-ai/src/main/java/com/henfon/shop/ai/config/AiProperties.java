@@ -36,6 +36,8 @@ public class AiProperties {
 
     private Limit limit = new Limit();
 
+    private Agent agent = new Agent();
+
     /**
      * Qdrant 连接参数。
      *
@@ -119,6 +121,26 @@ public class AiProperties {
         private long throttleMs = 200;
         /** 单次全量任务最多处理的商品数，0 表示不限制。 */
         private int maxItems = 0;
+    }
+
+    /**
+     * 人工接待的空闲回收。
+     *
+     * 人工会话的状态原本只由客服点「结束服务」推进，客服去忙别的、下班忘了点、或者浏览器直接
+     * 关掉，会话就永久停在 HUMAN：买家那边一直显示"人工客服正在接待"，长连接挂着，连提问都被
+     * 拦住（HUMAN 状态下走的是人工链路，智能客服不可用）。所以必须有一道时间闸把它收回来。
+     *
+     * 两道闸的分工：催办是"提醒"，只推一条提示给客服，不动状态，避免客服正看着买家打字时
+     * 会话被系统抢走；回收是"兜底"，到点仍无消息才真的结束，把买家交回智能客服。
+     */
+    @Data
+    public static class Agent {
+        /** 空闲多久给接待客服推一条催办提示，0 表示不催办。 */
+        private long idleRemindMinutes = 15;
+        /** 空闲多久自动结束人工接待、退回智能客服，0 表示不回收。 */
+        private long idleCloseMinutes = 30;
+        /** 单轮扫描处理的会话条数上限，防止积压时一次读进太多。 */
+        private int scanLimit = 200;
     }
 
     /**

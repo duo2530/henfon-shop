@@ -151,6 +151,40 @@ public class CatalogPortalService {
     }
 
     /**
+     * 按主键批量查询上架商品，封面地址已换成当前可访问的地址。
+     *
+     * 与 {@link #page} 的区别只在筛选条件：调用方手里已经有确定的主键（例如客服消息里要回填的
+     * 商品卡片），不需要再按关键词或类目过滤。上架条件是刻意保留的——下架商品出现在对话里，
+     * 买家点开就是一个「商品不存在」的页面。
+     *
+     * 返回顺序不保证与传入顺序一致，由调用方按自己的主键顺序排列：查询走的是 IN 条件，
+     * 数据库不承诺返回顺序，在这里排一遍只是把同一件事做了两次。
+     *
+     * @param productIds 商品主键列表
+     * @return 商品列表，入参为空或都查不到时返回空列表
+     * @author Henfon
+     * @date 2026-09-22
+     */
+    public List<CatalogProduct> byIds(List<Long> productIds) {
+        if (productIds == null || productIds.isEmpty()) {
+            return List.of();
+        }
+        List<Long> ids = productIds.stream().filter(java.util.Objects::nonNull).distinct().toList();
+        if (ids.isEmpty()) {
+            return List.of();
+        }
+        List<CatalogProduct> products = productMapper.selectList(new LambdaQueryWrapper<CatalogProduct>()
+                .in(CatalogProduct::getId, ids)
+                .eq(CatalogProduct::getStatus, 1));
+        if (products == null || products.isEmpty()) {
+            return List.of();
+        }
+        // 与列表、详情两个入口保持同一口径：封面一律当场换发地址，库里存的可能是对象键。
+        refreshMainImageUrls(products);
+        return products;
+    }
+
+    /**
      * 根据 SKU 编码、名称或属性 JSON 查找商品ID集合。
      *
      * @param skuKeyword SKU 查询关键字

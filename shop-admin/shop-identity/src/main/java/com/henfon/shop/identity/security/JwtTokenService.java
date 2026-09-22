@@ -64,6 +64,7 @@ public class JwtTokenService {
                 .claim("username", user.getUsername())
                 .claim("tenantId", user.getTenantId())
                 .claim("userType", "ADMIN")
+                .claim("displayName", adminDisplayName(user))
                 .id(tokenId)
                 .claim("permissions", permissions == null ? List.of() : List.copyOf(permissions))
                 .issuedAt(Date.from(issuedAt))
@@ -123,7 +124,33 @@ public class JwtTokenService {
         return new AuthenticatedUser(Long.valueOf(claims.getSubject()),
                 tenantId == null ? 0L : tenantId.longValue(),
                 claims.get("username", String.class), permissions,
-                userTypeClaim == null ? "ADMIN" : String.valueOf(userTypeClaim), claims.getId());
+                userTypeClaim == null ? "ADMIN" : String.valueOf(userTypeClaim), claims.getId(),
+                claims.get("displayName", String.class));
+    }
+
+    /**
+     * 取管理员的展示名称。
+     *
+     * 与 {@code AiAgentDirectory.displayName(SysUser)} 同一套降级顺序（真实姓名 → 昵称 → 账号）。
+     * 令牌里带上它，是为了让客服工作台发出的商品卡片能直接写出"是哪位客服推荐的"，
+     * 不必在每次插入商品时再回库查一遍账号表。
+     *
+     * @param user 管理员账号
+     * @return 展示名称
+     * @author Henfon
+     * @date 2026-09-22
+     */
+    private String adminDisplayName(SysUser user) {
+        if (user == null) {
+            return null;
+        }
+        if (user.getRealName() != null && !user.getRealName().isBlank()) {
+            return user.getRealName().trim();
+        }
+        if (user.getNickname() != null && !user.getNickname().isBlank()) {
+            return user.getNickname().trim();
+        }
+        return user.getUsername();
     }
 
     /**

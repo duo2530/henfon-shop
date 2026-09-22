@@ -7,6 +7,7 @@ import com.henfon.shop.ai.entity.AiMessage;
 import com.henfon.shop.ai.service.AiChatRateLimiter;
 import com.henfon.shop.ai.service.AiChatService;
 import com.henfon.shop.ai.service.AiConversationService;
+import com.henfon.shop.ai.service.AiProductCardReader;
 import com.henfon.shop.common.api.ApiResponse;
 import com.henfon.shop.identity.security.AuthenticatedUser;
 import jakarta.servlet.http.HttpServletRequest;
@@ -54,21 +55,26 @@ public class AiPortalController {
 
     private final AiChatRateLimiter rateLimiter;
 
+    private final ObjectProvider<AiProductCardReader> cardReaderProvider;
+
     /**
      * 创建门户客服控制器。
      *
      * @param chatServiceProvider 对话编排服务，AI 未启用时为空
      * @param conversationService 会话管理服务
      * @param rateLimiter 提问配额计数器
+     * @param cardReaderProvider 商品卡片读取器，AI 未启用时为空
      * @author Henfon
      * @date 2026-09-21
      */
     public AiPortalController(ObjectProvider<AiChatService> chatServiceProvider,
                               AiConversationService conversationService,
-                              AiChatRateLimiter rateLimiter) {
+                              AiChatRateLimiter rateLimiter,
+                              ObjectProvider<AiProductCardReader> cardReaderProvider) {
         this.chatServiceProvider = chatServiceProvider;
         this.conversationService = conversationService;
         this.rateLimiter = rateLimiter;
+        this.cardReaderProvider = cardReaderProvider;
     }
 
     /**
@@ -134,11 +140,12 @@ public class AiPortalController {
                                                      Authentication authentication) {
         AiConversation conversation = conversationService.requireAccessible(conversationId,
                 AiConversationService.CHANNEL_PORTAL, memberId(authentication));
+        AiProductCardReader cardReader = cardReader();
         List<AiChatMessage> messages = conversationService.messages(conversation.getConversationId()).stream()
                 // 工具消息对买家没有意义，且正文为空，过滤掉可以避免前端渲染出空气泡。
                 .filter(message -> AiMessage.ROLE_USER.equals(message.getRole())
                         || AiMessage.ROLE_ASSISTANT.equals(message.getRole()))
-                .map(AiChatMessage::from)
+                .map(message -> AiChatMessage.from(message, cardReader == null ? null : cardReader::read))
                 .toList();
         return ApiResponse.success(messages, requestId());
     }
@@ -156,6 +163,19 @@ public class AiPortalController {
             return null;
         }
         return "MEMBER".equals(user.userType()) ? user.userId() : null;
+    }
+
+    /**
+     * 取商品卡片读取器。
+     *
+     * 读历史消息时卡片是可选内容，AI 未启用时这条路径本来也没有卡片可读，所以不要求装配。
+     *
+     * @return 读取器，未装配时返回空
+     * @author Henfon
+     * @date 2026-09-22
+     */
+    private AiProductCardReader cardReader() {
+        return cardReaderProvider.getIfAvailable();
     }
 
     /**

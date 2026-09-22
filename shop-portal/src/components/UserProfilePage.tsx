@@ -16,9 +16,11 @@ import {
   Calendar,
   Layers,
   Star,
+  Headphones,
 } from 'lucide-react';
 import { UserProfile, MemberLevel, Coupon, Order, Product } from '../types/ecommerce';
 import type { AccountSection } from '../utils/portalRoute';
+import { MyTicketsPanel } from './MyTicketsPanel';
 import {
   PortalReviewRecord,
   fetchPortalMyReviews,
@@ -78,6 +80,7 @@ const SECTIONS: { key: AccountSection; label: string }[] = [
   { key: 'profile', label: '资料与特权' },
   { key: 'coupons', label: '我的券包' },
   { key: 'reviews', label: '我的评价' },
+  { key: 'tickets', label: '我的工单' },
 ];
 
 /**
@@ -243,7 +246,7 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({
         </button>
       </div>
 
-      {/* 子视图切换：三个子视图各有一条地址，刷新与分享链接都能落回同一屏。 */}
+      {/* 子视图切换：四个子视图各有一条地址，刷新与分享链接都能落回同一屏。 */}
       <nav aria-label="个人中心分栏" className="flex flex-wrap gap-1.5 rounded-2xl border border-zinc-200/90 bg-white p-2 shadow-xs">
         {SECTIONS.map(({ key, label }) => {
           const isActive = section === key;
@@ -358,7 +361,10 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({
 
         {/* Page Body */}
         <div className="p-6 space-y-5">
-          {section === 'coupons' ? (
+          {section === 'tickets' ? (
+            /* 我的工单：提交过的转人工工单与客服回复，与客服窗口的实时会话是两条独立链路。 */
+            <MyTicketsPanel />
+          ) : section === 'coupons' ? (
             /* My Claimed Coupons View */
             <div className="space-y-4">
               <div className="flex items-center justify-between">
@@ -699,6 +705,21 @@ export const UserProfilePage: React.FC<UserProfilePageProps> = ({
                     <div>
                       <span className="text-xs font-bold text-zinc-900 block">我的评价</span>
                       <span className="text-[10px] text-zinc-500">{myReviews.length} 条 · 审核后可追评</span>
+                    </div>
+                  </div>
+                </button>
+
+                <button
+                  onClick={() => onSelectSection('tickets')}
+                  className="p-3 rounded-2xl bg-zinc-50 hover:bg-zinc-100 border border-zinc-200/70 text-left transition flex items-center justify-between group"
+                >
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-xl bg-zinc-700 text-white flex items-center justify-center">
+                      <Headphones className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <span className="text-xs font-bold text-zinc-900 block">我的工单</span>
+                      <span className="text-[10px] text-zinc-500">查看客服回复</span>
                     </div>
                   </div>
                 </button>

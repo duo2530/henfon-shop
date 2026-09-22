@@ -30,6 +30,9 @@ import { BannerManagementView } from './components/content/BannerManagementView'
 import { ReviewManagementView } from './components/content/ReviewManagementView';
 import { AiTicketManagementView } from './components/content/AiTicketManagementView';
 import { AiKnowledgeView } from './components/content/AiKnowledgeView';
+import { AiAgentWorkbenchView } from './components/content/AiAgentWorkbenchView';
+import { AiAgentScheduleView } from './components/content/AiAgentScheduleView';
+import { AiAgentStatsView } from './components/content/AiAgentStatsView';
 import { SettingsView } from './components/settings/SettingsView';
 import { LoginLogManagementView } from './components/settings/LoginLogManagementView';
 import { OperationLogManagementView } from './components/settings/OperationLogManagementView';
@@ -118,9 +121,12 @@ const AdminLayoutContent: React.FC = () => {
         {hasCurrentTab && currentTab === 'content_banners' && <BannerManagementView />}
         {hasCurrentTab && currentTab === 'content_reviews' && <ReviewManagementView />}
 
-        {/* AI 客服 */}
+        {/* 客服中心 */}
         {hasCurrentTab && currentTab === 'ai_tickets' && <AiTicketManagementView />}
         {hasCurrentTab && currentTab === 'ai_knowledge' && <AiKnowledgeView />}
+        {hasCurrentTab && currentTab === 'ai_agent' && <AiAgentWorkbenchView />}
+        {hasCurrentTab && currentTab === 'ai_agent_schedule' && <AiAgentScheduleView />}
+        {hasCurrentTab && currentTab === 'ai_agent_stats' && <AiAgentStatsView />}
 
         {/* RBAC & System */}
         {hasCurrentTab && currentTab === 'roles' && <RoleManagementView />}

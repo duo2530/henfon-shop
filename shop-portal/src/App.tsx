@@ -3251,7 +3251,7 @@ export default function App() {
       />
 
       {/* 在线客服入口。客服未启用的环境里该组件自行不渲染，调用方不需要判断开关。 */}
-      <SupportChatWidget />
+      <SupportChatWidget onOpenProduct={(productId) => openProductById(`prod-${productId}`)} />
 
       {/* Login / Register Authentication Modal */}
       <AuthModal

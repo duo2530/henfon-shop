@@ -139,6 +139,61 @@ public class AiTicketService {
     }
 
     /**
+     * 买家查询自己提交的工单。
+     *
+     * 按 member_id 过滤而不是"按会员的会话关联工单"：直接留言的工单没有会话标识，用会话关联
+     * 会把这一类整个漏掉。归属过滤写在 SQL 条件里，不依赖调用方先查一次再判断。
+     *
+     * @param memberId 当前会员 ID
+     * @param current 当前页
+     * @param size 页大小
+     * @return 分页数据
+     * @author Henfon
+     * @date 2026-09-21
+     */
+    public IPage<AiTicket> pageByMember(Long memberId, long current, long size) {
+        requireMember(memberId);
+        Page<AiTicket> page = new Page<>(current, size);
+        return ticketMapper.selectPage(page, Wrappers.lambdaQuery(AiTicket.class)
+                .eq(AiTicket::getMemberId, memberId)
+                .orderByDesc(AiTicket::getCreatedAt));
+    }
+
+    /**
+     * 买家查询自己某张工单的详情。
+     *
+     * 不属于本人的工单与不存在的工单返回同一个错误：区分开来就成了一个探测接口，能拿它
+     * 试出某个 ID 上是否真的存在工单。
+     *
+     * @param memberId 当前会员 ID
+     * @param id 工单 ID
+     * @return 工单
+     * @author Henfon
+     * @date 2026-09-21
+     */
+    public AiTicket findOwnedTicket(Long memberId, Long id) {
+        requireMember(memberId);
+        AiTicket ticket = id == null ? null : ticketMapper.selectById(id);
+        if (ticket == null || !memberId.equals(ticket.getMemberId())) {
+            throw new BusinessException("AI_TICKET_NOT_FOUND", "工单不存在");
+        }
+        return ticket;
+    }
+
+    /**
+     * 校验调用方已登录。
+     *
+     * @param memberId 当前会员 ID
+     * @author Henfon
+     * @date 2026-09-21
+     */
+    private void requireMember(Long memberId) {
+        if (memberId == null) {
+            throw new BusinessException("AI_AGENT_LOGIN_REQUIRED", "请先登录后查看工单");
+        }
+    }
+
+    /**
      * 处理工单。
      *
      * @param id 工单 ID
@@ -158,6 +213,12 @@ public class AiTicketService {
         AiTicket ticket = detail(id);
         ticket.setStatus(status);
         ticket.setHandleNote(StringUtils.hasText(request.handleNote()) ? request.handleNote().trim() : null);
+        // 回复留空表示"本次不更新回复"，不是"清空回复"：运营改一个状态时不该把上一次写给买家
+        // 的答复顺手抹掉，那对买家来说等于答复凭空消失。要覆盖就填新内容。
+        if (StringUtils.hasText(request.reply())) {
+            ticket.setReplyContent(request.reply().trim());
+            ticket.setRepliedAt(LocalDateTime.now());
+        }
         ticket.setHandlerId(handlerId);
         // 处理人写名称快照而不是只存 ID：账号改名或离职后，历史工单上挂的仍是当时处理人的名字。
         ticket.setHandlerName(handlerName);

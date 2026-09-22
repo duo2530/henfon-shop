@@ -499,6 +499,7 @@ dev 默认把全部消费监听器摘掉（`SHOP_ROCKETMQ_CONSUMER_ENABLED=false
 | `SHOP_DASHSCOPE_API_KEY` | 百炼 API Key，对话、向量化、精排共用同一个 |
 | `SHOP_QDRANT_HOST` / `SHOP_QDRANT_PORT` / `SHOP_QDRANT_API_KEY` | Qdrant 集群地址与 database 级 Key。云端 gRPC 端口 `6334`，要开 TLS（`SHOP_QDRANT_USE_TLS`，默认 `true`） |
 | `SHOP_QDRANT_COLLECTION_PORTAL` / `SHOP_QDRANT_COLLECTION_ADMIN` | 门户与内部两个 collection，默认 `shop_knowledge_portal` / `shop_knowledge_admin` |
+| `SHOP_MVC_ASYNC_TIMEOUT` | SSE 长连接的空闲上限，默认 `30m`。客服窗口与人工会话都是长连接，容器默认的 30 秒会在用户还没打完字时把连接掐掉 |
 
 `SHOP_QDRANT_HOST` 只填主机名，不要带 `https://` 和端口。两个 collection 要先在 Qdrant 控制台建好：匿名向量、1024 维、Cosine。维度在运行期改不了，建错只能重建，缺失时启动日志里会有一条 error。
 
@@ -512,6 +513,8 @@ dev 默认把全部消费监听器摘掉（`SHOP_ROCKETMQ_CONSUMER_ENABLED=false
 改完内容调一次 `POST /api/admin/ai/knowledge/sync`（要管理端令牌）。它按内容指纹跳过没变的条目，所以只改答案是即时生效的——答案不参与向量化，命中后由检索层按 `source_type=FAQ` 回表取原文；只有改问法或关键词才需要重新同步。
 
 限流在 `shop.ai.limit` 下，会员按会员 ID、未登录访客按来源 IP 分开计数，各有一道分钟闸和一道日闸（`SHOP_AI_LIMIT_*`）。配额拒绝走流内的 `AI_RATE_LIMITED` 事件，不是 HTTP 429。
+
+转人工有两条独立链路：已登录会员点「转人工」进实时人工会话（门户与管理端各持一条 SSE 长连接，管理端在「内容与客户运营 → 客服工作台」抢单接入）；访客走留言工单，工单的客服回复在门户「个人中心 → 我的工单」里看。管理端整组接待接口受权限点 `ai:agent:serve` 控制，它同时是客服工作台页的菜单权限。当前订阅者列表存在单进程内存里，多实例部署前需要经 Redis 发布订阅转发。
 
 排查两处：`SHOP_DASHSCOPE_API_KEY` 为空不阻断启动，日志里只有一行 warn，问答报鉴权错先看它；Qdrant 连不上在启动时打一条带地址的 error，同样不中断启动，此时买家提问会落到「知识库里没有」的兜底话术并引导转人工。
 

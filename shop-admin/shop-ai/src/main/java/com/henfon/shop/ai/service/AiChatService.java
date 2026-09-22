@@ -5,10 +5,12 @@ import com.henfon.shop.ai.chat.AiPrompts;
 import com.henfon.shop.ai.config.AiProperties;
 import com.henfon.shop.ai.dto.AiChatEvent;
 import com.henfon.shop.ai.dto.AiChatRequest;
+import com.henfon.shop.ai.dto.AiProductCard;
 import com.henfon.shop.ai.dto.Ref;
 import com.henfon.shop.ai.entity.AiConversation;
 import com.henfon.shop.ai.retrieval.AiKnowledgeRetriever;
 import com.henfon.shop.ai.tool.AiPortalTools;
+import com.henfon.shop.ai.tool.AiProductTools;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.client.ChatClient;
@@ -58,6 +60,9 @@ public class AiChatService {
 
     private static final Logger log = LoggerFactory.getLogger(AiChatService.class);
 
+    /** 本轮商品检索的候选数量上限，与卡片上限分开：模型可以多看到几款，卡片只出最靠前的几张。 */
+    private static final int AI_CARD_CANDIDATES = 6;
+
     private final ChatClient aiChatClient;
 
     private final AiKnowledgeRetriever retriever;
@@ -65,6 +70,10 @@ public class AiChatService {
     private final AiConversationService conversationService;
 
     private final AiPortalTools portalTools;
+
+    private final AiProductTools productTools;
+
+    private final AiProductCardService productCardService;
 
     private final AiProperties properties;
 
@@ -77,6 +86,8 @@ public class AiChatService {
      * @param retriever 知识库检索组件
      * @param conversationService 会话管理服务
      * @param portalTools 买家侧查询工具，订单与物流走它
+     * @param productTools 商品检索工具，买家问「帮我找 XX」时走它
+     * @param productCardService 商品卡片装配服务
      * @param properties AI 配置
      * @param objectMapper JSON 序列化器
      * @author Henfon
@@ -86,12 +97,16 @@ public class AiChatService {
                          AiKnowledgeRetriever retriever,
                          AiConversationService conversationService,
                          AiPortalTools portalTools,
+                         AiProductTools productTools,
+                         AiProductCardService productCardService,
                          AiProperties properties,
                          ObjectMapper objectMapper) {
         this.aiChatClient = aiChatClient;
         this.retriever = retriever;
         this.conversationService = conversationService;
         this.portalTools = portalTools;
+        this.productTools = productTools;
+        this.productCardService = productCardService;
         this.properties = properties;
         this.objectMapper = objectMapper;
     }
@@ -114,6 +129,15 @@ public class AiChatService {
         AiConversation conversation = conversationService.getOrCreate(request.conversationId(), channel, memberId,
                 request.question(), request.subjectType(), request.subjectId());
         String conversationId = conversation.getConversationId();
+        String serviceMode = conversation.getServiceMode();
+        if (AiConversationService.SERVICE_WAITING.equals(serviceMode)
+                || AiConversationService.SERVICE_HUMAN.equals(serviceMode)) {
+            // 人工链路已经接管这条会话时不能再由模型作答：买家正在跟真人对话，机器插一句会把
+            // 两个声音混在一起，而人工回复又不进模型上下文（读取侧按 sender 过滤），模型给出的
+            // 结论与客服刚说的话可能直接冲突。前端收到这个码就停在人工会话里，不再提问。
+            log.info("会话 {} 当前为 {}，拒绝智能客服作答", conversationId, serviceMode);
+            return Flux.just(toJson(AiChatEvent.error("AI_AGENT_SERVING", "当前由人工客服接待，请直接在对话里回复")));
+        }
 
         AiKnowledgeRetriever.RetrievalResult retrieval = retriever.retrieve(request.question(), null);
         String systemPrompt = AiPrompts.portalSystem(retrieval.context(), memberId != null);
@@ -122,9 +146,11 @@ public class AiChatService {
         ChatClient.ChatClientRequestSpec spec = aiChatClient.prompt()
                 .system(systemPrompt)
                 .user(request.question());
+        // 商品检索对未登录买家也开放（在售商品是公开信息），订单类工具不行：先挂公用的那个。
+        spec = spec.tools(productTools);
         if (memberId != null) {
             // 身份在这里进工具上下文，工具签名里不出现它，模型也就改不了它。
-            // 未登录时干脆不挂工具：模型看不到有哪些查询手段，就没有东西可以拿来讲。
+            // 未登录时干脆不挂个人查询工具：模型看不到有哪些查询手段，就没有东西可以拿来讲。
             spec = spec.tools(portalTools)
                     .toolContext(Map.<String, Object>of(AiPortalTools.CONTEXT_MEMBER_ID, memberId));
         }
@@ -146,16 +172,51 @@ public class AiChatService {
 
         long firstTokenTimeout = properties.getChat().getFirstTokenTimeoutMs();
         long streamTimeout = properties.getChat().getStreamTimeoutMs();
+        // 检索状态挂在调用线程上，工具回调回来时把命中的商品主键记在里面，收尾时统一取卡片。
+        AiProductTools.ProductSearchState.begin(AI_CARD_CANDIDATES);
         return Flux.just(AiChatEvent.meta(conversationId, state.refs(), state.hit()))
                 .concatWith(deltas)
                 // 先卡"多久没有新内容"，再卡"整轮最长多久"：前者对应模型侧无响应，后者对应
                 // 持续吐字但总也说不完，两种情况对用户与排查的含义不同。
                 .timeout(Duration.ofMillis(Math.max(1000, firstTokenTimeout)))
-                .concatWith(Flux.defer(() -> Flux.just(AiChatEvent.done(conversationId, state.finishReason()))))
+                .concatWith(Flux.defer(() -> Flux.just(
+                        AiChatEvent.done(conversationId, state.finishReason(), drainCards(state)))))
                 .timeout(Duration.ofMillis(Math.max(1000, streamTimeout)))
                 .map(this::toJson)
-                .onErrorResume(error -> Flux.just(errorEvent(error)))
+                .onErrorResume(error -> {
+                    // 出错时这一轮不会有卡片下发，检索状态必须就地丢掉：它与线程绑定，留着就会
+                    // 污染这个线程上的下一次请求，让另一个买家的回答里冒出上一位搜过的商品。
+                    AiProductTools.ProductSearchState.discard();
+                    return Flux.just(errorEvent(error));
+                })
                 .doFinally(signal -> persist(conversationId, state));
+    }
+
+    /**
+     * 取出本轮检索命中的商品卡片，并清掉线程上的检索状态。
+     *
+     * 无论这一轮有没有检索到商品都必须取一次：状态是 ThreadLocal，不清掉会影响这个线程上的
+     * 下一次请求——买家换个人问，卡片会带着上一位买家的候选。异常收尾走 discard 那条路，
+     * 这里只负责正常结束的那一次。
+     *
+     * @param state 本轮累积状态
+     * @return 商品卡片，没有检索结果时返回空列表
+     * @author Henfon
+     * @date 2026-09-22
+     */
+    private List<AiProductCard> drainCards(StreamState state) {
+        List<Long> productIds = AiProductTools.ProductSearchState.finish();
+        if (productIds.isEmpty()) {
+            return List.of();
+        }
+        try {
+            List<AiProductCard> cards = productCardService.cards(productIds, null);
+            state.cards = cards;
+            return cards;
+        } catch (Exception exception) {
+            log.warn("装配商品卡片失败：{}", exception.getMessage());
+            return List.of();
+        }
     }
 
     /**
@@ -222,30 +283,43 @@ public class AiChatService {
         try {
             conversationService.touch(conversationId);
             conversationService.fillLastAssistantMetrics(conversationId, state.model(), state.tokensIn(),
-                    state.tokensOut(), state.latencyMs(), refsPayload(state.refs()));
+                    state.tokensOut(), state.latencyMs(), toolPayload(state.refs(), state.cards));
         } catch (Exception exception) {
             log.warn("回写会话 {} 的统计信息失败：{}", conversationId, exception.getMessage());
         }
     }
 
     /**
-     * 把引用列表序列化成快照。
+     * 把检索引用与商品卡片序列化成快照。
+     *
+     * 商品卡片必须落库：买家在人工接待结束后、或刷新页面时靠历史接口把记录读回来，卡片只在
+     * 流里下发一次的话，这段对话就只剩一句"我给你找了几款"，商品全没了。落的是卡片快照而不是
+     * 商品主键——卡片本身就是给买家看的那份数据，回读时不必再查一次商品表，也就不会读到
+     * 与当时不同的价格。
      *
      * @param refs 引用列表
-     * @return JSON 文本，无引用时返回 null
+     * @param cards 商品卡片
+     * @return JSON 文本，两者都为空时返回 null
      * @author Henfon
-     * @date 2026-09-21
+     * @date 2026-09-22
      */
-    private String refsPayload(List<Ref> refs) {
-        if (refs == null || refs.isEmpty()) {
+    private String toolPayload(List<Ref> refs, List<AiProductCard> cards) {
+        boolean hasRefs = refs != null && !refs.isEmpty();
+        boolean hasCards = cards != null && !cards.isEmpty();
+        if (!hasRefs && !hasCards) {
             return null;
         }
         try {
             Map<String, Object> payload = new LinkedHashMap<>();
-            payload.put("refs", refs);
+            if (hasRefs) {
+                payload.put("refs", refs);
+            }
+            if (hasCards) {
+                payload.put("cards", cards);
+            }
             return objectMapper.writeValueAsString(payload);
         } catch (Exception exception) {
-            log.warn("序列化引用快照失败：{}", exception.getMessage());
+            log.warn("序列化引用与商品卡片快照失败：{}", exception.getMessage());
             return null;
         }
     }
@@ -266,6 +340,9 @@ public class AiChatService {
 
         /** 本轮引用到的知识来源。 */
         private final List<Ref> refs;
+
+        /** 本轮下发给买家的商品卡片，落库时一并写进消息快照。 */
+        private List<AiProductCard> cards = List.of();
 
         private final long startedAt = System.currentTimeMillis();
 

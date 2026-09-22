@@ -1,5 +1,20 @@
 @import "tailwindcss";
 
+/* 客服入口的呼吸闪烁：只在有新消息或正在等待接入时点亮，平时保持常亮。 */
+@theme {
+  --animate-blink: henfon-blink 1.6s ease-in-out infinite;
+}
+
+@keyframes henfon-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
+}
+
 /* 键盘焦点和减少动效由全局样式统一兜底，避免组件仅依赖 hover 反馈。 */
 :where(button, a, input, select, textarea):focus-visible {
   outline: 3px solid #f59e0b;

@@ -22,6 +22,12 @@ spring:
       pool:
         size: ${SHOP_SCHEDULING_POOL_SIZE:2}
         thread-name-prefix: shop-scheduler-
+  mvc:
+    async:
+      # SSE 长连接的空闲上限。客服窗口开着就一直连着，容器默认的 30 秒会在用户还没打完字时
+      # 把连接掐掉，表现为"聊一会儿就不动了、刷新才恢复"。这里放宽到 30 分钟，客户端仍可按
+      # 自己的节奏重连（重连后由快照补齐消息）。
+      request-timeout: ${SHOP_MVC_ASYNC_TIMEOUT:30m}
 
 # RocketMQ 消费监听器统一开关；开发/测试默认关闭，生产环境由启动策略自动保持开启。
 shop:

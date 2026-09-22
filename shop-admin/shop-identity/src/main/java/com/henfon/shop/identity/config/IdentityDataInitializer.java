@@ -27,7 +27,8 @@ import java.util.Objects;
 /**
  * 身份模块基础数据初始化器。
  *
- * <p>首次启动自动创建平台部门、超级管理员角色、系统菜单和 admin 账号，重复启动不会重复插入。</p>
+ * <p>首次启动自动创建平台部门、超级管理员角色、客服角色、系统菜单、admin 账号与客服账号，
+ * 重复启动不会重复插入，也不会覆盖已经被改过的数据（密码、菜单名称等）。</p>
  *
  * @author Henfon
  * @date 2026-08-29
@@ -58,6 +59,34 @@ public class IdentityDataInitializer implements ApplicationRunner {
             {"售后高频", "140", "服务风险：售后申请次数明显偏高"},
             {"投诉敏感", "150", "服务风险：历史投诉或差评记录"},
             {"多地址收货", "160", "服务风险：常用收货地址数量多"}
+    };
+
+    /**
+     * 客服角色默认拥有的权限编码。
+     *
+     * <p>包含接待与回复所必需的几项：客服工作台（同时是接待接口的权限）、查看与处理工单、
+     * 查看知识库，以及排班。排班在真实组织里通常归排班主管，但本项目只有客服与超管两个
+     * 管理角色，不放开的话客服账号登录后既看不到自己的班次也没法自助调整；上线做权限细分时
+     * 把 ai:agent:schedule 从这份名单里摘掉即可。不含任何写知识库的权限——客服能看标准
+     * 答案但不能改。</p>
+     *
+     * <p>ai:agent:stats:query（客服统计）刻意不放进来：那一页看的是"每位客服接待了几单、
+     * 多久、被评了几分"，属于主管视角，摆在同事之间会变成互相比较的排行榜。要放开时把权限
+     * 编码加到本名单即可，页面本身已经按权限点授权。</p>
+     */
+    private static final String[] AGENT_PERMISSION_CODES = {
+            "ai:agent:serve", "ai:agent:schedule", "ai:ticket:query", "ai:ticket:handle", "ai:faq:query"
+    };
+
+    /**
+     * 客服演示账号，格式为「登录名 / 姓名」。
+     *
+     * 建两个而不是一个：抢单式接待、坐席状态、排班与客服统计这几块都是多人场景才看得出效果，
+     * 只有一个客服账号时统计页永远只有一行、也验证不了"会话被别人接走"的分支。
+     */
+    private static final String[][] DEMO_AGENTS = {
+            {"service01", "客服一号"},
+            {"service02", "客服二号"}
     };
 
     private final SysDeptMapper sysDeptMapper;
@@ -113,6 +142,11 @@ public class IdentityDataInitializer implements ApplicationRunner {
         menus.addAll(ensureBusinessMenus());
         bindRoleMenus(superAdmin.getId(), menus);
         ensureAdminUser(rootDept.getId(), superAdmin.getId());
+        // 客服角色单独登记：客服账号登录后只应看到接待相关的几个页面，把它绑成全量菜单
+        // 等于人人都是超管，接待界面与经营数据混在一起也没有边界可言。
+        SysRole agentRole = ensureAgentRole();
+        bindAgentMenus(agentRole.getId(), menus);
+        ensureAgentUser(rootDept.getId(), agentRole.getId());
         ensurePresetMemberTags();
     }
 
@@ -264,6 +298,11 @@ public class IdentityDataInitializer implements ApplicationRunner {
                 0L, null, "LineChart");
         SysMenu content = ensureMenu("内容与客户运营", "DIRECTORY", null, "/content", 7,
                 0L, null, "MessageSquare");
+        // 客服中心：把工单、实时接待、知识库、排班四个页面从「内容与客户运营」里摘出来单独成组。
+        // 它们原本跟轮播海报、客户评价挤在一个目录里，而那四个页面是客服岗每天的工作面，
+        // 单独成组之后按岗找菜单才不用先在内容目录里翻一遍。
+        SysMenu service = ensureMenu("客服中心", "DIRECTORY", null, "/service", 8,
+                0L, null, "Headphones");
         // 先按原权限编码定位参数配置，确保旧版本角色关联继续指向参数配置页面。
         SysMenu settingsConfig = ensureMenu("参数配置", "MENU", "system:config:view", "/settings", 1,
                 0L, "SettingsView", "Settings");
@@ -273,13 +312,15 @@ public class IdentityDataInitializer implements ApplicationRunner {
                     0L, "SettingsView", "Settings");
         }
         // 系统设置作为目录承载参数配置、登录记录和操作审计三个独立页面。
-        SysMenu settings = ensureMenu("系统与参数设置", "DIRECTORY", null, null, 8,
+        // 排序让到 9：客服中心插在内容与客户运营之后，系统设置仍然排在业务目录的最后。
+        SysMenu settings = ensureMenu("系统与参数设置", "DIRECTORY", null, null, 9,
                 0L, null, "Settings");
-        normalizeMenu(settings, "系统与参数设置", "DIRECTORY", null, null, 8,
+        normalizeMenu(settings, "系统与参数设置", "DIRECTORY", null, null, 9,
                 0L, null, "Settings");
         normalizeMenu(settingsConfig, "参数配置", "MENU", "system:config:view", "/settings", 1,
                 settings.getId(), "SettingsView", "Settings");
-        menus.addAll(List.of(dashboard, ecommerce, marketing, inventory, finance, analytics, content, settings));
+        menus.addAll(List.of(dashboard, ecommerce, marketing, inventory, finance, analytics, content, service,
+                settings));
         menus.add(settingsConfig);
         // 系统设置保存权限挂在设置菜单下，供运费模板等参数配置接口校验。
         SysMenu settingsSave = ensureMenu("保存系统配置", "BUTTON", "system:config:save", null, 100,
@@ -346,24 +387,53 @@ public class IdentityDataInitializer implements ApplicationRunner {
                 content.getId(), "BannerManagementView", "Image"));
         menus.add(ensureMenu("客户评价", "MENU", "content:review:query", "/content/reviews", 2,
                 content.getId(), "ReviewManagementView", "MessageSquare"));
+        // —— 客服中心的四个页面 ——
+        // 排序把客服工作台放在第一位：客服账号登录后落地的是组内第一个页面，接待是他们的
+        // 日常起点，落到工单列表上还得再点一次。路由统一收进 /service 前缀，与所属目录一致。
+        //
+        // 客服工作台：等待接入的会话队列 + 自己正在接待的会话。整组接口共用一个权限点，
+        // 能看队列却接不了会话的角色没有实际意义；它同时也是这个页面的菜单权限。
+        SysMenu agentMenu = ensureMenu("客服工作台", "MENU", "ai:agent:serve", "/service/ai-agent", 1,
+                service.getId(), "AiAgentWorkbenchView", "MessageSquare");
+        normalizeMenu(agentMenu, "客服工作台", "MENU", "ai:agent:serve", "/service/ai-agent", 1,
+                service.getId(), "AiAgentWorkbenchView", "MessageSquare");
+        menus.add(agentMenu);
+
         // 客服工单沿用 ai:ticket:query 作为页面访问权限。该权限码上一批先按 BUTTON 登记过，
         // 而 ensureMenu 对已存在的记录只补图标、不改类型与路由，所以必须再走一次 normalizeMenu
         // 把它补齐成 MENU，否则侧边栏拿不到路由与组件名（与类目管理的历史兼容处理同理）。
-        SysMenu ticketMenu = ensureMenu("客服工单", "MENU", "ai:ticket:query", "/content/ai-tickets", 3,
-                content.getId(), "AiTicketManagementView", "Headphones");
-        normalizeMenu(ticketMenu, "客服工单", "MENU", "ai:ticket:query", "/content/ai-tickets", 3,
-                content.getId(), "AiTicketManagementView", "Headphones");
+        SysMenu ticketMenu = ensureMenu("客服工单", "MENU", "ai:ticket:query", "/service/ai-tickets", 2,
+                service.getId(), "AiTicketManagementView", "Headphones");
+        normalizeMenu(ticketMenu, "客服工单", "MENU", "ai:ticket:query", "/service/ai-tickets", 2,
+                service.getId(), "AiTicketManagementView", "Headphones");
         menus.add(ticketMenu);
 
         // 知识库运营页沿用 ai:faq:query 作为页面访问权限。与客服工单同理：该权限码上一批已按
         // BUTTON 登记过，ensureMenu 命中旧记录时只补图标、不改类型与路由，必须再走一次
         // normalizeMenu 才能把它补齐成 MENU，否则侧边栏拿不到路由与组件名。
         // 同步与召回测试两个动作另受 ai:knowledge:sync 约束，只有查看权的账号进得来但改不了。
-        SysMenu knowledgeMenu = ensureMenu("知识库运营", "MENU", "ai:faq:query", "/content/ai-knowledge", 4,
-                content.getId(), "AiKnowledgeView", "BookOpen");
-        normalizeMenu(knowledgeMenu, "知识库运营", "MENU", "ai:faq:query", "/content/ai-knowledge", 4,
-                content.getId(), "AiKnowledgeView", "BookOpen");
+        SysMenu knowledgeMenu = ensureMenu("知识库运营", "MENU", "ai:faq:query", "/service/ai-knowledge", 3,
+                service.getId(), "AiKnowledgeView", "BookOpen");
+        normalizeMenu(knowledgeMenu, "知识库运营", "MENU", "ai:faq:query", "/service/ai-knowledge", 3,
+                service.getId(), "AiKnowledgeView", "BookOpen");
         menus.add(knowledgeMenu);
+
+        // 客服排班：按周给客服排班次，决定对外的服务时段提示。与客服工作台分开授权——
+        // 每位客服都能看自己的班，但改班次是排班主管的事，共用权限会让误改影响对外提示。
+        SysMenu scheduleMenu = ensureMenu("客服排班", "MENU", "ai:agent:schedule",
+                "/service/ai-agent-schedule", 4, service.getId(), "AiAgentScheduleView", "CalendarClock");
+        normalizeMenu(scheduleMenu, "客服排班", "MENU", "ai:agent:schedule",
+                "/service/ai-agent-schedule", 4, service.getId(), "AiAgentScheduleView", "CalendarClock");
+        menus.add(scheduleMenu);
+
+        // 客服统计：按人看接待量、服务时长与好评差评率。单独一个权限点而不是并进客服工作台：
+        // 它是"看别人干得怎么样"的视角，与能不能接会话是两件事，将来要给主管单独开这个页面时
+        // 不必再把工作台的接待权限一起发出去。
+        SysMenu statsMenu = ensureMenu("客服统计", "MENU", "ai:agent:stats:query",
+                "/service/ai-agent-stats", 5, service.getId(), "AiAgentStatsView", "BarChart3");
+        normalizeMenu(statsMenu, "客服统计", "MENU", "ai:agent:stats:query",
+                "/service/ai-agent-stats", 5, service.getId(), "AiAgentStatsView", "BarChart3");
+        menus.add(statsMenu);
 
         // 订单操作按钮用于控制后台发货、取消、备注和退款等写权限。
         String[][] tradeButtons = {
@@ -571,7 +641,7 @@ public class IdentityDataInitializer implements ApplicationRunner {
                 {"知识库问答保存", "ai:faq:save"},
                 {"知识库问答删除", "ai:faq:delete"},
                 {"知识库向量同步", "ai:knowledge:sync"}
-        }, content.getId(), 109);
+        }, service.getId(), 109);
         return menus;
     }
 
@@ -709,6 +779,92 @@ public class IdentityDataInitializer implements ApplicationRunner {
     private void bindRoleMenus(Long roleId, List<SysMenu> menus) {
         for (SysMenu menu : menus) {
             sysRoleMenuMapper.insertRelation(roleId, menu.getId());
+        }
+    }
+
+    /**
+     * 确保客服角色存在。
+     *
+     * <p>角色键取英文常量而不是中文名：名称是给人看的、随时可能被运营改，角色键一旦被
+     * 代码引用就不能再动。这里按角色键幂等查找，名字改了也不会被重复创建。</p>
+     *
+     * @return 客服角色
+     * @author Henfon
+     * @date 2026-09-21
+     */
+    private SysRole ensureAgentRole() {
+        SysRole role = sysRoleMapper.selectOne(new LambdaQueryWrapper<SysRole>()
+                .eq(SysRole::getTenantId, 0L).eq(SysRole::getRoleKey, "CUSTOMER_SERVICE").last("LIMIT 1"));
+        if (role != null) {
+            return role;
+        }
+        role = new SysRole();
+        role.setTenantId(0L);
+        role.setRoleKey("CUSTOMER_SERVICE");
+        role.setRoleName("客服专员");
+        role.setRoleSort(10);
+        role.setStatus(1);
+        role.setDataScope("ALL");
+        role.setDescription("负责买家在线咨询的实时接待与工单回复");
+        sysRoleMapper.insert(role);
+        return role;
+    }
+
+    /**
+     * 给客服角色绑定接待相关的菜单与权限。
+     *
+     * <p>按权限编码匹配，而不是按菜单名或菜单 ID：菜单可以被改名、ID 在不同环境不一致，
+     * 权限编码才是稳定的契约。父级目录不必显式绑定，菜单树查询会沿 parent_id 自动补齐。</p>
+     *
+     * @param roleId 客服角色ID
+     * @param menus 全部菜单
+     * @author Henfon
+     * @date 2026-09-21
+     */
+    private void bindAgentMenus(Long roleId, List<SysMenu> menus) {
+        for (SysMenu menu : menus) {
+            String code = menu.getPermissionCode();
+            if (code == null || code.isEmpty()) {
+                continue;
+            }
+            for (String allowed : AGENT_PERMISSION_CODES) {
+                if (allowed.equals(code)) {
+                    sysRoleMenuMapper.insertRelation(roleId, menu.getId());
+                    break;
+                }
+            }
+        }
+    }
+
+    /**
+     * 确保客服演示账号存在并绑定客服角色。
+     *
+     * @param deptId 默认部门ID
+     * @param roleId 客服角色ID
+     * @author Henfon
+     * @date 2026-09-21
+     */
+    private void ensureAgentUser(Long deptId, Long roleId) {
+        for (String[] preset : DEMO_AGENTS) {
+            String username = preset[0];
+            String realName = preset[1];
+            SysUser agent = sysUserMapper.selectOne(new LambdaQueryWrapper<SysUser>()
+                    .eq(SysUser::getTenantId, 0L).eq(SysUser::getUsername, username).last("LIMIT 1"));
+            if (agent == null) {
+                agent = new SysUser();
+                agent.setTenantId(0L);
+                agent.setUsername(username);
+                agent.setPasswordHash(passwordEncoder.encode("123456"));
+                agent.setRealName(realName);
+                agent.setNickname(realName);
+                agent.setDeptId(deptId);
+                agent.setStatus(1);
+                agent.setUserType("ADMIN");
+                agent.setRemark("在线客服演示账号，默认角色为客服专员");
+                sysUserMapper.insert(agent);
+            }
+            // 已存在的账号不重置密码：本地把演示账号改过密码后再重启，不该被初始化流程改回去。
+            sysUserRoleMapper.insertRelation(agent.getId(), roleId);
         }
     }
 

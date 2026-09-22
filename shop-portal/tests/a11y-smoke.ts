@@ -128,4 +128,105 @@ assert.match(quickView, /error\.name === 'AbortError'/);
 assert.doesNotMatch(quickView, /'Escape'/);
 assert.doesNotMatch(quickView, /useBodyScrollLock/);
 
-console.log('shop-portal 无障碍静态检查通过：跳过链接、中文语言、搜索 ARIA、左侧类目树（浮层与抽屉两态）、轮播位常驻、商品区栅格、领券横幅与券弹层（含不透明底色、英文枚举中文映射）、商品详情与个人中心整页（无弹层语义、页面级 h1、入口全部走路由）已覆盖');
+// 客服悬浮入口：只留图标不上屏文字，但无障碍名要保留，未读数也要进可读标签（与顶栏铃铛同口径）。
+const supportWidget = readFileSync(new URL('../src/components/SupportChatWidget.tsx', import.meta.url), 'utf8');
+const portalCss = readFileSync(new URL('../src/index.css', import.meta.url), 'utf8');
+
+assert.ok(
+  supportWidget.includes("aria-label={unread > 0 ? `在线客服，${unread} 条未读` : '在线客服'}"),
+  '入口按钮的无障碍名要带上未读数',
+);
+const entryStart = supportWidget.indexOf('className="fixed bottom-6 right-6 z-40 h-12 w-12 rounded-full');
+assert.ok(entryStart > 0, '客服入口应是右下角固定定位的圆形按钮');
+const entryBlock = supportWidget.slice(entryStart, supportWidget.indexOf('</button>', entryStart));
+assert.ok(!entryBlock.includes('>在线客服<'), '入口只保留图标，不再渲染「在线客服」文字');
+// 闪烁只在「关窗 + 有未读 / 排队中 / 待评价」时点亮，动画本身定义在全局样式里。
+assert.ok(supportWidget.includes("const blink = !open && (unread > 0 || mode === 'WAITING' || ratingTarget !== null);"));
+assert.ok(supportWidget.includes("w-5 h-5${blink ? ' animate-blink' : ''}"));
+assert.ok(portalCss.includes('--animate-blink: henfon-blink 1.6s ease-in-out infinite;'));
+assert.ok(portalCss.includes('@keyframes henfon-blink'));
+// 排队提示直接用服务端拼好的那句（含排队人数与预计等待），前端不再重写一份口径。
+assert.ok(supportWidget.includes("availability.reason === 'ONLINE'"));
+assert.ok(supportWidget.includes('QUEUE_POLL_INTERVAL_MS = 20000'), '排队时按 20 秒刷新可用性');
+// 评价弹层：评分是 radiogroup、标签用 pressed 表达选中、未给分不能提交，且必须留「跳过」出口。
+assert.ok(supportWidget.includes('role="radiogroup" aria-label="满意度评分"'));
+assert.ok(supportWidget.includes('aria-pressed={ratingTags.includes(tag)}'));
+assert.ok(supportWidget.includes('disabled={ratingScore < 1 || ratingSubmitting}'));
+assert.ok(
+  supportWidget.split('dismissRating').length - 1 >= 4,
+  '评价弹层的关闭与「以后再说」应共用同一个可跳过出口',
+);
+// 人工服务结束后回到智能客服：长连接已经断开，聊天记录必须自己读回来。少了这一步，买家在评价
+// 弹层上一按，窗口就是一片空白 —— 而这正是「门户端评价后客服窗口全白」那次报障。
+// 断言按「恢复会话」这个 effect 的区块定位：returnToAi 里也有同名调用，整文件 includes 会空转。
+const resumeStart = supportWidget.indexOf('刷新后把上一次的会话接回来');
+const resumeBlock = supportWidget.slice(resumeStart, supportWidget.indexOf('}, [available]);', resumeStart));
+assert.ok(resumeStart > 0, '刷新后恢复会话的逻辑应还在');
+assert.ok(resumeBlock.includes("if (next === 'AI')"), '会话已回到 AI 时也要走「读回历史」这一支');
+assert.ok(resumeBlock.includes('void loadHistory(targetId);'), 'AI 分支里要真的把历史读回来');
+assert.ok(
+  supportWidget.includes('const inflight = pendingIndex >= 0 ? prev.slice(Math.max(0, pendingIndex - 1)) : [];'),
+  '读历史时保留正在生成的那一轮，别把本地气泡冲掉',
+);
+assert.ok(
+  supportWidget.includes('sequence: item.sequence'),
+  '历史消息要带上服务端序号，才能与界面上已有的消息对齐去重',
+);
+// 客服不点「结束服务」时买家不能被困住：会话挂在 HUMAN 上，提问被拦、智能客服也用不了。
+// 所以接待中与排队中都要留一个买家自己的出口，走与客服结束相同的收尾。
+//
+// 断言要锚在「按钮的 JSX 文本节点」上（换行 + 16 空格 + 文案），不能只写 includes('结束咨询')：
+// 这个四字串在文件里还出现在错误提示 '结束咨询失败，请稍后重试' 中，位置更靠前，
+// 一旦按钮文案被改掉，裸 includes 仍会命中错误提示而假通过。
+assert.ok(supportWidget.includes('endPortalAiAgentSession'), '买家要能主动结束人工咨询，不等客服想起来');
+assert.ok(
+  supportWidget.includes('\n                结束咨询\n'),
+  '人工接待中要给出「结束咨询」按钮（锚在按钮文案上，别匹配到错误提示里的同名片段）',
+);
+assert.ok(
+  supportWidget.includes('\n                取消排队\n'),
+  '排队等不到人时要能取消，不能只能干等',
+);
+assert.ok(
+  supportWidget.includes('onClick={() => void endHumanSession()}'),
+  '两个出口按钮都要真的挂上处理函数，不能只是摆一段文案',
+);
+assert.ok(
+  supportWidget.includes('await endPortalAiAgentSession(conversationId);') &&
+    supportWidget.includes('returnToAi(conversationId);'),
+  '买家结束后要走与客服结束相同的收尾：交回智能客服并把记录读回来',
+);
+// 事件类型补齐：服务端多推了 idle（空闲催办），前端不认会让它落到未处理分支。
+assert.ok(portalApi.includes("| 'idle'"), '门户要认服务端的 idle 催办事件');
+// 商品卡片：卡片由服务端装配，前端只负责渲染与跳转。
+assert.ok(portalApi.includes("| 'product'"), '门户要认人工客服推商品的 product 事件');
+assert.ok(
+  portalApi.includes('cards?: PortalAiProductCard[]'),
+  '历史消息与长连接消息都要带上卡片，否则刷新之后卡片就没了',
+);
+assert.ok(
+  supportWidget.includes('const ProductCards: React.FC<{ cards?: PortalAiProductCard[]'),
+  '卡片渲染要有独立组件，智能客服与人工客服共用同一个气泡样式',
+);
+assert.ok(
+  supportWidget.includes('onClick={() => onOpen?.(card.productId)}'),
+  '整张卡片可点，买家点了直接进商品详情页',
+);
+assert.ok(
+  supportWidget.includes('onOpenProduct,') && supportWidget.includes('onOpen={onOpenProduct}'),
+  '跳转能力由 App 注入，客服组件不自己拼路由',
+);
+assert.ok(
+  supportWidget.includes('patchMessage(assistantId, { pending: false, cards: event.cards });'),
+  '智能客服的卡片随 done 事件下发，不进 delta 正文',
+);
+assert.ok(
+  supportWidget.includes('cards: item.cards'),
+  '读回历史与快照时都要把卡片带上',
+);
+assert.ok(
+  app.includes('onOpenProduct={(productId) => openProductById(`prod-${productId}`)}'),
+  'App 要把商品 ID 归一成门户路由再跳转',
+);
+
+console.log('shop-portal 无障碍静态检查通过：跳过链接、中文语言、搜索 ARIA、左侧类目树（浮层与抽屉两态）、轮播位常驻、商品区栅格、领券横幅与券弹层（含不透明底色、英文枚举中文映射）、商品详情与个人中心整页（无弹层语义、页面级 h1、入口全部走路由）、客服悬浮入口（纯图标入口、条件闪烁、排队文案、评价弹层语义与结束后读回历史）、客服商品卡片（整卡可点、随 done 下发、历史读回带卡片）已覆盖');

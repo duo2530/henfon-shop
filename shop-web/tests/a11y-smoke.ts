@@ -43,4 +43,66 @@ assert.match(guidePage, /aria-label="指南目录"/);
 assert.match(guidePage, /<caption className="sr-only">/);
 
 // 指南内容与菜单口径的一致性在 flow-smoke 里按数据核对，这里只守页面语义。
-console.log('shop-web 无障碍静态检查通过：跳过链接、主导航语义、菜单状态、管理员菜单标签、铃铛未读角标与操作指南独立页面已覆盖');
+
+// 客服工作台：左侧坐席栏与右侧会话面板各自成滚动容器。会话面板靠 `flex-1 min-h-0` 占满高度，
+// 少了 min-h-0 输入框就会被推到首屏之外（flex 子项默认最小高度是内容高度）。
+const workbench = readFileSync(new URL('../src/components/content/AiAgentWorkbenchView.tsx', import.meta.url), 'utf8');
+const schedule = readFileSync(new URL('../src/components/content/AiAgentScheduleView.tsx', import.meta.url), 'utf8');
+
+assert.match(workbench, /lg:h-\[calc\(100vh-56px-4rem\)\]/);
+assert.ok(workbench.includes('lg:flex-1 lg:min-h-0'), '坐席栏在 lg 以上要能独立滚动');
+assert.ok(workbench.includes('flex-1 min-h-0 overflow-y-auto'), '消息列表要占满剩余高度并自己滚动');
+assert.ok(workbench.includes('permission="ai:agent:serve"'), '回复等接单动作按权限点收口');
+assert.match(workbench, /aria-label="回复内容"/);
+
+// 客服排班：表格要有可读说明，页头明确今天有没有人值班。
+assert.match(schedule, /<caption className="sr-only">客服一周排班表，点击格子可编辑班次<\/caption>/);
+assert.ok(schedule.includes('今日服务时段 ${todayWindow.start}-${todayWindow.end}，共 ${todayWindow.agents} 位客服排班'));
+assert.ok(schedule.includes('今日无排班，买家会看到「今天暂无客服值班」'));
+
+// 工作台发商品卡片：挑商品要走服务端搜索，卡片由服务端装配。
+const adminApi = readFileSync(new URL('../src/api/adminApi.ts', import.meta.url), 'utf8');
+assert.ok(adminApi.includes("'snapshot' | 'message' | 'product' |"), '工作台要认推商品的 product 事件');
+assert.ok(adminApi.includes('export interface BackendAiProductCard'), '商品卡片类型要与服务端一一对应');
+assert.ok(
+  adminApi.includes('/api/admin/ai/agent/products?keyword='),
+  '挑商品要走服务端搜索，不在前端过滤当前页商品',
+);
+assert.ok(
+  adminApi.includes("'/products'") || adminApi.includes("}/products`"),
+  '推送商品要有独立接口，带上商品主键与说明',
+);
+assert.ok(workbench.includes('aria-label="发送商品"'), '发商品的入口要有可读名称');
+assert.ok(workbench.includes('aria-label="搜索要发送的商品"'), '商品搜索框要有可读名称');
+assert.ok(
+  workbench.includes('setPickerResults(await searchAiAgentProducts(keyword));'),
+  '搜索结果来自服务端，卡片上的图片地址才是换发过的',
+);
+assert.ok(
+  workbench.includes("showToast('商品卡片已发送', 'success');"),
+  '发送成功要有反馈，否则客服会重复点',
+);
+assert.ok(
+  workbench.includes('setPickerOpen(false);') && workbench.includes('setPickerResults([]);'),
+  '切换会话要收起商品弹框：上一个买家搜出的商品很容易误发给下一个',
+);
+assert.ok(
+  workbench.includes('aria-haspopup="dialog"'),
+  '商品入口要声明它会开出弹框，读屏用户才知道点下去是弹层而不是展开的行内区域',
+);
+assert.ok(
+  workbench.includes('role="dialog"') &&
+    workbench.includes('aria-modal="true"') &&
+    workbench.includes('aria-label="推送商品"'),
+  '挑商品要用模态弹框，不能挤在输入框上方压掉聊天记录',
+);
+assert.ok(
+  workbench.includes('useBodyScrollLock(pickerOpen)'),
+  '弹框打开期间要锁住底层滚动，否则滚商品会把工作台一起带走',
+);
+assert.ok(
+  workbench.includes("event.key === 'Escape'"),
+  'Esc 要能关掉商品弹框',
+);
+
+console.log('shop-web 无障碍静态检查通过：跳过链接、主导航语义、菜单状态、管理员菜单标签、铃铛未读角标、操作指南独立页面、客服工作台与会话面板滚动容器、客服排班表说明、工作台发商品卡片（服务端搜索、卡片回显、切会话收起、模态弹框）已覆盖');

@@ -66,6 +66,7 @@ export const AiTicketManagementView: React.FC = () => {
   const [detail, setDetail] = useState<BackendAiTicket | null>(null);
   const [handleStatus, setHandleStatus] = useState<TicketStatus>('PROCESSING');
   const [handleNote, setHandleNote] = useState('');
+  const [handleReply, setHandleReply] = useState('');
   const [saving, setSaving] = useState(false);
 
   const loadTickets = useCallback(async (page: number) => {
@@ -103,6 +104,7 @@ export const AiTicketManagementView: React.FC = () => {
     setDetail(ticket);
     setHandleStatus(ticket.status || 'PROCESSING');
     setHandleNote(ticket.handleNote || '');
+    setHandleReply(ticket.replyContent || '');
     setView('detail');
     // 列表数据刚刚拉过，先用它把详情渲染出来，再取一次保证看到的是最新的处理状态
     // （同一个工单可能刚被另一位运营处理）。取失败就保留列表里的那份数据。
@@ -124,11 +126,15 @@ export const AiTicketManagementView: React.FC = () => {
       const updated = await handleAiTicket(ticketId, {
         status: handleStatus,
         handleNote: handleNote.trim() || undefined,
+        // 留空表示本次不更新回复（服务端同样按"不覆盖"处理），避免改一个状态就把已发出的
+        // 答复抹掉。要覆盖就填新内容。
+        reply: handleReply.trim() || undefined,
       });
       // 就地更新当前行，避免为了看一个新状态而整页重拉。
       setRecords((prev) => prev.map((item) => (item.id === ticketId ? updated : item)));
       setDetail(updated);
       setHandleNote(updated.handleNote || '');
+      setHandleReply(updated.replyContent || '');
       showToast(`工单 ${updated.ticketNo || ticketId} 已更新为「${statusMeta(updated.status).label}」`, 'success');
     } catch (error) {
       showToast(error instanceof Error ? error.message : '工单处理失败，请稍后重试', 'error');
@@ -183,6 +189,20 @@ export const AiTicketManagementView: React.FC = () => {
             <p className="text-sm text-gray-800 leading-relaxed whitespace-pre-wrap">{detail.question}</p>
           </div>
 
+          <div className="border-t border-gray-100 pt-4">
+            <h3 className="text-xs font-semibold text-gray-500 mb-2">
+              给买家的回复
+              {detail.repliedAt ? (
+                <span className="ml-2 font-normal text-gray-400">{formatDateTime(detail.repliedAt, '')}</span>
+              ) : null}
+            </h3>
+            {detail.replyContent ? (
+              <p className="text-sm text-gray-800 leading-relaxed whitespace-pre-wrap">{detail.replyContent}</p>
+            ) : (
+              <p className="text-sm text-gray-400">尚未回复。买家在门户「个人中心 → 我的工单」里只能看到已发出的回复。</p>
+            )}
+          </div>
+
           {detail.aiSummary ? (
             <div className="border-t border-gray-100 pt-4">
               <h3 className="text-xs font-semibold text-gray-500 mb-2">AI 归类摘要</h3>
@@ -196,7 +216,9 @@ export const AiTicketManagementView: React.FC = () => {
             <div className="p-2 bg-blue-50 text-blue-600 rounded-lg"><CheckCircle className="w-5 h-5" /></div>
             <div>
               <h3 className="text-base font-semibold text-gray-900">处理</h3>
-              <p className="text-xs text-gray-500">状态变化会记录处理人与时间，处理备注仅后台可见。</p>
+              <p className="text-xs text-gray-500">
+                处理状态与处理人仅后台可见；「回复买家」会出现在门户「我的工单」里，请按对外口径写。
+              </p>
             </div>
           </div>
 
@@ -221,7 +243,19 @@ export const AiTicketManagementView: React.FC = () => {
                 </select>
               </label>
               <label className="flex flex-col gap-1 text-xs text-gray-500">
-                处理备注
+                回复买家（门户可见）
+                <textarea
+                  id="ai-ticket-handle-reply"
+                  name="reply"
+                  value={handleReply}
+                  onChange={(event) => setHandleReply(event.target.value)}
+                  rows={3}
+                  placeholder="写清楚结论与后续动作，买家会在「我的工单」里看到这段话；留空表示不修改已发出的回复"
+                  className="w-full px-3 py-2 rounded-lg border border-[#E2E8F0] text-sm text-gray-800 outline-none focus:border-blue-500 resize-y"
+                />
+              </label>
+              <label className="flex flex-col gap-1 text-xs text-gray-500">
+                处理备注（仅后台可见）
                 <textarea
                   id="ai-ticket-handle-note"
                   name="handleNote"

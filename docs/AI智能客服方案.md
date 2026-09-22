@@ -259,7 +259,7 @@ flowchart TB
 4. 上下文拼装：系统提示 + 实时数据 + 知识片段 + 对话历史
 5. 模型流式生成
 6. 合规过滤：拦截不承诺时效、价格、赔付的表述
-7. SSE 流式返回；置信度不足则落工单并给出转人工入口
+7. SSE 流式返回；答不出来时给出两条出路：已登录买家转实时人工客服，访客或非在线时段落留言工单
 
 ## 数据模型
 
@@ -268,13 +268,15 @@ flowchart TB
 | 表 | 用途 | 关键字段 |
 | --- | --- | --- |
 | `ai_faq` | 常见问题与答案，运营可维护 | question、answer、category、keywords、sort、enabled |
-| `ai_conversation` | 会话主表 | conversation_id（唯一）、channel（portal/admin）、subject_type、subject_id、title、message_count、last_message_at、status |
-| `ai_message` | 消息明细，同时作为 ChatMemory 的存储 | conversation_id、sequence、role（user/assistant/tool/system）、content、tool_name、tool_payload、model、tokens_in、tokens_out |
-| `ai_ticket` | 转人工工单 | ticket_no（唯一）、conversation_id、member_id、contact、question、ai_summary、status（pending/processing/closed）、handler_id、handled_at |
+| `ai_conversation` | 会话主表 | conversation_id（唯一）、channel（portal/admin）、subject_type、subject_id、title、message_count、last_message_at、status、service_mode（AI/WAITING/HUMAN）、agent_id、agent_requested_at、agent_joined_at、agent_ended_at |
+| `ai_message` | 消息明细，同时作为 ChatMemory 的存储 | conversation_id、sequence、role（USER/ASSISTANT/TOOL/SYSTEM）、sender（MEMBER/AI/AGENT）、content、tool_name、tool_payload、model、tokens_in、tokens_out |
+| `ai_ticket` | 留言工单 | ticket_no（唯一）、conversation_id、member_id、contact、question、ai_summary、status（PENDING/PROCESSING/CLOSED）、handler_id、handler_name、handle_note（内部）、reply_content + replied_at（门户可见） |
 | `ai_document` | 知识文档（P2） | title、doc_type、source、version、status（draft/indexed/failed）、chunk_count、indexed_at |
 | `ai_vector_sync` | 向量同步位点与失败重试 | source_type（product/faq）、source_id、content_hash、status、retry_count、synced_at |
 
 `ai_message` 的 `sequence` 是消息在同一会话内的顺序号，`JdbcChatMemoryRepository` 也用这个思路保证读回来的顺序正确，自实现时照做。
+
+`ai_message` 同时是 ChatMemory 的存储，人工客服的回复也落在这张表里，所以 `sender` 不只是展示字段：读取侧必须排除 `sender = 'AGENT'` 的行（见下文「实时转人工」）。
 
 `ai_vector_sync` 的 `content_hash` 用于增量同步：商品文本内容没变就不重复调用 embedding，省额度也省时间。
 
@@ -363,6 +365,52 @@ OrderLogistics queryMyOrderLogistics(String orderNo, ToolContext ctx) {
 - 未登录问订单，引导登录，不报错也不编造
 - 多轮：上一轮提到过订单号，下一轮问「它到哪了」能正确解析
 - 抽查 20 条追问时效的回答，不出现承诺性表述
+
+## 实时转人工（2026-09-21 追加，替代原「转人工只落工单」的设计）
+
+原设计里「转人工」是一条单向通道：买家提交留言、拿到一个编号，之后看不到任何后续。实际用起来这不是转人工，是提工单——买家以为有人在跟他对话，其实对面没人。本轮把两条链路拆开，各自成立：
+
+| | 实时人工会话 | 留言工单 |
+| --- | --- | --- |
+| 形态 | 双方在线的双向对话 | 异步留言，客服处理后可回复 |
+| 谁能发起 | 仅已登录会员 | 任何人（含访客） |
+| 落在哪 | `ai_conversation` + `ai_message` | `ai_ticket` |
+| 有没有编号 | 无，靠会话标识续上 | 有，`AI20260921-0001` |
+| 买家在哪看 | 客服窗口 | 个人中心 →「我的工单」 |
+
+两条链路不互相转换：会话结束就是结束，工单也不会自动变成对话。
+
+**只有登录会员能进实时会话**。访客没有稳定身份，关掉页面客服就找不到人，实时会话会退化成客服对着空气打字；而且匿名会话没有归属，任何拿到会话标识的人都能读走别人的对话。访客仍走留言工单，这也是他唯一能收到回复的通道。
+
+**接入采用抢单式**，不做自动分配：客服人数少、擅长的类目不同，自动派单会把问题分给不当的人，客服不在电脑前时还会让会话堆在某个账号上。等待队列对所有在线客服可见，谁先点「接入」谁接待；并发冲突靠一条条件更新兜住（`UPDATE ... WHERE service_mode = 'WAITING'`，两个客服同时点只有一个能命中，另一个拿到 0 行并收到「已被其他客服接入」）。
+
+**长连接用 SSE，不用 WebSocket**。每条会话一条流，订阅时先推一份最近 50 条的快照，之后推新消息与接待状态变化。落库才是唯一事实来源，通道只负责「在线时尽快送达」，所以断线重连、刷新页面都不会丢消息。选 SSE 而不是 WebSocket 是因为 AI 那条链路本来就在用 SSE，两条保持一致只维护一套解析；Spring MVC 的异步响应会把容器线程还回去（已实测：把 `server.tomcat.threads.max` 压到 4，开 4 条长连接后普通请求仍返回 23–27ms），所以长连接不吃线程池。心跳每 25 秒一条，防止中间设备按「无流量」掐断。
+
+**三处必须做对，否则会静默出错：**
+
+- **人工消息不能进模型上下文**。`ai_message` 同时是 ChatMemory 的存储，人工客服的回复以 ASSISTANT 角色落库（买家侧要靠这个角色渲染成客服气泡），若不排除，模型会把客服说过的话当成自己说过的话。表现是买家刚被告知「这个订单已退款」，下一轮模型就以客服的口吻接着承诺。做法是在读取侧按 `sender` 过滤：`findByConversationId` 与 `saveAll` 的序号比对都要排除 `sender = 'AGENT'`。**比对那一处特别容易漏**——两者都占着 `sequence`，如果只过滤读取、不过滤比对，库中尾部与传入窗口的重叠长度会算成 0，整个窗口被当成新消息再插一遍。
+- **序号取全表最大值，不能按记忆窗口末尾递推**。人工消息也占序号，按窗口末尾加一会正好撞上人工消息用掉的号，唯一索引当场拒绝插入，症状是「人工接入后 AI 再也没有回过话」。
+- **人工接待中必须拒绝 AI 作答**。买家正在跟真人对话，机器插一句会把两个声音混在一起。`AiChatService` 在进链路前检查 `service_mode`，是 WAITING/HUMAN 就返回错误事件 `AI_AGENT_SERVING`，前端据此停在人工会话里。
+
+**接口**
+
+| 端 | 接口 | 说明 |
+| --- | --- | --- |
+| 门户 | `POST /api/portal/ai/agent/request` | 转人工，进等待队列；会话标识可空（直接新开一条） |
+| 门户 | `GET /api/portal/ai/agent/stream?conversationId=` | SSE 订阅 |
+| 门户 | `POST /api/portal/ai/agent/messages` | 发送消息 |
+| 门户 | `GET /api/portal/ai/agent/state?conversationId=` | 接待状态，刷新后恢复用 |
+| 管理端 | `GET /api/admin/ai/agent/queue` | 等待队列，按请求时间升序 |
+| 管理端 | `POST /api/admin/ai/agent/sessions/{id}/join` | 抢单接入 |
+| 管理端 | `POST /api/admin/ai/agent/sessions/{id}/messages` | 回复 |
+| 管理端 | `POST /api/admin/ai/agent/sessions/{id}/end` | 结束，会话退回智能客服 |
+| 管理端 | `GET /api/admin/ai/agent/sessions/{id}/stream` | SSE 订阅，仅限已接管该会话的客服 |
+
+管理端整组接口共用一个权限点 `ai:agent:serve`，它同时是「客服工作台」页的菜单权限。未接管的会话不开放订阅：等待队列里已经给了买家的问题原文，足够判断要不要接，放开订阅等于让任何客服都能围观任意买家的完整对话。
+
+**多实例部署前必须补的一步**：`AiConversationChannel` 的订阅者列表在本进程内存里，跨实例的消息要经 Redis 发布订阅转发（`publish` 拆成「本机投递」与「广播到其他实例」两步，`subscribe` 侧不用动）。当前是单实例，所以先按内存实现。
+
+**工单侧的补齐**：`ai_ticket` 原本只有 `handle_note`（定位是仅运营可见的内部记录），买家永远看不到答复。本轮另开 `reply_content` + `replied_at` 承载「给买家看的话」，两列职责不重叠；门户新增 `GET /api/portal/ai/tickets` 与 `/tickets/{id}`，只返回会员自己的工单，且不下发 `handle_note`、`handler_id` 这类内部字段（用单独的 `AiTicketPortalView` 正向列举，而不是给实体加忽略注解——后者只要有人日后加一个字段就又漏了）。
 
 ## P2：管理端助手与运营工具
 

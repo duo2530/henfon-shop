@@ -1887,6 +1887,9 @@ export interface BackendAiTicket {
   handlerId?: number;
   handlerName?: string;
   handleNote?: string;
+  /** 给买家的回复内容，门户「我的工单」里能看到。 */
+  replyContent?: string;
+  repliedAt?: string;
   handledAt?: string;
   createdAt?: string;
   updatedAt?: string;
@@ -1903,7 +1906,10 @@ export function getAiTicket(id: number): Promise<BackendAiTicket> {
   return request<BackendAiTicket>(`/api/admin/ai/tickets/${id}`);
 }
 
-export function handleAiTicket(id: number, payload: { status: string; handleNote?: string }): Promise<BackendAiTicket> {
+export function handleAiTicket(
+  id: number,
+  payload: { status: string; handleNote?: string; reply?: string },
+): Promise<BackendAiTicket> {
   return request<BackendAiTicket>(`/api/admin/ai/tickets/${id}/handle`, {
     method: 'POST',
     body: JSON.stringify(payload),
@@ -2042,4 +2048,340 @@ export function testAiKnowledgeRecall(payload: {
     method: 'POST',
     body: JSON.stringify(payload),
   });
+}
+
+/** 人工客服会话，队列与「我的会话」共用。 */
+export interface BackendAiAgentSession {
+  conversationId: string;
+  memberId?: number;
+  /** 买家显示名（昵称 → 账号 → 会员编号），队列里用它认人；未登录会话为空。 */
+  memberName?: string | null;
+  title?: string;
+  /** 买家最近一条消息，客服接入前用它判断来意。 */
+  lastMessage?: string | null;
+  /** AI 智能客服 / WAITING 等待接入 / HUMAN 人工接待中。 */
+  serviceMode: 'AI' | 'WAITING' | 'HUMAN';
+  agentId?: number;
+  messageCount?: number;
+  lastMessageAt?: string;
+  agentRequestedAt?: string;
+  /** 服务端算好的已等待秒数，非排队状态为空；不用前端时钟相减，避免出现负数时长。 */
+  waitingSeconds?: number | null;
+}
+
+/** 商品卡片，字段与门户一致；工作台发商品时整张卡片由服务端组装。 */
+export interface BackendAiProductCard {
+  productId: number;
+  title?: string;
+  /** 已换发的可访问图片地址，工作台预览的就是买家将看到的那张图。 */
+  imageUrl?: string;
+  price?: string;
+  marketPrice?: string;
+  /** 站内路由地址，如 #/product/prod-12。 */
+  url?: string;
+  note?: string;
+}
+
+/** 人工会话里的一条消息。 */
+export interface BackendAiAgentMessage {
+  sequence: number;
+  /** MEMBER 买家 / AI 智能客服 / AGENT 人工客服。 */
+  from: 'MEMBER' | 'AI' | 'AGENT';
+  content: string;
+  createdAt?: string;
+  /** 随消息一起下发的商品卡片，客服推商品时携带。 */
+  cards?: BackendAiProductCard[];
+}
+
+/** 长连接事件：snapshot 订阅快照，message 新消息，product 商品卡片，state 接待状态变化，ended 人工接待结束，idle 空闲催办，ping 心跳。 */
+export interface BackendAiAgentEvent {
+  type: 'snapshot' | 'message' | 'product' | 'state' | 'ended' | 'idle' | 'ping';
+  conversationId: string;
+  serviceMode?: string;
+  agentId?: number | null;
+  messages?: BackendAiAgentMessage[];
+  message?: BackendAiAgentMessage;
+  /** 已空闲的分钟数，仅 idle 携带。 */
+  idleMinutes?: number;
+}
+
+/** 坐席状态：ONLINE 在线，BREAK 小休，OFFLINE 离线。 */
+export type AiAgentStatus = 'ONLINE' | 'BREAK' | 'OFFLINE';
+
+/** 一条排班。 */
+export interface BackendAiSchedule {
+  id?: number;
+  agentId: number;
+  agentName?: string;
+  /** 周几：1 周一 至 7 周日。 */
+  weekday: number;
+  /** HH:mm。 */
+  startTime: string;
+  endTime: string;
+  enabled: boolean;
+}
+
+/** 可排班的客服及其当前在线状态。 */
+export interface BackendAiScheduleAgent {
+  agentId: number;
+  username: string;
+  agentName: string;
+  status: AiAgentStatus;
+}
+
+/** 排班页整块数据。 */
+export interface BackendAiScheduleBoard {
+  agents: BackendAiScheduleAgent[];
+  schedules: BackendAiSchedule[];
+}
+
+/** 客服工作台顶部的坐席状态卡。 */
+export interface BackendAiAgentDesk {
+  agentId: number;
+  agentName: string;
+  status: AiAgentStatus;
+  onlineAt?: string;
+  /** 状态是在线但心跳已过期，用于提示掉线。 */
+  heartbeatExpired: boolean;
+  servingCount: number;
+  waitingCount: number;
+  todayShift?: BackendAiSchedule | null;
+  ratingAverage?: number | null;
+  ratingCount?: number;
+}
+
+/** 一条会话评价。 */
+export interface BackendAiRating {
+  conversationId: string;
+  memberId?: number;
+  agentId?: number;
+  agentName?: string;
+  score: number;
+  tags: string[];
+  comment?: string;
+  createdAt?: string;
+}
+
+/** 评价汇总。 */
+export interface BackendAiRatingSummary {
+  total: number;
+  average?: number | null;
+  satisfied: number;
+  unsatisfied: number;
+  /** 各星级条数，下标 0 对应 1 星。 */
+  distribution: number[];
+}
+
+/** 一位客服在统计窗口内的服务记录。 */
+export interface BackendAiAgentStatsRow {
+  agentId: number;
+  agentName: string;
+  status: AiAgentStatus;
+  /** 当前正在接待的会话数，不受统计窗口影响。 */
+  servingCount: number;
+  /** 窗口内已结束的人工会话数。 */
+  servedCount: number;
+  totalServeSeconds: number;
+  /** 单次服务平均秒数，没有可计时的会话时为空。 */
+  averageServeSeconds?: number | null;
+  ratingCount: number;
+  ratingAverage?: number | null;
+  satisfied: number;
+  unsatisfied: number;
+  /** 好评率百分比（4 星及以上），无评价时为空。 */
+  satisfactionRate?: number | null;
+  /** 差评率百分比（2 星及以下），无评价时为空。 */
+  dissatisfactionRate?: number | null;
+  lastServedAt?: string | null;
+}
+
+/** 客服统计看板。 */
+export interface BackendAiAgentStatsBoard {
+  /** 生效的统计窗口天数，0 表示全部历史。 */
+  days: number;
+  agents: BackendAiAgentStatsRow[];
+}
+
+/** 坐席状态卡。 */
+export function getAiAgentDesk(): Promise<BackendAiAgentDesk> {
+  return request<BackendAiAgentDesk>('/api/admin/ai/agent/desk');
+}
+
+/** 切换坐席状态。 */
+export function changeAiAgentStatus(status: AiAgentStatus): Promise<BackendAiAgentDesk> {
+  return request<BackendAiAgentDesk>('/api/admin/ai/agent/desk/status', {
+    method: 'POST',
+    body: JSON.stringify({ status }),
+  });
+}
+
+/** 坐席心跳。 */
+export function sendAiAgentHeartbeat(): Promise<BackendAiAgentDesk> {
+  return request<BackendAiAgentDesk>('/api/admin/ai/agent/desk/heartbeat', { method: 'POST' });
+}
+
+/** 我的本周班次。 */
+export function getMyAiAgentSchedule(): Promise<BackendAiSchedule[]> {
+  return request<BackendAiSchedule[]>('/api/admin/ai/agent/my-schedule');
+}
+
+/** 最近收到的评价，不传 agentId 时返回自己的。 */
+export function listAiAgentRatings(limit = 10): Promise<BackendAiRating[]> {
+  return request<BackendAiRating[]>(`/api/admin/ai/agent/ratings?limit=${limit}`);
+}
+
+/** 评价统计，不传 agentId 时统计自己的。 */
+export function getAiAgentRatingSummary(): Promise<BackendAiRatingSummary> {
+  return request<BackendAiRatingSummary>('/api/admin/ai/agent/ratings/summary');
+}
+
+/** 客服统计看板，days 为 0 时统计全部历史。 */
+export function getAiAgentStatsBoard(days: number): Promise<BackendAiAgentStatsBoard> {
+  return request<BackendAiAgentStatsBoard>(`/api/admin/ai/agent/stats?days=${days}`);
+}
+
+/** 排班页数据：可选客服与已有排班。 */
+export function getAiAgentScheduleBoard(): Promise<BackendAiScheduleBoard> {
+  return request<BackendAiScheduleBoard>('/api/admin/ai/agent/schedule');
+}
+
+/** 保存一条排班，同一天重复保存为覆盖。 */
+export function saveAiAgentSchedule(payload: {
+  agentId: number;
+  weekday: number;
+  startTime: string;
+  endTime: string;
+  enabled?: boolean;
+}): Promise<BackendAiSchedule> {
+  return request<BackendAiSchedule>('/api/admin/ai/agent/schedule', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+/** 删除一条排班。 */
+export function deleteAiAgentSchedule(id: number): Promise<void> {
+  return request<void>(`/api/admin/ai/agent/schedule/${id}`, { method: 'DELETE' });
+}
+
+/** 等待人工接入的会话，先来先服务。 */
+export function listAiAgentQueue(): Promise<BackendAiAgentSession[]> {
+  return request<BackendAiAgentSession[]>('/api/admin/ai/agent/queue');
+}
+
+/** 当前客服正在接待的会话。 */
+export function listAiAgentSessions(): Promise<BackendAiAgentSession[]> {
+  return request<BackendAiAgentSession[]>('/api/admin/ai/agent/sessions');
+}
+
+/** 抢单式接入，同一会话只会被一位客服拿到。 */
+export function joinAiAgentSession(conversationId: string): Promise<BackendAiAgentSession> {
+  return request<BackendAiAgentSession>(`/api/admin/ai/agent/sessions/${encodeURIComponent(conversationId)}/join`, {
+    method: 'POST',
+  });
+}
+
+/** 回复买家。 */
+export function sendAiAgentReply(conversationId: string, content: string): Promise<BackendAiAgentMessage> {
+  return request<BackendAiAgentMessage>(`/api/admin/ai/agent/sessions/${encodeURIComponent(conversationId)}/messages`, {
+    method: 'POST',
+    body: JSON.stringify({ content }),
+  });
+}
+
+/**
+ * 搜商品，供工作台挑一件推给买家。
+ *
+ * 返回的是装配好的卡片而不是商品原始行：图片地址已经换发过，工作台看到的就是买家将看到
+ * 的那张图，不必在前端再拼一次域名。
+ */
+export function searchAiAgentProducts(keyword: string, limit = 6): Promise<BackendAiProductCard[]> {
+  return request<BackendAiProductCard[]>(
+    `/api/admin/ai/agent/products?keyword=${encodeURIComponent(keyword)}&limit=${limit}`,
+  );
+}
+
+/** 推送商品卡片给买家。 */
+export function sendAiAgentProduct(
+  conversationId: string,
+  productId: number,
+  note?: string,
+): Promise<BackendAiAgentMessage> {
+  return request<BackendAiAgentMessage>(
+    `/api/admin/ai/agent/sessions/${encodeURIComponent(conversationId)}/products`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ productId, note: note || undefined }),
+    },
+  );
+}
+
+/** 结束人工接待，会话退回智能客服。 */
+export function endAiAgentSession(conversationId: string): Promise<BackendAiAgentSession> {
+  return request<BackendAiAgentSession>(`/api/admin/ai/agent/sessions/${encodeURIComponent(conversationId)}/end`, {
+    method: 'POST',
+  });
+}
+
+/**
+ * 订阅会话消息流。
+ *
+ * 用 fetch 读流而不是 EventSource：EventSource 不能带 Authorization 头，本项目的管理端令牌
+ * 又只在请求头里传，走那条路要么把令牌塞进查询串（会进访问日志），要么给会话接口另开一条
+ * 免鉴权通道。这里与门户的 AI 流式接口共用同一套 SSE 解析思路。
+ *
+ * @param params.conversationId 会话标识
+ * @param params.signal 用于中止订阅
+ * @param params.onEvent 每收到一个事件回调一次
+ * @param params.onError 连接异常时回调，调用方据此把界面从"接收中"切回来
+ */
+export async function streamAiAgentSession(params: {
+  conversationId: string;
+  signal: AbortSignal;
+  onEvent: (event: BackendAiAgentEvent) => void;
+  onError?: (error: unknown) => void;
+}): Promise<void> {
+  const token = getAdminToken();
+  try {
+    const response = await fetch(
+      `${API_BASE_URL}/api/admin/ai/agent/sessions/${encodeURIComponent(params.conversationId)}/stream`,
+      {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        signal: params.signal,
+      },
+    );
+    if (!response.ok || !response.body) {
+      throw new Error(`会话消息流连接失败（${response.status}）`);
+    }
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder('utf-8');
+    let buffer = '';
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer = (buffer + decoder.decode(value, { stream: true })).replace(/\r\n/g, '\n');
+      let boundary = buffer.indexOf('\n\n');
+      while (boundary >= 0) {
+        const chunk = buffer.slice(0, boundary);
+        buffer = buffer.slice(boundary + 2);
+        const payload = chunk
+          .split('\n')
+          .filter((line) => line.startsWith('data:'))
+          .map((line) => line.slice(5).trim())
+          .join('\n');
+        if (payload) {
+          try {
+            params.onEvent(JSON.parse(payload) as BackendAiAgentEvent);
+          } catch {
+            // 单个分片解析失败不中断整条流。
+          }
+        }
+        boundary = buffer.indexOf('\n\n');
+      }
+    }
+  } catch (error) {
+    // 主动 abort 是正常的组件卸载路径，不当成错误上报。
+    if (error instanceof DOMException && error.name === 'AbortError') return;
+    params.onError?.(error);
+  }
 }

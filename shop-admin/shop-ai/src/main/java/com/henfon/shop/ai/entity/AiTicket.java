@@ -36,6 +36,10 @@ public class AiTicket {
     private String handlerName;
     /** 处理备注，仅运营可见。 */
     private String handleNote;
+    /** 给买家的回复内容，门户可见；与处理备注分开，内部留痕不对外披露。 */
+    private String replyContent;
+    /** 回复给买家的时间。 */
+    private LocalDateTime repliedAt;
     private LocalDateTime handledAt;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;

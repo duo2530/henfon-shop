@@ -45,6 +45,25 @@ public interface SysUserRoleMapper {
     List<String> selectPermissionCodesByUserId(@Param("userId") Long userId);
 
     /**
+     * 按权限编码反查拥有该权限的用户。
+     *
+     * 用于回答"谁能做这件事"，而不是"某人能做什么"：排班、待办分派这类场景要先列出候选
+     * 人员，按角色名去匹配既脆弱（角色可改名）又漏人（同一权限可以由多个角色持有），
+     * 按权限编码反查得到的就是系统判定的全部人选。
+     *
+     * @param permissionCode 权限编码
+     * @return 用户ID列表
+     * @author Henfon
+     * @date 2026-09-21
+     */
+    @Select("SELECT DISTINCT ur.user_id FROM sys_user_role ur "
+            + "JOIN sys_role r ON r.id = ur.role_id AND r.status = 1 AND r.is_deleted = 0 "
+            + "JOIN sys_role_menu rm ON rm.role_id = r.id "
+            + "JOIN sys_menu m ON m.id = rm.menu_id AND m.status = 1 AND m.is_deleted = 0 "
+            + "WHERE m.permission_code = #{permissionCode}")
+    List<Long> selectUserIdsByPermission(@Param("permissionCode") String permissionCode);
+
+    /**
      * 查询用户可见的菜单树节点。
      *
      * @param userId 用户ID
