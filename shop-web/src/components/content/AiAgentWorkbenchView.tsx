@@ -83,6 +83,42 @@ function formatClock(time?: string | null): string {
 }
 
 /**
+ * 买家头像。
+ *
+ * 没有设置头像时不留空块，用显示名首字占位：队列里一整排空灰圆点会让人以为图没加载出来，
+ * 而一个字至少还能帮着多认一次人。连名字都没有（未登录访客）才退成人物轮廓图标。
+ *
+ * @param props 显示名与头像地址
+ * @returns 头像
+ */
+const MemberAvatar: React.FC<{ name?: string | null; avatarUrl?: string | null }> = ({ name, avatarUrl }) => {
+  if (avatarUrl) {
+    return (
+      <img
+        src={avatarUrl}
+        alt=""
+        aria-hidden="true"
+        className="w-7 h-7 rounded-full object-cover bg-zinc-100 shrink-0 mt-0.5"
+        loading="lazy"
+      />
+    );
+  }
+  const trimmed = name?.trim();
+  return (
+    <span
+      aria-hidden="true"
+      className="w-7 h-7 rounded-full bg-slate-100 border border-slate-200 text-slate-500 inline-flex items-center justify-center shrink-0 mt-0.5"
+    >
+      {trimmed ? (
+        <span className="text-[11px] font-semibold">{trimmed.slice(0, 1)}</span>
+      ) : (
+        <UserRound className="w-3.5 h-3.5" />
+      )}
+    </span>
+  );
+};
+
+/**
  * 人工客服工作台。
  *
  * 接入是抢单式的：等待队列对所有在线客服可见，谁先点「接入」谁接待。队列用轮询而不是长连接，
@@ -580,16 +616,24 @@ export const AiAgentWorkbenchView: React.FC = () => {
                     >
                       {/* 主行放买家名字而不是会话标题：标题取的是买家对智能客服说的第一句话，
                           可能只是「你是」这样的片段，客服靠它认不出是谁在等。 */}
-                      <span className="flex items-center justify-between gap-2">
-                        <span className="text-xs font-semibold text-gray-900 truncate">
-                          {session.memberName || (session.memberId ? `会员 ${session.memberId}` : '未登录访客')}
+                      <span className="flex items-start gap-2">
+                        <MemberAvatar
+                          name={session.memberName || (session.memberId ? `会员 ${session.memberId}` : null)}
+                          avatarUrl={session.memberAvatarUrl}
+                        />
+                        <span className="min-w-0 flex-1">
+                          <span className="flex items-center justify-between gap-2">
+                            <span className="text-xs font-semibold text-gray-900 truncate">
+                              {session.memberName || (session.memberId ? `会员 ${session.memberId}` : '未登录访客')}
+                            </span>
+                            <span className="text-[11px] text-gray-500 shrink-0">
+                              已等待 {formatWaiting(session.waitingSeconds) || '-'}
+                            </span>
+                          </span>
+                          <span className="block mt-0.5 text-[11px] text-gray-500 line-clamp-2 break-words">
+                            {session.lastMessage || session.title || '未命名会话'}
+                          </span>
                         </span>
-                        <span className="text-[11px] text-gray-500 shrink-0">
-                          已等待 {formatWaiting(session.waitingSeconds) || '-'}
-                        </span>
-                      </span>
-                      <span className="block mt-0.5 text-[11px] text-gray-500 line-clamp-2 break-words">
-                        {session.lastMessage || session.title || '未命名会话'}
                       </span>
                     </button>
                   </li>
@@ -618,11 +662,16 @@ export const AiAgentWorkbenchView: React.FC = () => {
                           : 'border-[#E2E8F0] hover:bg-slate-50'
                       }`}
                     >
-                      <span className="block text-xs font-semibold text-gray-900 truncate">
-                        {session.memberName || session.title || '未命名会话'}
-                      </span>
-                      <span className="block mt-0.5 text-[11px] text-gray-500">
-                        最近消息 {formatDateTime(session.lastMessageAt, '-')} · {session.messageCount ?? 0} 条
+                      <span className="flex items-start gap-2">
+                        <MemberAvatar name={session.memberName} avatarUrl={session.memberAvatarUrl} />
+                        <span className="min-w-0 flex-1">
+                          <span className="block text-xs font-semibold text-gray-900 truncate">
+                            {session.memberName || session.title || '未命名会话'}
+                          </span>
+                          <span className="block mt-0.5 text-[11px] text-gray-500">
+                            最近消息 {formatDateTime(session.lastMessageAt, '-')} · {session.messageCount ?? 0} 条
+                          </span>
+                        </span>
                       </span>
                     </button>
                   </li>

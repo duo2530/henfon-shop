@@ -32,6 +32,9 @@ const WEEKDAYS = ['周一', '周二', '周三', '周四', '周五', '周六', '�
 /** 全部星期，一键排班默认整周。 */
 const ALL_WEEKDAYS = [1, 2, 3, 4, 5, 6, 7];
 
+/** 今天是周几（1-7），表头用它把今天那一列标出来。 */
+const TODAY_WEEKDAY = new Date().getDay() === 0 ? 7 : new Date().getDay();
+
 /** 新排班的默认时段，上班族最常见的一段。 */
 const DEFAULT_START = '09:00';
 const DEFAULT_END = '18:00';
@@ -194,8 +197,7 @@ export const AiAgentScheduleView: React.FC = () => {
 
   /** 今天的服务时段，用于页头提示。 */
   const todayWindow = useMemo(() => {
-    const today = new Date().getDay() === 0 ? 7 : new Date().getDay();
-    const rows = schedules.filter((item) => item.weekday === today && item.enabled);
+    const rows = schedules.filter((item) => item.weekday === TODAY_WEEKDAY && item.enabled);
     if (rows.length === 0) return null;
     const starts = rows.map((item) => formatClock(item.startTime)).sort();
     const ends = rows.map((item) => formatClock(item.endTime)).sort();
@@ -375,20 +377,21 @@ export const AiAgentScheduleView: React.FC = () => {
           const weekday = index + 1;
           const item = scheduleIndex.get(`${agentId}-${weekday}`);
           const active = editing && editing.agentId === agentId && editing.weekday === weekday;
+          // 三种状态用底色区分而不是只换边框：一张七列的表格里，"有字"和"没字"的差别要扫一眼
+          // 才看得出来，颜色块是余光就能读的信息。
+          const tone = active
+            ? 'border-blue-500 bg-blue-100 text-blue-900 ring-1 ring-blue-200'
+            : item
+              ? item.enabled
+                ? 'border-blue-200 bg-blue-50 text-blue-800 hover:bg-blue-100'
+                : 'border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100'
+              : 'border-dashed border-slate-200 bg-slate-50 text-slate-400 hover:bg-slate-100';
           return (
             <td key={weekday} className="px-1.5 py-1.5 align-middle">
               <button
                 type="button"
                 onClick={() => openCell(agentId, agentName, weekday)}
-                className={`w-full rounded-lg border px-2 py-2 text-[11px] leading-tight transition-colors ${
-                  active
-                    ? 'border-blue-400 bg-blue-50'
-                    : item
-                      ? item.enabled
-                        ? 'border-[#E2E8F0] bg-white text-gray-700 hover:bg-slate-50'
-                        : 'border-dashed border-[#E2E8F0] bg-slate-50 text-gray-400 hover:bg-slate-100'
-                      : 'border-dashed border-[#E2E8F0] text-gray-300 hover:bg-slate-50 hover:text-gray-500'
-                }`}
+                className={`w-full rounded-lg border px-2 py-2 text-[11px] leading-tight transition-colors ${tone}`}
               >
                 {item ? (
                   <>
@@ -454,8 +457,14 @@ export const AiAgentScheduleView: React.FC = () => {
               <th scope="col" className="sticky left-0 bg-slate-50 px-3 py-2.5 text-left text-[11px] font-semibold text-gray-500 w-[190px]">
                 客服
               </th>
-              {WEEKDAYS.map((day) => (
-                <th key={day} scope="col" className="px-2 py-2.5 text-center text-[11px] font-semibold text-gray-500">
+              {WEEKDAYS.map((day, index) => (
+                <th
+                  key={day}
+                  scope="col"
+                  className={`px-2 py-2.5 text-center text-[11px] font-semibold ${
+                    index + 1 === TODAY_WEEKDAY ? 'bg-blue-50/70 text-blue-700' : 'text-gray-500'
+                  }`}
+                >
                   {day}
                 </th>
               ))}
@@ -482,6 +491,19 @@ export const AiAgentScheduleView: React.FC = () => {
             )}
           </tbody>
         </table>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-3 px-1 text-[11px] text-gray-500">
+        <span className="inline-flex items-center gap-1.5">
+          <span className="w-3 h-3 rounded border border-blue-200 bg-blue-50" aria-hidden="true" />已排班
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="w-3 h-3 rounded border border-amber-200 bg-amber-50" aria-hidden="true" />已停用
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="w-3 h-3 rounded border border-dashed border-slate-200 bg-slate-50" aria-hidden="true" />
+          未排班
+        </span>
       </div>
 
       {editing && (

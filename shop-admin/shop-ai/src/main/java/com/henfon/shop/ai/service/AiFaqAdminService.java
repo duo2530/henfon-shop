@@ -12,6 +12,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
+import java.util.List;
+
 /**
  * 知识库问答维护服务。
  *
@@ -27,6 +29,9 @@ public class AiFaqAdminService {
 
     /** 向量待同步状态，与 ai_faq.sync_status 的取值一致。 */
     private static final String SYNC_PENDING = "PENDING";
+
+    /** 导出条数上限。知识再多也到不了这个量级，留一道防止一次把整表读进内存。 */
+    private static final int MAX_EXPORT_ROWS = 5000;
 
     private final AiFaqMapper faqMapper;
 
@@ -54,20 +59,7 @@ public class AiFaqAdminService {
      * @date 2026-09-21
      */
     public IPage<AiFaq> page(String keyword, String category, Integer enabled, long current, long size) {
-        LambdaQueryWrapper<AiFaq> wrapper = Wrappers.lambdaQuery(AiFaq.class)
-                .orderByAsc(AiFaq::getSortNo)
-                .orderByDesc(AiFaq::getId);
-        if (StringUtils.hasText(keyword)) {
-            wrapper.and(condition -> condition.like(AiFaq::getQuestion, keyword)
-                    .or().like(AiFaq::getAnswer, keyword));
-        }
-        if (StringUtils.hasText(category)) {
-            wrapper.eq(AiFaq::getCategory, category);
-        }
-        if (enabled != null) {
-            wrapper.eq(AiFaq::getEnabled, enabled);
-        }
-        return faqMapper.selectPage(new Page<>(current, size), wrapper);
+        return faqMapper.selectPage(new Page<>(current, size), conditions(keyword, category, enabled));
     }
 
     /**
@@ -103,6 +95,108 @@ public class AiFaqAdminService {
             faqMapper.updateById(entity);
         }
         return entity.getId();
+    }
+
+    /**
+     * 导出知识库问答为 CSV 文本。
+     *
+     * 沿用分页那套筛选条件，导的就是界面上筛出来的内容，而不是整张表——运营通常是按某个
+     * 分类导出交给业务同学改，导出全部再手工删反而更容易出错。
+     *
+     * 走 CSV 而不是接入异步导出中心：知识库是几百到几千条的文案，浏览器直接下载足够，
+     * 为它排一次队列、生成一个要回收的文件，反而多了个"找不到下载链接在哪"的环节。
+     *
+     * @param keyword 问法或答案关键字
+     * @param category 业务分类
+     * @param enabled 启用状态
+     * @return CSV 文本，含表头；没有记录时只有表头
+     * @author Henfon
+     * @date 2026-09-22
+     */
+    public String exportCsv(String keyword, String category, Integer enabled) {
+        List<AiFaq> rows = faqMapper.selectList(conditions(keyword, category, enabled)
+                .last("LIMIT " + MAX_EXPORT_ROWS));
+        StringBuilder csv = new StringBuilder();
+        appendRow(csv, List.of("ID", "标准问法", "标准答案", "业务分类", "检索关键词", "排序", "启用", "向量同步", "更新时间"));
+        if (rows != null) {
+            for (AiFaq row : rows) {
+                appendRow(csv, List.of(String.valueOf(row.getId()),
+                        row.getQuestion(),
+                        row.getAnswer(),
+                        row.getCategory(),
+                        row.getKeywords(),
+                        String.valueOf(row.getSortNo()),
+                        row.getEnabled() != null && row.getEnabled() == 1 ? "启用" : "停用",
+                        row.getSyncStatus(),
+                        String.valueOf(row.getUpdatedAt())));
+            }
+        }
+        return csv.toString();
+    }
+
+    /**
+     * 按筛选条件构造查询条件。
+     *
+     * @param keyword 问法或答案关键字
+     * @param category 业务分类
+     * @param enabled 启用状态
+     * @return 查询条件
+     * @author Henfon
+     * @date 2026-09-22
+     */
+    private LambdaQueryWrapper<AiFaq> conditions(String keyword, String category, Integer enabled) {
+        LambdaQueryWrapper<AiFaq> wrapper = Wrappers.lambdaQuery(AiFaq.class)
+                .orderByAsc(AiFaq::getSortNo)
+                .orderByDesc(AiFaq::getId);
+        if (StringUtils.hasText(keyword)) {
+            wrapper.and(condition -> condition.like(AiFaq::getQuestion, keyword)
+                    .or().like(AiFaq::getAnswer, keyword));
+        }
+        if (StringUtils.hasText(category)) {
+            wrapper.eq(AiFaq::getCategory, category);
+        }
+        if (enabled != null) {
+            wrapper.eq(AiFaq::getEnabled, enabled);
+        }
+        return wrapper;
+    }
+
+    /**
+     * 写一行 CSV。
+     *
+     * 含分隔符、引号或换行的字段必须加引号并把引号翻倍：答案里出现逗号是很常见的，
+     * 不加引号这一行就会被 Excel 拆成两列。
+     *
+     * @param csv 目标
+     * @param cells 单元格文本，可含 null
+     * @author Henfon
+     * @date 2026-09-22
+     */
+    private void appendRow(StringBuilder csv, List<String> cells) {
+        for (int i = 0; i < cells.size(); i++) {
+            if (i > 0) {
+                csv.append(',');
+            }
+            csv.append(quote(cells.get(i)));
+        }
+        csv.append("\r\n");
+    }
+
+    /**
+     * 转义单个单元格。
+     *
+     * @param value 原始文本，可为空
+     * @return 转义后的单元格
+     * @author Henfon
+     * @date 2026-09-22
+     */
+    private String quote(String value) {
+        String text = value == null ? "" : value;
+        if (text.indexOf(',') < 0 && text.indexOf('"') < 0 && text.indexOf('\n') < 0
+                && text.indexOf('\r') < 0) {
+            return text;
+        }
+        return '"' + text.replace("\"", "\"\"") + '"';
     }
 
     /**

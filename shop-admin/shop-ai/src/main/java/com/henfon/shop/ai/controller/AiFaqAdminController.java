@@ -64,6 +64,28 @@ public class AiFaqAdminController {
     }
 
     /**
+     * 导出知识库问答为 CSV。
+     *
+     * 返回 CSV 文本而不是文件：由前端落地成文件并触发下载，后端就不必为一个几百条的内容维护
+     * 临时文件与回收逻辑。
+     *
+     * @param keyword 问法或答案关键字
+     * @param category 业务分类
+     * @param enabled 启用状态
+     * @return CSV 文本
+     * @author Henfon
+     * @date 2026-09-22
+     */
+    @GetMapping("/export")
+    @PreAuthorize("hasAuthority('ai:faq:query')")
+    public ApiResponse<String> export(
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) String category,
+            @RequestParam(required = false) Integer enabled) {
+        return ApiResponse.success(faqService.exportCsv(keyword, category, enabled), requestId());
+    }
+
+    /**
      * 新增或修改知识库问答。
      *
      * @param request 保存请求

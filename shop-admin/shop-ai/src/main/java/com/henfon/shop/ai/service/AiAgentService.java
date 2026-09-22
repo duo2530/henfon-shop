@@ -481,15 +481,17 @@ public class AiAgentService {
      * @date 2026-09-21
      */
     private AiAgentSessionView view(AiConversation conversation) {
+        AiMemberDirectory.MemberBadge badge = memberDirectory.badge(conversation.getMemberId());
         return AiAgentSessionView.from(conversation,
-                memberDirectory.displayName(conversation.getMemberId()),
+                badge == null ? null : badge.name(),
+                badge == null ? null : badge.avatarUrl(),
                 lastMemberMessage(conversation.getConversationId()));
     }
 
     /**
      * 批量构建带买家身份的会话视图。
      *
-     * 买家名一次查完；最近一条买家消息按会话逐条取，一次 LIMIT 1 走的是会话索引，队列为空时
+     * 买家名与头像一次查完；最近一条买家消息按会话逐条取，一次 LIMIT 1 走的是会话索引，队列为空时
      * 一次查询也不发——比把整段聊天记录读回来再在内存里挑最后一条便宜得多。
      *
      * @param conversations 会话列表
@@ -501,12 +503,18 @@ public class AiAgentService {
         if (conversations == null || conversations.isEmpty()) {
             return List.of();
         }
-        Map<Long, String> names = memberDirectory.displayNames(
+        Map<Long, AiMemberDirectory.MemberBadge> badges = memberDirectory.badges(
                 conversations.stream().map(AiConversation::getMemberId).toList());
         return conversations.stream()
-                .map(conversation -> AiAgentSessionView.from(conversation,
-                        conversation.getMemberId() == null ? null : names.get(conversation.getMemberId()),
-                        lastMemberMessage(conversation.getConversationId())))
+                .map(conversation -> {
+                    AiMemberDirectory.MemberBadge badge = conversation.getMemberId() == null
+                            ? null
+                            : badges.get(conversation.getMemberId());
+                    return AiAgentSessionView.from(conversation,
+                            badge == null ? null : badge.name(),
+                            badge == null ? null : badge.avatarUrl(),
+                            lastMemberMessage(conversation.getConversationId()));
+                })
                 .toList();
     }
 

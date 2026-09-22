@@ -5,6 +5,7 @@ import {
   BackendAiKnowledgeStatus,
   BackendAiRecallTest,
   deleteAiFaq,
+  exportAiFaqs,
   getAiKnowledgeStatus,
   listAiFaqs,
   retryFailedAiKnowledge,
@@ -19,6 +20,7 @@ import {
   AlertCircle,
   AlertTriangle,
   BookOpen,
+  Download,
   FlaskConical,
   Loader2,
   Pencil,
@@ -113,6 +115,7 @@ export const AiKnowledgeView: React.FC = () => {
   const [keywordFilter, setKeywordFilter] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
   const [enabledFilter, setEnabledFilter] = useState('');
+  const [exporting, setExporting] = useState(false);
 
   // 编辑弹窗
   const [editor, setEditor] = useState<EditorState | null>(null);
@@ -299,6 +302,36 @@ export const AiKnowledgeView: React.FC = () => {
 
   const failedCount = status?.failed || 0;
   const aiEnabled = status?.enabled !== false;
+
+  /**
+   * 按当前筛选导出 CSV。
+   *
+   * 文本前面加 UTF-8 BOM：Excel 打开没有 BOM 的 UTF-8 CSV 会把中文显示成乱码，而运营拿到
+   * 文件基本都是直接双击用 Excel 开，让他们先选编码再导入等于没导出。
+   */
+  const runExport = async () => {
+    setExporting(true);
+    try {
+      const csv = await exportAiFaqs({
+        keyword: keywordFilter || undefined,
+        category: categoryFilter || undefined,
+        enabled: enabledFilter === '' ? undefined : Number(enabledFilter),
+      });
+      const url = URL.createObjectURL(new Blob([`﻿${csv}`], { type: 'text/csv;charset=utf-8' }));
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `知识库_${new Date().toISOString().slice(0, 10).replace(/-/g, '')}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      showToast('已按当前筛选导出', 'success');
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : '导出失败，请稍后重试', 'error');
+    } finally {
+      setExporting(false);
+    }
+  };
 
   return (
     <div className="space-y-6 animate-in fade-in-50 duration-200">
@@ -652,6 +685,14 @@ export const AiKnowledgeView: React.FC = () => {
             className="h-[36px] px-3 rounded-lg border border-[#E2E8F0] text-sm text-gray-700 hover:bg-gray-50 inline-flex items-center gap-1.5"
           >
             <RefreshCw className="w-4 h-4" />刷新
+          </button>
+          <button
+            type="button"
+            disabled={exporting}
+            onClick={() => void runExport()}
+            className="h-[36px] px-3 rounded-lg border border-[#E2E8F0] text-sm text-gray-700 hover:bg-gray-50 inline-flex items-center gap-1.5 disabled:opacity-60"
+          >
+            {exporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}导出
           </button>
         </div>
 

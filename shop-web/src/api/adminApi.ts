@@ -1969,6 +1969,25 @@ export function deleteAiFaq(id: number): Promise<void> {
   return request<void>(`/api/admin/ai/faqs/${id}`, { method: 'DELETE' });
 }
 
+/**
+ * 导出知识库问答的 CSV 文本。
+ *
+ * 服务端返回文本、由前端落地成文件：后端就不必为一个几百条的内容维护临时文件与回收逻辑。
+ * 筛选条件与列表保持一致，导的就是界面上筛出来的那些。
+ */
+export function exportAiFaqs(params: {
+  keyword?: string;
+  category?: string;
+  enabled?: number;
+} = {}): Promise<string> {
+  const query = new URLSearchParams();
+  if (params.keyword) query.set('keyword', params.keyword);
+  if (params.category) query.set('category', params.category);
+  if (params.enabled !== undefined) query.set('enabled', String(params.enabled));
+  const suffix = query.toString();
+  return request<string>(`/api/admin/ai/faqs/export${suffix ? `?${suffix}` : ''}`);
+}
+
 /** 单次向量同步的统计。 */
 export interface BackendAiSyncResult {
   total: number;
@@ -2056,6 +2075,8 @@ export interface BackendAiAgentSession {
   memberId?: number;
   /** 买家显示名（昵称 → 账号 → 会员编号），队列里用它认人；未登录会话为空。 */
   memberName?: string | null;
+  /** 已换发的买家头像地址，会员未设头像时为空。 */
+  memberAvatarUrl?: string | null;
   title?: string;
   /** 买家最近一条消息，客服接入前用它判断来意。 */
   lastMessage?: string | null;
@@ -2275,6 +2296,45 @@ export function getAiAgentRatingSummary(): Promise<BackendAiRatingSummary> {
 /** 客服统计看板，days 为 0 时统计全部历史。 */
 export function getAiAgentStatsBoard(days: number): Promise<BackendAiAgentStatsBoard> {
   return request<BackendAiAgentStatsBoard>(`/api/admin/ai/agent/stats?days=${days}`);
+}
+
+/** 趋势上的一天。没有会话的日子也会出现，值为 0。 */
+export interface BackendAiAgentStatsDailyPoint {
+  date: string;
+  served: number;
+}
+
+/** 一次会话的摘要。 */
+export interface BackendAiAgentStatsSession {
+  conversationId: string;
+  memberName?: string | null;
+  title?: string;
+  joinedAt?: string;
+  /** 服务结束时间，还在接待时为空。 */
+  endedAt?: string | null;
+  /** 本次服务秒数，进行中或不足 1 秒时为空。 */
+  serveSeconds?: number | null;
+  /** 买家给这次服务的评分，未评价为空。 */
+  score?: number | null;
+}
+
+/** 一位客服的详细服务数据。 */
+export interface BackendAiAgentStatsDetail {
+  /** 生效窗口，0 表示全部历史。 */
+  windowDays: number;
+  summary: BackendAiAgentStatsRow;
+  trend: BackendAiAgentStatsDailyPoint[];
+  sessions: BackendAiAgentStatsSession[];
+  ratings: BackendAiRating[];
+  /** 排班表里启用的天数。 */
+  scheduledDays: number;
+  /** 排班表里启用的周总工时。 */
+  scheduledHours: number;
+}
+
+/** 一位客服的详细服务数据，用于列表点进去的详情视图。 */
+export function getAiAgentStatsDetail(agentId: number, days: number): Promise<BackendAiAgentStatsDetail> {
+  return request<BackendAiAgentStatsDetail>(`/api/admin/ai/agent/stats/${agentId}?days=${days}`);
 }
 
 /** 排班页数据：可选客服与已有排班。 */

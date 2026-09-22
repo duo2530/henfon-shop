@@ -48,6 +48,8 @@ assert.match(guidePage, /<caption className="sr-only">/);
 // 少了 min-h-0 输入框就会被推到首屏之外（flex 子项默认最小高度是内容高度）。
 const workbench = readFileSync(new URL('../src/components/content/AiAgentWorkbenchView.tsx', import.meta.url), 'utf8');
 const schedule = readFileSync(new URL('../src/components/content/AiAgentScheduleView.tsx', import.meta.url), 'utf8');
+const stats = readFileSync(new URL('../src/components/content/AiAgentStatsView.tsx', import.meta.url), 'utf8');
+const knowledge = readFileSync(new URL('../src/components/content/AiKnowledgeView.tsx', import.meta.url), 'utf8');
 
 assert.match(workbench, /lg:h-\[calc\(100vh-56px-4rem\)\]/);
 assert.ok(workbench.includes('lg:flex-1 lg:min-h-0'), '坐席栏在 lg 以上要能独立滚动');
@@ -136,4 +138,37 @@ assert.ok(
   'Esc 要能关掉商品弹框',
 );
 
-console.log('shop-web 无障碍静态检查通过：跳过链接、主导航语义、菜单状态、管理员菜单标签、铃铛未读角标、操作指南独立页面、客服工作台与会话面板滚动容器、客服排班表说明、工作台发送商品卡片（入口带可见文字、服务端搜索、卡片回显、切会话收起、模态弹框）已覆盖');
+// 等待与接待列表要有买家头像：认人靠图形比靠名字快，没有头像时也要有占位而不是空白。
+assert.ok(workbench.includes('const MemberAvatar'), '头像要抽成一个组件，两个列表共用同一套降级');
+assert.ok(
+  workbench.includes('src={avatarUrl}') && workbench.includes('alt=""'),
+  '买家头像对读屏没有信息量——名字已经在旁边了，标成空避免重复朗读',
+);
+assert.ok(
+  workbench.includes('trimmed.slice(0, 1)') && workbench.includes('rounded-full'),
+  '没有头像时用显示名首字占位，一整排空圆点会让人以为图没加载出来',
+);
+
+// 排班格子要用底色区分三种状态，只换边框扫一眼看不出来。
+assert.ok(
+  /border-blue-200 bg-blue-50/.test(schedule) && /border-amber-200 bg-amber-50/.test(schedule),
+  '已排班与已停用要有各自的颜色',
+);
+assert.ok(
+  /border-dashed border-slate-200 bg-slate-50/.test(schedule),
+  '未排班保持虚线空底，与"有班次"一眼可分',
+);
+
+// 统计详情：列表行的客服名要能点进详情，详情页要能返回，返回后统计窗口还在（days 留在同一个组件）。
+assert.ok(stats.includes('setDetailAgentId(row.agentId)'), '列表行要能进详情');
+assert.ok(stats.includes('返回列表'), '详情要有返回入口，不能只能靠浏览器后退');
+assert.ok(stats.includes('getAiAgentStatsDetail'), '详情走独立接口取数');
+assert.ok(stats.includes('aria-label="按天接待量趋势"'), '趋势图要有可读名称');
+assert.ok(stats.includes('scheduledHours'), '详情要带上排班工时，接待量与排班要能对着看');
+
+// 知识库导出：按钮要有可见文字，文件名带日期，中文靠 BOM 才不会在 Excel 里乱码。
+assert.ok(knowledge.includes('导出'), '导出按钮要有可见文字');
+assert.ok(knowledge.includes('exportAiFaqs('), '导出走服务端，不在前端拼当前页数据');
+assert.ok(knowledge.includes('.csv`'), '落地文件名要带 .csv');
+
+console.log('shop-web 无障碍静态检查通过：跳过链接、主导航语义、菜单状态、管理员菜单标签、铃铛未读角标、操作指南独立页面、客服工作台与会话面板滚动容器、客服排班表说明、工作台发送商品卡片（入口带可见文字、服务端搜索、卡片回显、切会话收起、模态弹框）、等待与接待列表头像、排班三态配色、统计详情进出返回、知识库导出已覆盖');

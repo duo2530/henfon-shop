@@ -25,11 +25,17 @@
             <artifactId>shop-catalog</artifactId>
         </dependency>
         <!-- 工具层的数据来源：订单、物流、售后在 shop-trade，优惠券在 shop-marketing。
-             shop-integration 不在这里加：物流轨迹读 trade_order_logistics 即可，门户展示的
-             也是这份同步后的数据，工具里再去实时调快递 100 只会拖慢对话并消耗外部配额。 -->
+             物流轨迹读 trade_order_logistics 即可，门户展示的也是这份同步后的数据，工具里
+             再去实时调快递 100 只会拖慢对话并消耗外部配额。 -->
         <dependency>
             <groupId>com.henfon.shop</groupId>
             <artifactId>shop-trade</artifactId>
+        </dependency>
+        <!-- 只为会员头像的地址重签：member.avatar_url 存的是对象键，不经过 ImageReferenceResolver
+             换发就是裂图。除此之外本模块不碰对象存储。 -->
+        <dependency>
+            <groupId>com.henfon.shop</groupId>
+            <artifactId>shop-integration</artifactId>
         </dependency>
         <dependency>
             <groupId>com.henfon.shop</groupId>

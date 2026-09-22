@@ -19,6 +19,7 @@ import java.time.LocalDateTime;
  * @param conversationId 会话标识
  * @param memberId 买家会员 ID，未登录为空
  * @param memberName 买家显示名，未登录或会员记录已删时为空
+ * @param memberAvatarUrl 买家头像的可访问地址，会员未设置头像时为空
  * @param title 会话标题，取首条提问
  * @param lastMessage 买家最近一条消息，客服接入前可用于判断来意；没有买家消息时为空
  * @param serviceMode 接待模式
@@ -33,6 +34,7 @@ import java.time.LocalDateTime;
 public record AiAgentSessionView(String conversationId,
                                  Long memberId,
                                  String memberName,
+                                 String memberAvatarUrl,
                                  String title,
                                  String lastMessage,
                                  String serviceMode,
@@ -43,9 +45,9 @@ public record AiAgentSessionView(String conversationId,
                                  Long waitingSeconds) {
 
     /**
-     * 由会话实体构建，买家名与最近消息留空。
+     * 由会话实体构建，买家身份与最近消息留空。
      *
-     * 买家侧接口用这个重载：买家不需要在响应里看到自己的名字，省一次会员查询。
+     * 买家侧接口用这个重载：买家不需要在响应里看到自己的名字与头像，省一次会员查询。
      *
      * @param conversation 会话
      * @return 视图
@@ -53,23 +55,28 @@ public record AiAgentSessionView(String conversationId,
      * @date 2026-09-21
      */
     public static AiAgentSessionView from(AiConversation conversation) {
-        return from(conversation, null, null);
+        return from(conversation, null, null, null);
     }
 
     /**
-     * 由会话实体构建，附带买家名与最近消息。
+     * 由会话实体构建，附带买家身份与最近消息。
      *
      * @param conversation 会话
-     * @param memberName 买家显示名
+     * @param memberName 买家显示名，未登录或会员记录已删时为空
+     * @param memberAvatarUrl 买家头像的可访问地址，会员未设置头像时为空
      * @param lastMessage 买家最近一条消息
      * @return 视图
      * @author Henfon
-     * @date 2026-09-21
+     * @date 2026-09-22
      */
-    public static AiAgentSessionView from(AiConversation conversation, String memberName, String lastMessage) {
+    public static AiAgentSessionView from(AiConversation conversation,
+                                          String memberName,
+                                          String memberAvatarUrl,
+                                          String lastMessage) {
         return new AiAgentSessionView(conversation.getConversationId(),
                 conversation.getMemberId(),
                 memberName,
+                memberAvatarUrl,
                 conversation.getTitle(),
                 lastMessage,
                 conversation.getServiceMode(),

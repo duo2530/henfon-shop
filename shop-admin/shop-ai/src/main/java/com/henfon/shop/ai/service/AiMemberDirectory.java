@@ -3,12 +3,14 @@ package com.henfon.shop.ai.service;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.henfon.shop.identity.entity.MemberUser;
 import com.henfon.shop.identity.mapper.MemberUserMapper;
+import com.henfon.shop.integration.storage.ImageReferenceResolver;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * 买家名册：把会话上的会员 ID 解析成客服看得懂的名字。
@@ -30,15 +32,34 @@ public class AiMemberDirectory {
 
     private final MemberUserMapper memberMapper;
 
+    private final ImageReferenceResolver imageResolver;
+
     /**
      * 创建买家名册。
      *
      * @param memberMapper 会员数据访问对象
+     * @param imageResolver 图片地址解析器，负责把会员头像的对象键换成当前有效的访问地址
      * @author Henfon
      * @date 2026-09-21
      */
-    public AiMemberDirectory(MemberUserMapper memberMapper) {
+    public AiMemberDirectory(MemberUserMapper memberMapper, ImageReferenceResolver imageResolver) {
         this.memberMapper = memberMapper;
+        this.imageResolver = imageResolver;
+    }
+
+    /**
+     * 会员在列表上的身份标识。
+     *
+     * <p>头像单独拎出来而不让调用方自己取 member.avatarUrl：库里存的是对象键，直接下发给前端
+     * 就是一张裂图，必须经 {@link ImageReferenceResolver} 按当前配置换发。这个转换放在名册里，
+     * 所有读会员身份的出口就都逃不掉。</p>
+     *
+     * @param name 显示名
+     * @param avatarUrl 可访问的头像地址，会员没设头像时为空
+     * @author Henfon
+     * @date 2026-09-22
+     */
+    public record MemberBadge(String name, String avatarUrl) {
     }
 
     /**
@@ -57,31 +78,60 @@ public class AiMemberDirectory {
     }
 
     /**
-     * 批量解析会员显示名。
+     * 解析单个会员的身份标识。
+     *
+     * @param memberId 会员 ID，可为空
+     * @return 身份标识，未设置会员或未登录时返回 null
+     * @author Henfon
+     * @date 2026-09-22
+     */
+    public MemberBadge badge(Long memberId) {
+        if (memberId == null) {
+            return null;
+        }
+        return badge(memberMapper.selectById(memberId), memberId);
+    }
+
+    /**
+     * 批量解析会员身份标识。
      *
      * 等待队列一次最多几十条，一次查库比逐条查询更划算；查不到的 ID 不进结果，
      * 由调用方落到兜底名称。
      *
      * @param memberIds 会员 ID 集合
-     * @return 会员 ID 到显示名的映射
+     * @return 会员 ID 到身份标识的映射
      * @author Henfon
      * @date 2026-09-21
      */
-    public Map<Long, String> displayNames(List<Long> memberIds) {
-        Map<Long, String> names = new HashMap<>();
+    public Map<Long, MemberBadge> badges(List<Long> memberIds) {
+        Map<Long, MemberBadge> badges = new HashMap<>();
         if (memberIds == null || memberIds.isEmpty()) {
-            return names;
+            return badges;
         }
-        List<Long> distinct = memberIds.stream().filter(java.util.Objects::nonNull).distinct().toList();
+        List<Long> distinct = memberIds.stream().filter(Objects::nonNull).distinct().toList();
         if (distinct.isEmpty()) {
-            return names;
+            return badges;
         }
         List<MemberUser> members = memberMapper.selectList(Wrappers.lambdaQuery(MemberUser.class)
                 .in(MemberUser::getId, distinct));
         if (members != null) {
-            members.forEach(member -> names.put(member.getId(), displayName(member, member.getId())));
+            members.forEach(member -> badges.put(member.getId(), badge(member, member.getId())));
         }
-        return names;
+        return badges;
+    }
+
+    /**
+     * 由会员记录构造身份标识。
+     *
+     * @param member 会员，可为空
+     * @param memberId 会员 ID
+     * @return 身份标识
+     * @author Henfon
+     * @date 2026-09-22
+     */
+    private MemberBadge badge(MemberUser member, Long memberId) {
+        String avatar = member == null ? null : imageResolver.accessUrl(member.getAvatarUrl());
+        return new MemberBadge(displayName(member, memberId), avatar);
     }
 
     /**

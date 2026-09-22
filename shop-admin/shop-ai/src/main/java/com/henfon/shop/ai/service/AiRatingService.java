@@ -162,7 +162,7 @@ public class AiRatingService {
      * @date 2026-09-21
      */
     public AiRatingSummary summary(Long agentId) {
-        List<AiRating> rows = list(agentId);
+        List<AiRating> rows = byAgent(agentId);
         long total = rows.size();
         if (total == 0) {
             return new AiRatingSummary(0L, null, 0L, 0L, List.of(0L, 0L, 0L, 0L, 0L));
@@ -203,7 +203,7 @@ public class AiRatingService {
      */
     public List<AiRatingView> recent(Long agentId, int limit) {
         int safeLimit = Math.min(Math.max(limit, 1), 50);
-        return list(agentId).stream()
+        return byAgent(agentId).stream()
                 .sorted(Comparator.comparing(AiRating::getCreatedAt,
                         Comparator.nullsLast(Comparator.reverseOrder())))
                 .limit(safeLimit)
@@ -214,12 +214,15 @@ public class AiRatingService {
     /**
      * 读取评价明细。
      *
+     * 对外公开是为了详情页：它需要按会话标识把评分挂回每次会话上，而 summary 只给汇总值、
+     * recent 只给最近几条，都不够用。
+     *
      * @param agentId 只看某位客服，传 null 表示全部
      * @return 评价列表
      * @author Henfon
      * @date 2026-09-21
      */
-    private List<AiRating> list(Long agentId) {
+    public List<AiRating> byAgent(Long agentId) {
         List<AiRating> rows = ratingMapper.selectList(Wrappers.lambdaQuery(AiRating.class)
                 .eq(agentId != null, AiRating::getAgentId, agentId));
         return rows == null ? List.of() : rows;
