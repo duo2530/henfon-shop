@@ -32,7 +32,7 @@ yarn-debug.log*
 !**/.env.example
 
 # 开发环境配置可能包含支付密钥、数据库密码和第三方凭据，仅保留本地文件
-shop-admin/shop-boot/src/main/resources/application-dev.yml
+#shop-admin/shop-boot/src/main/resources/application-dev.yml
 
 # 日志与临时文件
 *.log
