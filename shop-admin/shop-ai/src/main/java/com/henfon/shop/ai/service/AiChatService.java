@@ -252,6 +252,11 @@ public class AiChatService {
      * 卡片必然一致。只认工具回调是不够的——提问前的那次检索已经把商品塞进上下文，模型拿到
      * 现成清单后通常不会再调工具，落库快照里只有 refs、没有 toolCalls。</p>
      *
+     * <p>未命中时这一路要整个跳过：检索没过阈值时 {@link AiKnowledgeRetriever} 只把资料文本
+     * 置空、引用照旧带回（召回结果要留着排查），那批商品是相似度噪声，模型的回答里根本没用到
+     * 它们 —— 照它出卡片就成了「回答在自我介绍、下面挂着耳机和手表」这种各说各话的推荐。工具
+     * 回调那一路不受影响：那是模型判断资料不够后自己查的，未命中时反而更该出。</p>
+     *
      * <p>商品检索工具的返回：模型判断「资料里没有、再搜一次」时主动调工具，那一批商品不在引用
      * 里，但同样是它作答的依据，不并进来就会漏卡片。编号由 {@link AiProductToolRecorder} 在
      * 工具返回时记下。</p>
@@ -267,6 +272,10 @@ public class AiChatService {
      */
     private List<Long> cardCandidateIds(StreamState state) {
         LinkedHashSet<Long> ids = new LinkedHashSet<>(state.toolProductIds());
+        if (!state.hit()) {
+            // 未命中时引用里的商品只是阈值下的噪声，不是作答依据，出卡片就是凭空推荐
+            return List.copyOf(ids);
+        }
         for (Ref ref : state.refs) {
             if (!Ref.SOURCE_PRODUCT.equals(ref.sourceType())) {
                 continue;
