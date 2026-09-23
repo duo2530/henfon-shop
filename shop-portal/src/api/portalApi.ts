@@ -591,9 +591,31 @@ export function clearPortalMemberToken(): void {
   localStorage.removeItem(MEMBER_REFRESH_TOKEN_KEY);
 }
 
-/** 判断门户当前是否存在会员访问令牌。 */
+/** 读取访问令牌的过期时间（秒），令牌格式异常或缺少 exp 时返回 null。 */
+export function readMemberTokenExpiration(token: string | null): number | null {
+  if (!token) return null;
+  const segments = token.split('.');
+  if (segments.length < 2) return null;
+  try {
+    // JWT 第二段是 base64url，需要先还原成标准 base64 再补上填充。
+    const base64 = segments[1].replace(/-/g, '+').replace(/_/g, '/');
+    const padded = base64.padEnd(base64.length + ((4 - (base64.length % 4)) % 4), '=');
+    const payload = JSON.parse(atob(padded)) as { exp?: unknown };
+    return typeof payload.exp === 'number' ? payload.exp : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 判断门户当前是否持有可用的会员访问令牌。
+ *
+ * 只看令牌是否存在是不够的：令牌留在浏览器里不会自己消失，过期后首屏仍会渲染成已登录，
+ * 要等第一个接口返回 401 才纠正，期间界面显示的实际权限是错的。
+ */
 export function hasPortalMemberSession(): boolean {
-  return Boolean(localStorage.getItem(MEMBER_TOKEN_KEY));
+  const expiration = readMemberTokenExpiration(localStorage.getItem(MEMBER_TOKEN_KEY));
+  return expiration !== null && expiration * 1000 > Date.now();
 }
 
 export async function fetchPortalProductDetail(productId: string): Promise<Product | null> {

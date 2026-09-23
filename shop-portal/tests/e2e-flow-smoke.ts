@@ -31,6 +31,10 @@ Object.defineProperty(globalThis, 'window', {
   configurable: true,
 });
 
+/** 拼一个只有第二段有意义的 JWT，冒烟只验证前端能否读出 exp。 */
+const makeAccessToken = (expirationSeconds: number) =>
+  `header.${Buffer.from(JSON.stringify({ exp: expirationSeconds })).toString('base64url')}.signature`;
+
 const jsonResponse = (data: unknown, status = 200) => ({
   status,
   ok: status >= 200 && status < 300,
@@ -40,7 +44,7 @@ const jsonResponse = (data: unknown, status = 200) => ({
 globalThis.fetch = (async (input: RequestInfo | URL) => {
   const url = String(input);
   if (url.includes('/api/portal/auth/login')) {
-    return jsonResponse({ accessToken: 'access-token', refreshToken: 'refresh-token', expiresInSeconds: 1800, memberId: 1, username: 'demo', nickname: '测试会员', memberLevel: '普通会员', points: 10, balance: 0 });
+    return jsonResponse({ accessToken: makeAccessToken(Math.floor(Date.now() / 1000) + 1800), refreshToken: 'refresh-token', expiresInSeconds: 1800, memberId: 1, username: 'demo', nickname: '测试会员', memberLevel: '普通会员', points: 10, balance: 0 });
   }
   // 详情分支必须排在列表判断之前：两者路径前缀相同，先命中列表分支就拿不到 media 了。
   if (/\/api\/portal\/catalog\/products\/\d+$/.test(url)) {
@@ -74,7 +78,17 @@ globalThis.fetch = (async (input: RequestInfo | URL) => {
 
 const auth = await loginPortalMember('demo', 'password');
 assert.equal(auth.memberId, 1);
-assert.equal(hasPortalMemberSession(), true);
+assert.equal(hasPortalMemberSession(), true, '未过期的令牌应算作已登录');
+
+// 令牌存在不等于会话可用：过期、格式异常、缺失都必须判为未登录，
+// 否则首屏会照着本地残留渲染成已登录，实际接口却在返回 401。
+storage.setItem('henfon_shop_member_token', makeAccessToken(Math.floor(Date.now() / 1000) - 60));
+assert.equal(hasPortalMemberSession(), false, '已过期的令牌不应再算作已登录');
+storage.setItem('henfon_shop_member_token', 'access-token');
+assert.equal(hasPortalMemberSession(), false, '解析不出 exp 的令牌不应算作已登录');
+storage.removeItem('henfon_shop_member_token');
+assert.equal(hasPortalMemberSession(), false, '没有令牌时不应算作已登录');
+storage.setItem('henfon_shop_member_token', makeAccessToken(Math.floor(Date.now() / 1000) + 1800));
 
 const products = await fetchPortalProducts({ keyword: '测试' });
 assert.equal(products[0]?.id, 'prod-1001');

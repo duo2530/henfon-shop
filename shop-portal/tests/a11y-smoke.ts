@@ -1,17 +1,19 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+/** 仓库 core.autocrlf=true 时工作区文件带 CRLF，断言里按 LF 锚定会失配，读取时统一归一。 */
+const readSource = (path: URL) => readFileSync(path, 'utf8').replace(/\r\n/g, '\n');
 import { parsePortalRoute } from '../src/utils/portalRoute';
 
-const app = readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8');
-const navbar = readFileSync(new URL('../src/components/Navbar.tsx', import.meta.url), 'utf8');
-const productCard = readFileSync(new URL('../src/components/ProductCard.tsx', import.meta.url), 'utf8');
-const couponBanner = readFileSync(new URL('../src/components/CouponCenterBanner.tsx', import.meta.url), 'utf8');
-const couponModal = readFileSync(new URL('../src/components/CouponCenterModal.tsx', import.meta.url), 'utf8');
-const couponCenter = readFileSync(new URL('../src/components/CouponCenter.tsx', import.meta.url), 'utf8');
-const userProfile = readFileSync(new URL('../src/components/UserProfilePage.tsx', import.meta.url), 'utf8');
-const heroBanner = readFileSync(new URL('../src/components/HeroBanner.tsx', import.meta.url), 'utf8');
-const categoryRail = readFileSync(new URL('../src/components/CategoryRail.tsx', import.meta.url), 'utf8');
-const index = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+const app = readSource(new URL('../src/App.tsx', import.meta.url));
+const navbar = readSource(new URL('../src/components/Navbar.tsx', import.meta.url));
+const productCard = readSource(new URL('../src/components/ProductCard.tsx', import.meta.url));
+const couponBanner = readSource(new URL('../src/components/CouponCenterBanner.tsx', import.meta.url));
+const couponModal = readSource(new URL('../src/components/CouponCenterModal.tsx', import.meta.url));
+const couponCenter = readSource(new URL('../src/components/CouponCenter.tsx', import.meta.url));
+const userProfile = readSource(new URL('../src/components/UserProfilePage.tsx', import.meta.url));
+const heroBanner = readSource(new URL('../src/components/HeroBanner.tsx', import.meta.url));
+const categoryRail = readSource(new URL('../src/components/CategoryRail.tsx', import.meta.url));
+const index = readSource(new URL('../index.html', import.meta.url));
 
 assert.match(index, /<html lang="zh-CN">/);
 assert.match(app, /href="#portal-main-content"/);
@@ -102,7 +104,7 @@ assert.match(app.slice(accountGateIndex, accountGateIndex + 320), /navigate\(HOM
 
 // 商品详情接口必须把 VIDEO 媒体取出来交给 videoUrl：详情弹层的播放器只认这个字段，
 // 而图片位是按 <img> 渲染的，把 mp4 混进 images 只会得到一个加载失败的破图。
-const portalApi = readFileSync(new URL('../src/api/portalApi.ts', import.meta.url), 'utf8');
+const portalApi = readSource(new URL('../src/api/portalApi.ts', import.meta.url));
 assert.match(portalApi, /product\.videoUrl\s*=/, '详情接口应把视频地址写入 videoUrl，而不是丢弃视频媒体');
 assert.match(portalApi, /toLowerCase\(\) === 'video'/);
 
@@ -119,7 +121,7 @@ assert.ok(bannerProductBranch.includes('openProductById(target)'), 'Banner 商�
 assert.ok(!bannerProductBranch.includes('PRODUCTS'), 'Banner 商品跳转不得回落到本地演示商品');
 
 // 只有占位对象时（标题为空）不能把空骨架铺开；play() 因 pause()/卸载抛出的 AbortError 属正常中断，不能当错误刷控制台。
-const quickView = readFileSync(new URL('../src/components/ProductDetailPage.tsx', import.meta.url), 'utf8');
+const quickView = readSource(new URL('../src/components/ProductDetailPage.tsx', import.meta.url));
 assert.match(quickView, /!props\.product\.title/);
 assert.match(quickView, /function playVideoSafely\(/);
 assert.match(quickView, /error\.name === 'AbortError'/);
@@ -129,8 +131,8 @@ assert.doesNotMatch(quickView, /'Escape'/);
 assert.doesNotMatch(quickView, /useBodyScrollLock/);
 
 // 客服悬浮入口：只留图标不上屏文字，但无障碍名要保留，未读数也要进可读标签（与顶栏铃铛同口径）。
-const supportWidget = readFileSync(new URL('../src/components/SupportChatWidget.tsx', import.meta.url), 'utf8');
-const portalCss = readFileSync(new URL('../src/index.css', import.meta.url), 'utf8');
+const supportWidget = readSource(new URL('../src/components/SupportChatWidget.tsx', import.meta.url));
+const portalCss = readSource(new URL('../src/index.css', import.meta.url));
 
 assert.ok(
   supportWidget.includes("aria-label={unread > 0 ? `在线客服，${unread} 条未读` : '在线客服'}"),
