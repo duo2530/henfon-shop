@@ -128,4 +128,18 @@ assert.match(categoryView, /collectDisabledBranchIds/);
 assert.match(categoryView, /随上级停用/);
 assert.match(categoryView, /子类目会一并从门户导航/);
 
+
+// 客服工作台与门户聊天都要能发表情：入口挂在输入框旁，按光标插入，长度沿用 500。
+const workbench = readFileSync(new URL('../src/components/content/AiAgentWorkbenchView.tsx', import.meta.url), 'utf8');
+const emojiPicker = readFileSync(new URL('../src/components/common/EmojiPicker.tsx', import.meta.url), 'utf8');
+assert.ok(
+  workbench.includes(String.raw`aria-label="表情"`) && workbench.includes("aria-expanded={emojiOpen}"),
+  '工作台缺表情入口或展开态语义',
+);
+assert.ok(
+  workbench.includes('insertEmojiAtCursor(') && workbench.includes('slice(0, 500)'),
+  '表情要按光标插入并沿用 500 字上限',
+);
+assert.ok(workbench.includes('setSelectionRange(pos, pos)'), '插入后光标要落到表情之后');
+assert.ok(emojiPicker.includes('aria-label={item.name}'), '表情按钮要有中文名');
 console.log('shop-web 管理流程冒烟检查通过：登录 → 商品 → 订单/发货 → 经营报表入口均存在，全屏弹层滚动锁、类目父链隐藏与操作指南独立入口已接入');

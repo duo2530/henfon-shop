@@ -17,6 +17,7 @@ import { UserProfilePage } from '../src/components/UserProfilePage';
 import { buildPortalHash, parsePortalRoute } from '../src/utils/portalRoute';
 import { isEmail, AuthModal } from '../src/components/AuthModal';
 import { createPendingLogistics } from '../src/components/CheckoutModal';
+import { EmojiPicker, insertEmojiAtCursor } from '../src/components/EmojiPicker';
 import { OrderSuccessModal } from '../src/components/OrderSuccessModal';
 import type { Product, Coupon, Order, UserProfile } from '../src/types/ecommerce';
 import type { PortalCategoryNode } from '../src/api/portalApi';
@@ -789,4 +790,22 @@ assert.match(reviewsPageMarkup, /我的评价/);
 assert.match(reviewsPageMarkup, /还没有提交过评价/);
 assert.doesNotMatch(reviewsPageMarkup, /当前享有 黄金VIP 特权/);
 
+
+// 表情面板：归口统一的 Unicode emoji，插入点跟着光标走，而不是一律追加到末尾。
+const emojiPickerMarkup = renderToStaticMarkup(<EmojiPicker onSelect={() => undefined} />);
+const emojiLabels = [...emojiPickerMarkup.matchAll(/aria-label="([^"]+)"/g)].map((match) => match[1]);
+assert.ok(emojiLabels.length >= 16, `常用分组表情太少：${emojiLabels.length}`);
+const emojiNamedLabels = emojiLabels.filter((label) => /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}]/u.test(label));
+assert.deepEqual(emojiNamedLabels, [], "表情按钮的 aria-label 要给中文名，读屏不该去念 Unicode 字符名");
+assert.match(emojiPickerMarkup, /aria-pressed="true"/, "分组页签要有选中态");
+assert.deepEqual(
+  insertEmojiAtCursor('abcdef', '\u{1F60A}', 2, 4),
+  { text: 'ab\u{1F60A}ef', caret: 4 },
+  '选中的一段要被表情替换掉，光标停在表情之后',
+);
+assert.deepEqual(
+  insertEmojiAtCursor('你好', '\u{1F44D}', null, null),
+  { text: '你好\u{1F44D}', caret: 4 },
+  '没有光标信息时追加到末尾；代理对按 UTF-16 计两个位置',
+);
 console.log('shop-portal 组件冒烟测试通过：商品卡片、库存禁购、Banner 跳转数据、物流进度取数、左侧类目树（浮层与展开两态）、领券横幅与券墙（含券型中文标签）、商品详情整页（视频位、占位加载态、面包屑与页面 h1）、已购购物车条目清理匹配、整页视图路由（含正文锚点不当作路由、订单页签与选中订单、个人中心子视图、商品路由带参闭环）、订单中心整页（页签分流计数、列表↔详情双栏与 URL 承载的筛选/选中）、收藏页整页（卡片网格与空态）、参数对比页整页（多栏表格与空态）、个人中心整页（三个子视图与页脚出口）语义正常');

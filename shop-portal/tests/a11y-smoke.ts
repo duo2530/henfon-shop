@@ -241,4 +241,16 @@ assert.ok(
   'App 要把商品 ID 归一成门户路由再跳转',
 );
 
+// 表情：入口挂在输入框旁，按光标插入，长度沿用 500（与后端 @Size(max=500) 同一口径）。
+assert.ok(
+  supportWidget.includes(String.raw`aria-label="表情"`) && supportWidget.includes("aria-expanded={emojiOpen}"),
+  '表情入口要有可见名称与展开态语义',
+);
+assert.ok(
+  supportWidget.includes('insertEmojiAtCursor(') && supportWidget.includes('slice(0, 500)'),
+  '表情要按光标插入并沿用 500 字上限',
+);
+assert.ok(supportWidget.includes('setSelectionRange(pos, pos)'), '插入后光标要落到表情之后');
+const emojiPickerSource = readSource(new URL('../src/components/EmojiPicker.tsx', import.meta.url));
+assert.ok(emojiPickerSource.includes('aria-label={item.name}'), '表情按钮要有中文名');
 console.log('shop-portal 无障碍静态检查通过：跳过链接、中文语言、搜索 ARIA、左侧类目树（浮层与抽屉两态）、轮播位常驻、商品区栅格、领券横幅与券弹层（含不透明底色、英文枚举中文映射）、商品详情与个人中心整页（无弹层语义、页面级 h1、入口全部走路由）、客服悬浮入口（纯图标入口、条件闪烁、排队文案、评价弹层语义与结束后读回历史）、客服商品卡片（整卡可点、随 done 下发、历史读回带卡片、复制带域名的链接）已覆盖');

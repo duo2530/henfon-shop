@@ -23,6 +23,7 @@ import {
   streamAiAgentSession,
 } from '../../api/adminApi';
 import { PermissionGate } from '../common/PermissionGate';
+import { EmojiPicker, insertEmojiAtCursor } from '../common/EmojiPicker';
 import { formatDateTime } from '../../utils/datetime';
 import {
   AlertCircle,
@@ -36,6 +37,7 @@ import {
   RefreshCw,
   Search,
   Send,
+  Smile,
   Star,
   UserRound,
   Zap,
@@ -155,6 +157,7 @@ export const AiAgentWorkbenchView: React.FC = () => {
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [joining, setJoining] = useState(false);
+  const [emojiOpen, setEmojiOpen] = useState(false);
 
   // 商品推送面板：展开、搜索词、结果与提交中。搜索走服务端，不在前端过滤当前页商品——
   // 客服要找的常常是买家提到的那一件，它多半不在客服当前浏览的列表里。
@@ -169,6 +172,8 @@ export const AiAgentWorkbenchView: React.FC = () => {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const deskRestoredRef = useRef(false);
   const pickerInputRef = useRef<HTMLInputElement | null>(null);
+  const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  const emojiWrapRef = useRef<HTMLDivElement | null>(null);
 
   // 商品弹框打开即锁住底层滚动，与 ProductPickerModal 一致。
   useBodyScrollLock(pickerOpen);
@@ -342,6 +347,7 @@ export const AiAgentWorkbenchView: React.FC = () => {
     setActive(session);
     // 上一个会话搜出来的商品留在面板里，很容易误发给下一个买家。
     setPickerOpen(false);
+    setEmojiOpen(false);
     setPickerKeyword('');
     setPickerResults([]);
     setPickerError(null);
@@ -418,6 +424,44 @@ export const AiAgentWorkbenchView: React.FC = () => {
       setSending(false);
     }
   };
+
+  const insertEmoji = useCallback((emoji: string) => {
+    const node = inputRef.current;
+    // 光标位置先取一次：setInput 用的是位置而非当前渲染的 input，连点表情不会互相吃掉。
+    const start = node ? node.selectionStart : null;
+    const end = node ? node.selectionEnd : null;
+    let caret = 0;
+    setInput((prev) => {
+      const merged = insertEmojiAtCursor(prev, emoji, start, end);
+      caret = merged.caret;
+      return merged.text.slice(0, 500);
+    });
+    // 受控 textarea 的值要下一帧才更新，光标等渲染完再放回，否则会被重置到末尾。
+    requestAnimationFrame(() => {
+      if (!node) return;
+      node.focus();
+      const pos = Math.min(caret, 500);
+      node.setSelectionRange(pos, pos);
+    });
+  }, []);
+
+  // 点面板外或按 Esc 收起表情面板；面板展开时不锁滚动，聊天区要能照常翻。
+  useEffect(() => {
+    if (!emojiOpen) return undefined;
+    const onPointerDown = (event: MouseEvent) => {
+      const wrap = emojiWrapRef.current;
+      if (wrap && !wrap.contains(event.target as Node)) setEmojiOpen(false);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setEmojiOpen(false);
+    };
+    document.addEventListener('mousedown', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [emojiOpen]);
 
   /**
    * 切换会话时收起商品面板。
@@ -828,7 +872,7 @@ export const AiAgentWorkbenchView: React.FC = () => {
                 </div>
               ) : (
                 <div className="border-t border-gray-100 p-3 shrink-0">
-                  <div className="flex items-end gap-2">
+                  <div ref={emojiWrapRef} className="flex items-end gap-2 relative">
                     <button
                       type="button"
                       onClick={() => setPickerOpen(true)}
@@ -840,7 +884,19 @@ export const AiAgentWorkbenchView: React.FC = () => {
                       <Package className="w-4 h-4" />
                       发送商品
                     </button>
+                    <button
+                      type="button"
+                      onClick={() => setEmojiOpen((prev) => !prev)}
+                      aria-label="表情"
+                      aria-haspopup="true"
+                      aria-expanded={emojiOpen}
+                      title="插入表情"
+                      className="h-9 px-2 rounded-lg border border-[#E2E8F0] text-gray-600 text-sm hover:border-gray-400 hover:text-gray-800 inline-flex items-center justify-center shrink-0"
+                    >
+                      <Smile className="w-4 h-4" />
+                    </button>
                     <textarea
+                      ref={inputRef}
                       value={input}
                       onChange={(event) => setInput(event.target.value)}
                       onKeyDown={(event) => {
@@ -864,6 +920,11 @@ export const AiAgentWorkbenchView: React.FC = () => {
                       {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
                       发送
                     </button>
+                    {emojiOpen && (
+                      <div className="absolute bottom-full left-0 mb-2 z-20">
+                        <EmojiPicker onSelect={insertEmoji} />
+                      </div>
+                    )}
                   </div>
                 </div>
               )}

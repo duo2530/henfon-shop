@@ -7,6 +7,7 @@ import {
   Loader2,
   MessageSquare,
   Send,
+  Smile,
   Star,
   UserRound,
   X,
@@ -28,6 +29,7 @@ import {
   type PortalAiAgentAvailability,
   type PortalAiProductCard,
 } from '../api/portalApi';
+import { EmojiPicker, insertEmojiAtCursor } from './EmojiPicker';
 
 /** 发送方：自己 / 智能客服 / 人工客服。气泡样式与标注按它区分。 */
 type Speaker = 'MEMBER' | 'AI' | 'AGENT';
@@ -280,10 +282,13 @@ export const SupportChatWidget: React.FC<{ onOpenProduct?: (productId: number) =
   const [ticketSubmitting, setTicketSubmitting] = useState(false);
   const [ticketNo, setTicketNo] = useState<string | null>(null);
   const [ticketError, setTicketError] = useState<string | null>(null);
+  const [emojiOpen, setEmojiOpen] = useState(false);
 
   const chatAbortRef = useRef<AbortController | null>(null);
   const agentAbortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  const emojiWrapRef = useRef<HTMLDivElement | null>(null);
   /** 长连接回调运行在订阅时的闭包里，读不到最新的 open/mode，用 ref 兜。 */
   const openRef = useRef(false);
   const modeRef = useRef<ServiceMode>('AI');
@@ -757,6 +762,43 @@ export const SupportChatWidget: React.FC<{ onOpenProduct?: (productId: number) =
     await sendToAgent(text);
   };
 
+  const insertEmoji = useCallback((emoji: string) => {
+    const node = inputRef.current;
+    // 光标位置先取一次：setInput 用的是位置而非当前渲染的 input，连点表情不会互相吃掉。
+    const start = node ? node.selectionStart : null;
+    const end = node ? node.selectionEnd : null;
+    let caret = 0;
+    setInput((prev) => {
+      const merged = insertEmojiAtCursor(prev, emoji, start, end);
+      caret = merged.caret;
+      return merged.text.slice(0, 500);
+    });
+    // 受控 textarea 的值要下一帧才更新，光标等渲染完再放回，否则会被重置到末尾。
+    requestAnimationFrame(() => {
+      if (!node) return;
+      node.focus();
+      const pos = Math.min(caret, 500);
+      node.setSelectionRange(pos, pos);
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!emojiOpen) return;
+    const onPointerDown = (event: MouseEvent) => {
+      const wrap = emojiWrapRef.current;
+      if (wrap && !wrap.contains(event.target as Node)) setEmojiOpen(false);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setEmojiOpen(false);
+    };
+    document.addEventListener('mousedown', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [emojiOpen]);
+
   const submitTicket = async () => {
     const contact = ticketContact.trim();
     const question = ticketQuestion.trim();
@@ -1100,8 +1142,20 @@ export const SupportChatWidget: React.FC<{ onOpenProduct?: (productId: number) =
           </div>
 
           <div className="border-t border-zinc-100 p-3">
-            <div className="flex items-end gap-2">
+            <div ref={emojiWrapRef} className="flex items-end gap-2 relative">
+              <button
+                type="button"
+                onClick={() => setEmojiOpen((prev) => !prev)}
+                aria-label="表情"
+                aria-haspopup="true"
+                aria-expanded={emojiOpen}
+                title="插入表情"
+                className="h-9 px-2 rounded-lg border border-zinc-200 text-zinc-500 hover:border-zinc-400 hover:text-zinc-800 shrink-0 inline-flex items-center justify-center"
+              >
+                <Smile className="w-4 h-4" />
+              </button>
               <textarea
+                ref={inputRef}
                 value={input}
                 onChange={(event) => setInput(event.target.value)}
                 onKeyDown={(event) => {
@@ -1125,6 +1179,11 @@ export const SupportChatWidget: React.FC<{ onOpenProduct?: (productId: number) =
               >
                 {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
               </button>
+              {emojiOpen && (
+                <div className="absolute bottom-full left-0 mb-2 z-20">
+                  <EmojiPicker onSelect={insertEmoji} />
+                </div>
+              )}
             </div>
           </div>
 
